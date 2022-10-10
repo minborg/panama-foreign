@@ -41,10 +41,10 @@ sealed public interface NativeSocketAddressTriplet {
      * {@return a new native socket address triplet}.
      */
     static NativeSocketAddressTriplet create() {
-        return new NativeSocketAddressTripletImpl();
+        return new Impl();
     }
 
-    final class NativeSocketAddressTripletImpl implements NativeSocketAddressTriplet {
+    final class Impl implements NativeSocketAddressTriplet {
 
         private static final Unsafe UNSAFE = Unsafe.getUnsafe();
 
@@ -58,9 +58,9 @@ sealed public interface NativeSocketAddressTriplet {
         private final NativeSocketAddress cached;
         private final NativeSocketAddress target;
 
-        public NativeSocketAddressTripletImpl() {
+        public Impl() {
             // Allocate the backing native memory in a single chunk
-            // This increases locality and makes the allocation either succeed or fail
+            // This increases locality and makes a triple allocation either succeed or fail atomically
             baseAddress = UNSAFE.allocateMemory(SEGMENT_SIZE * 3);
             source = new NativeSocketAddress.Impl(ofShard(0));
             cached = new NativeSocketAddress.Impl(ofShard(1));

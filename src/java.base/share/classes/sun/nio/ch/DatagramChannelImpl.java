@@ -33,7 +33,21 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner.Cleanable;
 import java.lang.reflect.Method;
-import java.net.*;
+import java.net.DatagramSocket;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
+import java.net.NoRouteToHostException;
+import java.net.PortUnreachableException;
+import java.net.ProtocolFamily;
+import java.net.SocketAddress;
+import java.net.SocketException;
+import java.net.SocketOption;
+import java.net.SocketTimeoutException;
+import java.net.StandardProtocolFamily;
+import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.AlreadyBoundException;
 import java.nio.channels.AlreadyConnectedException;
@@ -924,12 +938,14 @@ class DatagramChannelImpl
             written = send0(fd, ((DirectBuffer)bb).address() + pos, rem,
                             targetSockAddr.address(), addressLen);
         } catch (NoRouteToHostException nrthe) {
+            // Todo: Remove this debugging feature
             throw new NoRouteToHostException(nrthe.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr + ", addressLen=" + addressLen);
         } catch (PortUnreachableException pue) {
             if (isConnected())
                 throw pue;
             written = rem;
         } catch (SocketException se) {
+            // Todo: Remove this debugging feature
             throw new SocketException(se.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr+ ", addressLen=" + addressLen, se);
         }
         if (written > 0)
@@ -1921,7 +1937,6 @@ class DatagramChannelImpl
                 // decrement socket count and release memory
                 ResourceManager.afterUdpClose();
                 sockAddrs.freeAll();
-                //NativeSocketAddress.freeAll(sockAddrs);
             }
         };
     }

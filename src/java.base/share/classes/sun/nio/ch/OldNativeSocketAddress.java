@@ -41,7 +41,7 @@ import jdk.internal.misc.Unsafe;
 import jdk.internal.util.ArraysSupport;
 
 
-// Todo: Remove this class
+// Todo: Remove this class. It is temporarily kept for benchmark comparison.
 
 /**
  * A native socket address that is the union of struct sockaddr, struct sockaddr_in,

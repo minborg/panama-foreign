@@ -11,7 +11,6 @@ import static java.lang.foreign.ValueLayout.JAVA_BYTE;
  */
 public final class InternalArrays {
 
-
     private InternalArrays() {
     }
 

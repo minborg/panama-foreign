@@ -29,6 +29,8 @@ import java.io.StringWriter;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -47,6 +49,15 @@ public class VerifyTranslations {
     private static final Set<String> VALID_TRANSLATION_SUFFIXES = Set.of(
             "_en", "_en_US", "_en_US_POSIX", "_ja", "_zh_CN", "_de"
     );
+
+    /**
+     * Known classes that are guaranteed not to be a translation in an Oracle built image
+     */
+    private static final Set<String> EXEMPTED_NAMES = Stream.of(
+                    "java.base/jdk/internal/sys/sockaddr_in"
+            )
+            .flatMap(n -> Stream.of(n + ".class", n + ".java"))
+            .collect(Collectors.toUnmodifiableSet());
 
     /**
      * This regexp will not match locales with 3 letter lang strings because
@@ -76,9 +87,9 @@ public class VerifyTranslations {
             if (!module.equals("jdk.localedata")) {
                 Matcher matcher = classesLocalePattern.matcher(line);
                 if (matcher.find()) {
-                    if (!VALID_TRANSLATION_SUFFIXES.contains(matcher.group(1))) {
-                        System.out.println("Unsupported translation found in lib/modules: "
-                                + module + "/" + line.trim());
+                    var fullName = module + "/" + line.trim();
+                    if (!VALID_TRANSLATION_SUFFIXES.contains(matcher.group(1)) && !EXEMPTED_NAMES.contains(fullName)) {
+                        System.out.println("Unsupported translation found in lib/modules: " + fullName);
                         failed = true;
                     }
                 }
@@ -96,7 +107,7 @@ public class VerifyTranslations {
                 if (!name.startsWith("jdk.localedata")) {
                     Matcher matcher = sourceLocalePattern.matcher(name);
                     if (matcher.find()) {
-                        if (!VALID_TRANSLATION_SUFFIXES.contains(matcher.group(1))) {
+                        if (!VALID_TRANSLATION_SUFFIXES.contains(matcher.group(1)) && !EXEMPTED_NAMES.contains(name)) {
                             System.out.println("Unsupported translation found in lib/src.zip: " + name);
                             failed = true;
                         }

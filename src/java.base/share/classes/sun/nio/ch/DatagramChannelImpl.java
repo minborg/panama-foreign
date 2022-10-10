@@ -33,20 +33,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner.Cleanable;
 import java.lang.reflect.Method;
-import java.net.DatagramSocket;
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.NetworkInterface;
-import java.net.PortUnreachableException;
-import java.net.ProtocolFamily;
-import java.net.SocketAddress;
-import java.net.SocketException;
-import java.net.SocketOption;
-import java.net.SocketTimeoutException;
-import java.net.StandardProtocolFamily;
-import java.net.StandardSocketOptions;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.AlreadyBoundException;
 import java.nio.channels.AlreadyConnectedException;
@@ -193,7 +180,7 @@ class DatagramChannelImpl
         }
 
         FileDescriptor fd = null;
-        NativeSocketAddress[] sockAddrs = null;
+        NativeSocketAddressTriplet sockAddrs = null;
 
         ResourceManager.beforeUdpCreate();
         boolean initialized = false;
@@ -203,20 +190,22 @@ class DatagramChannelImpl
             this.fd = fd = Net.socket(family, false);
             this.fdVal = IOUtil.fdVal(fd);
 
-            sockAddrs = NativeSocketAddress.allocate(3);
+            //sockAddrs = NativeSocketAddress.allocate(3);
+            sockAddrs = NativeSocketAddressTriplet.create();
+
             readLock.lock();
             try {
-                this.sourceSockAddr = sockAddrs[0];
-                this.cachedSockAddr = sockAddrs[1];
+                this.sourceSockAddr = sockAddrs.source();
+                this.cachedSockAddr = sockAddrs.cached();
             } finally {
                 readLock.unlock();
             }
-            this.targetSockAddr = sockAddrs[2];
+            this.targetSockAddr = sockAddrs.target();
 
             initialized = true;
         } finally {
             if (!initialized) {
-                if (sockAddrs != null) NativeSocketAddress.freeAll(sockAddrs);
+                if (sockAddrs != null) sockAddrs.freeAll();
                 if (fd != null) nd.close(fd);
                 ResourceManager.afterUdpClose();
             }
@@ -231,7 +220,7 @@ class DatagramChannelImpl
     {
         super(sp);
 
-        NativeSocketAddress[] sockAddrs = null;
+        NativeSocketAddressTriplet sockAddrs = null;
 
         ResourceManager.beforeUdpCreate();
         boolean initialized = false;
@@ -243,20 +232,20 @@ class DatagramChannelImpl
             this.fd = fd;
             this.fdVal = IOUtil.fdVal(fd);
 
-            sockAddrs = NativeSocketAddress.allocate(3);
+            sockAddrs = NativeSocketAddressTriplet.create();
             readLock.lock();
             try {
-                this.sourceSockAddr = sockAddrs[0];
-                this.cachedSockAddr = sockAddrs[1];
+                this.cachedSockAddr = sockAddrs.cached();
+                this.sourceSockAddr = sockAddrs.source();
             } finally {
                 readLock.unlock();
             }
-            this.targetSockAddr = sockAddrs[2];
+            this.targetSockAddr = sockAddrs.target();
 
             initialized = true;
         } finally {
             if (!initialized) {
-                if (sockAddrs != null) NativeSocketAddress.freeAll(sockAddrs);
+                if (sockAddrs != null) sockAddrs.freeAll();
                 nd.close(fd);
                 ResourceManager.afterUdpClose();
             }
@@ -930,14 +919,18 @@ class DatagramChannelImpl
         int rem = (pos <= lim ? lim - pos : 0);
 
         int written;
+        int addressLen = targetSocketAddress(target);
         try {
-            int addressLen = targetSocketAddress(target);
             written = send0(fd, ((DirectBuffer)bb).address() + pos, rem,
                             targetSockAddr.address(), addressLen);
+        } catch (NoRouteToHostException nrthe) {
+            throw new NoRouteToHostException(nrthe.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr + ", addressLen=" + addressLen);
         } catch (PortUnreachableException pue) {
             if (isConnected())
                 throw pue;
             written = rem;
+        } catch (SocketException se) {
+            throw new SocketException(se.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr+ ", addressLen=" + addressLen, se);
         }
         if (written > 0)
             bb.position(pos + written);
@@ -1918,7 +1911,7 @@ class DatagramChannelImpl
     /**
      * Returns an action to release the given file descriptor and socket addresses.
      */
-    private static Runnable releaserFor(FileDescriptor fd, NativeSocketAddress... sockAddrs) {
+    private static Runnable releaserFor(FileDescriptor fd, NativeSocketAddressTriplet sockAddrs) {
         return () -> {
             try {
                 nd.close(fd);
@@ -1927,7 +1920,8 @@ class DatagramChannelImpl
             } finally {
                 // decrement socket count and release memory
                 ResourceManager.afterUdpClose();
-                NativeSocketAddress.freeAll(sockAddrs);
+                sockAddrs.freeAll();
+                //NativeSocketAddress.freeAll(sockAddrs);
             }
         };
     }

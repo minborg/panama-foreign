@@ -349,8 +349,6 @@ public sealed interface NativeSocketAddress {
                 // This cast is guaranteed to succeed as assertInetAddressTypeCorrect() passed
                 int ipAddress = JNINA.addressValue((Inet4Address) inetAddress);
                 INT_ADDRESS_VH.set(segment, ipAddress);
-/*                byte[] address = inetAddress.getAddress();
-                MemorySegment.copy(address, 0, sin_addr$slice(segment), JAVA_BYTE, 0, address.length);*/
                 return this;
             }
 

@@ -30,9 +30,9 @@
  */
 
 import jdk.internal.foreign.InternalMemoryLayout;
+import jdk.internal.foreign.LayoutTransformer;
 import org.testng.annotations.*;
 
-import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
@@ -78,20 +78,42 @@ public class TestInternalMemoryLayout {
             .withName("layout")
             .withBitAlignment(Long.SIZE * 2);
 
-    private static final Function<ValueLayout, ValueLayout> TO_BIG_ENDIAN = vl -> vl.withOrder(ByteOrder.BIG_ENDIAN);
-    private static final Function<ValueLayout, ValueLayout> TO_LITTLE_ENDIAN = vl -> vl.withOrder(ByteOrder.LITTLE_ENDIAN);
+
+    // Demonstrates instance of use for single case
+    private static final LayoutTransformer TO_BIG_ENDIAN = l -> (l instanceof ValueLayout vl)
+            ? vl.withOrder(ByteOrder.BIG_ENDIAN)
+            : l;
+
+    // Demonstrates pattern matching in switch
+    private static final LayoutTransformer TO_LITTLE_ENDIAN = l -> switch (l) {
+        case ValueLayout vl -> vl.withOrder(ByteOrder.LITTLE_ENDIAN);
+        default -> l;
+    };
+
+    // Demonstrates matching. Useful for cases with only one match as these are.
+    private static final LayoutTransformer TO_LITTLE_ENDIAN_MATCH =
+            LayoutTransformer.matching(ValueLayout.class, vl -> vl.withOrder(ByteOrder.LITTLE_ENDIAN));
 
     @Test
     public void valueLayoutTest() {
-        MemoryLayout le = InternalMemoryLayout.transform(LAYOUT, ValueLayout.class, TO_LITTLE_ENDIAN);
-        MemoryLayout be = InternalMemoryLayout.transform(LAYOUT, ValueLayout.class, TO_BIG_ENDIAN);
+        MemoryLayout le = InternalMemoryLayout.transform(LAYOUT, TO_LITTLE_ENDIAN);
+        MemoryLayout be = InternalMemoryLayout.transform(LAYOUT, TO_BIG_ENDIAN);
+        assertNotEquals(le, be);
+        assertTrue(le.toString().equalsIgnoreCase(be.toString()));
+    }
+
+    @Test
+    public void valueLayoutTestMatch() {
+        MemoryLayout le = InternalMemoryLayout.transform(LAYOUT, TO_LITTLE_ENDIAN_MATCH);
+        MemoryLayout be = InternalMemoryLayout.transform(LAYOUT, TO_BIG_ENDIAN);
         assertNotEquals(le, be);
         assertTrue(le.toString().equalsIgnoreCase(be.toString()));
     }
 
     @Test
     public void intTest() {
-        MemoryLayout ri = InternalMemoryLayout.transform(LAYOUT, ValueLayout.OfInt.class, oi -> oi.withName("replacedInt"));
+        MemoryLayout ri = InternalMemoryLayout.transform(LAYOUT,
+                LayoutTransformer.matching(ValueLayout.OfInt.class, oi -> oi.withName("replacedInt")));
         long matchCount = matches("replacedInt", ri.toString())
                 .count();
         assertEquals(matchCount, 2L);
@@ -100,19 +122,13 @@ public class TestInternalMemoryLayout {
     @Test
     public void transformSequenceToStructTest() {
 
-        Function<SequenceLayout, MemoryLayout> mapper2 = sl -> {
+        Function<SequenceLayout, MemoryLayout> mapper = sl -> {
                 MemoryLayout[] memoryLayouts = new MemoryLayout[(int) sl.elementCount()];
                 Arrays.fill(memoryLayouts, sl.elementLayout());
                 return MemoryLayout.structLayout(memoryLayouts);
         };
 
-        Function<MemoryLayout, MemoryLayout> mapper = ml -> (ml instanceof SequenceLayout sl)
-                ? MemoryLayout.structLayout(IntStream.range(0, (int) sl.elementCount())
-                       .mapToObj(i -> sl.elementLayout())
-                       .toArray(MemoryLayout[]::new))
-                : ml;
-
-        MemoryLayout tl = InternalMemoryLayout.transform(LAYOUT, SequenceLayout.class, mapper2);
+        MemoryLayout tl = InternalMemoryLayout.transform(LAYOUT, LayoutTransformer.matching(SequenceLayout.class, mapper));
         assertEquals(tl.toString(),
 
                 "128%[" +
@@ -134,8 +150,14 @@ public class TestInternalMemoryLayout {
         MemoryLayout layout = MemoryLayout.sequenceLayout(2,
                 MemoryLayout.sequenceLayout(2, JAVA_INT)
         );
-        MemoryLayout tl2 = InternalMemoryLayout.transform(layout, SequenceLayout.class, mapper2);
+        MemoryLayout tl2 = InternalMemoryLayout.transform(layout, LayoutTransformer.matching(SequenceLayout.class, mapper));
         assertEquals(tl2.toString(), "[[i32i32][i32i32]]");
+
+        LayoutTransformer transformer = ml -> (ml instanceof SequenceLayout sl)
+                ? MemoryLayout.structLayout(IntStream.range(0, (int) sl.elementCount())
+                .mapToObj(i -> sl.elementLayout())
+                .toArray(MemoryLayout[]::new))
+                : ml;
 
     }
 

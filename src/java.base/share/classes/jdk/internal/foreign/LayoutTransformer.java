@@ -46,8 +46,7 @@ public interface LayoutTransformer {
 
     /**
      * Returns a transformer that tries to match the provided {@code type} and, if successful,
-     * applies the provided {@code matchingMapper}, otherwise an {@link #identity()} transformer is
-     * applied (i.e. no transformation is done).
+     * applies the provided {@code matchingMapper}, otherwise (if no match) no transformation is done.
      *
      * @param type           to match
      * @param matchingMapper to apply on matches

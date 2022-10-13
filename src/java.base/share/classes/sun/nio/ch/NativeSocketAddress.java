@@ -44,18 +44,18 @@ import java.util.Optional;
 import jdk.internal.access.JavaNetInetAddressAccess;
 import jdk.internal.access.SharedSecrets;
 import jdk.internal.foreign.InternalArrays;
-import jdk.internal.sys.sockaddr_in;
-import jdk.internal.sys.sockaddr_in6;
+import jdk.internal.include.netinet.sockaddr_in;
+import jdk.internal.include.netinet.sockaddr_in6;
 
 import static java.lang.foreign.MemoryLayout.PathElement.groupElement;
 import static java.lang.foreign.ValueLayout.*;
 import static java.net.StandardProtocolFamily.INET;
 import static java.net.StandardProtocolFamily.INET6;
-import static jdk.internal.sys.in_h.AF_INET;
-import static jdk.internal.sys.in_h.AF_INET6;
-import static jdk.internal.sys.sockaddr.sa_family$get;
-import static jdk.internal.sys.sockaddr_in.*;
-import static jdk.internal.sys.sockaddr_in6.*;
+import static jdk.internal.include.netinet.in_h.AF_INET;
+import static jdk.internal.include.netinet.in_h.AF_INET6;
+import static jdk.internal.include.netinet.sockaddr.sa_family$get;
+import static jdk.internal.include.netinet.sockaddr_in.*;
+import static jdk.internal.include.netinet.sockaddr_in6.*;
 
 /**
  * Represents a native socket address buffer that is the union of
@@ -83,14 +83,17 @@ public sealed interface NativeSocketAddress {
     InetSocketAddress decode() throws SocketException;
 
     /**
-     * {@return the address of the backing native memory}.
+     * {@return a read-only view of the backing native memory}.
+     *
      */
-    long address();
+    MemorySegment segment();
 
     final class Impl implements NativeSocketAddress {
 
         // The backing native memory
         private final MemorySegment segment;
+
+        private final MemorySegment segmentAsReadOnly;
 
         // IPv4 view of the backing native memory
         private final SinView sin4View;
@@ -100,6 +103,7 @@ public sealed interface NativeSocketAddress {
 
         public Impl(MemorySegment segment) {
             this.segment = Objects.requireNonNull(segment);
+            this.segmentAsReadOnly = segment.asReadOnly();
             this.sin4View = new Sin4View();
             this.sin6View = new Sin6View();
         }
@@ -136,8 +140,8 @@ public sealed interface NativeSocketAddress {
         }
 
         @Override
-        public long address() {
-            return segment.address();
+        public MemorySegment segment() {
+            return segmentAsReadOnly;
         }
 
         @Override
@@ -216,6 +220,10 @@ public sealed interface NativeSocketAddress {
         private int mismatch(Impl other) {
             return (int) MemorySegment.mismatch(segment, 0, segment.byteSize(),
                     other.segment, 0, other.segment.byteSize());
+        }
+
+        static {
+            IOUtil.load();
         }
 
         private sealed interface SinView {

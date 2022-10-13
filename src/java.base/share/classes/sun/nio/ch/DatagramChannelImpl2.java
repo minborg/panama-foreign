@@ -25,66 +25,51 @@
 
 package sun.nio.ch;
 
-import java.io.FileDescriptor;
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.io.UncheckedIOException;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.lang.ref.Cleaner.Cleanable;
-import java.lang.reflect.Method;
-import java.net.DatagramSocket;
-import java.net.Inet4Address;
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.NetworkInterface;
-import java.net.NoRouteToHostException;
-import java.net.PortUnreachableException;
-import java.net.ProtocolFamily;
-import java.net.SocketAddress;
-import java.net.SocketException;
-import java.net.SocketOption;
-import java.net.SocketTimeoutException;
-import java.net.StandardProtocolFamily;
-import java.net.StandardSocketOptions;
-import java.nio.ByteBuffer;
-import java.nio.channels.AlreadyBoundException;
-import java.nio.channels.AlreadyConnectedException;
-import java.nio.channels.AsynchronousCloseException;
-import java.nio.channels.ClosedChannelException;
-import java.nio.channels.DatagramChannel;
-import java.nio.channels.IllegalBlockingModeException;
-import java.nio.channels.MembershipKey;
-import java.nio.channels.NotYetConnectedException;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.spi.AbstractSelectableChannel;
-import java.nio.channels.spi.SelectorProvider;
-import java.security.AccessController;
-import java.security.PrivilegedExceptionAction;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Consumer;
-
+import jdk.internal.access.JavaIOFileDescriptorAccess;
+import jdk.internal.access.SharedSecrets;
 import jdk.internal.ref.CleanerFactory;
 import sun.net.ResourceManager;
 import sun.net.ext.ExtendedSocketOptions;
 import sun.net.util.IPAddressUtil;
 
+import java.io.FileDescriptor;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.io.UncheckedIOException;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.MemorySession;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.lang.ref.Cleaner.Cleanable;
+import java.lang.reflect.Method;
+import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.nio.channels.spi.AbstractSelectableChannel;
+import java.nio.channels.spi.SelectorProvider;
+import java.security.AccessController;
+import java.security.PrivilegedExceptionAction;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
+
+import static jdk.internal.include.sys.socket_h.*;
+import static jdk.internal.nio.ch.DatagramChannelImplSupport.disconnect0;
+import static jdk.internal.nio.ch.NetUtils.MAX_PACKET_LEN;
+import static jdk.internal.nio.ch.NetUtils.SOCKET_ADDRESS;
+import static jdk.internal.nio.ch.SocketReturnValueHandler.throwIfError;
+
 /**
  * An implementation of DatagramChannels.
  */
 
-class DatagramChannelImpl
+class DatagramChannelImpl2
     extends DatagramChannel
     implements SelChImpl
 {
+    private static final JavaIOFileDescriptorAccess FD_ACCESS = SharedSecrets.getJavaIOFileDescriptorAccess();
+
     // Used to make native read and write calls
     private static final NativeDispatcher nd = new DatagramDispatcher();
 
@@ -146,7 +131,7 @@ class DatagramChannelImpl
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
-            SOCKET = l.findVarHandle(DatagramChannelImpl.class, "socket", DatagramSocket.class);
+            SOCKET = l.findVarHandle(DatagramChannelImpl2.class, "socket", DatagramSocket.class);
         } catch (Exception e) {
             throw new InternalError(e);
         }
@@ -172,14 +157,14 @@ class DatagramChannelImpl
     // -- End of fields protected by stateLock
 
 
-    DatagramChannelImpl(SelectorProvider sp, boolean interruptible) throws IOException {
+    DatagramChannelImpl2(SelectorProvider sp, boolean interruptible) throws IOException {
         this(sp, (Net.isIPv6Available()
                 ? StandardProtocolFamily.INET6
                 : StandardProtocolFamily.INET),
                 interruptible);
     }
 
-    DatagramChannelImpl(SelectorProvider sp, ProtocolFamily family, boolean interruptible)
+    DatagramChannelImpl2(SelectorProvider sp, ProtocolFamily family, boolean interruptible)
         throws IOException
     {
         super(sp);
@@ -229,7 +214,7 @@ class DatagramChannelImpl
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
     }
 
-    DatagramChannelImpl(SelectorProvider sp, FileDescriptor fd)
+    DatagramChannelImpl2(SelectorProvider sp, FileDescriptor fd)
         throws IOException
     {
         super(sp);
@@ -283,10 +268,12 @@ class DatagramChannelImpl
     public DatagramSocket socket() {
         DatagramSocket socket = this.socket;
         if (socket == null) {
-            socket = DatagramSocketAdaptor.create(this);
-            if (!SOCKET.compareAndSet(this, null, socket)) {
+
+            throw new UnsupportedOperationException();             // Todo: Fix me!
+            // socket = DatagramSocketAdaptor.create(this);
+            /*if (!SOCKET.compareAndSet(this, null, socket)) {
                 socket = this.socket;
-            }
+            }*/
         }
         return socket;
     }
@@ -784,9 +771,11 @@ class DatagramChannelImpl
         throws IOException
     {
         int n = receive0(fd,
-                         ((DirectBuffer)bb).address() + pos, rem,
-                         sourceSockAddr.segment().address(),
-                         connected);
+//                ((DirectBuffer) bb).address() + pos,
+                MemorySegment.ofBuffer(bb).asSlice(pos),
+                rem,
+                sourceSockAddr.segment(),
+                connected);
         if (n > 0)
             bb.position(pos + n);
         return n;
@@ -935,8 +924,8 @@ class DatagramChannelImpl
         int written;
         int addressLen = targetSocketAddress(target);
         try {
-            written = send0(fd, ((DirectBuffer)bb).address() + pos, rem,
-                            targetSockAddr.segment().address(), addressLen);
+            written = send0(fd, MemorySegment.ofBuffer(bb).asSlice(pos), rem,
+                            targetSockAddr.segment(), addressLen);
         } catch (NoRouteToHostException nrthe) {
             // Todo: Remove this debugging feature
             throw new NoRouteToHostException(nrthe.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr + ", addressLen=" + addressLen);
@@ -1941,18 +1930,66 @@ class DatagramChannelImpl
         };
     }
 
-    // -- Native methods --
+    private static final MemorySegment ADD_LEN = createAddLen();
 
-    private static native void disconnect0(FileDescriptor fd, boolean isIPv6)
-        throws IOException;
+    static MemorySegment createAddLen() {
+        var segment = MemorySession.global().allocate(socklen_t);
+        VarHandle handle = socklen_t.varHandle();
+        handle.set(SOCKET_ADDRESS.byteSize());
+        return segment;
+    }
 
-    private static native int receive0(FileDescriptor fd, long address, int len,
-                                       long senderAddress, boolean connected)
-        throws IOException;
+    // https://linux.die.net/man/2/recvfrom
+    private static int receive0(FileDescriptor fd,
+                                MemorySegment buff,
+                                int len,
+                                MemorySegment srcAddr,
+                                boolean connected) throws IOException {
+        final int sockfd = FD_ACCESS.get(fd);
+        len = Math.min(len, MAX_PACKET_LEN);
+        boolean retry = false;
+        int n;
 
-    private static native int send0(FileDescriptor fd, long address, int len,
-                                    long targetAddress, int targetAddressLen)
-        throws IOException;
+        do {
+            retry = false;
+            n = (int) recvfrom(sockfd, buff, len, 0, srcAddr, ADD_LEN);
+/*
+            if (n < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    return IOS_UNAVAILABLE;
+                }
+                if (errno == EINTR) {
+                    return IOS_INTERRUPTED;
+                }
+                if (errno == ECONNREFUSED) {
+                    if (connected == JNI_FALSE) {
+                        retry = JNI_TRUE;
+                    } else {
+                        JNU_ThrowByName(env, JNU_JAVANETPKG "PortUnreachableException", 0);
+                        return IOS_THROWN;
+                    }
+                } else {
+                    return handleSocketError(env, errno);
+                }
+
+
+        } */
+            throwIfError(n); // Todo: Move into the commented code above
+        } while (retry);
+        return n;
+    }
+
+    // https://linux.die.net/man/2/sendto
+    private static int send0(FileDescriptor fd,
+                             MemorySegment buff,
+                             int len,
+                             MemorySegment destAddr,
+                             int addrlen) throws IOException {
+        final int sockfd = FD_ACCESS.get(fd);
+        len = Math.min(len, MAX_PACKET_LEN);
+        int n = (int) sendto(sockfd, buff, len, 0, destAddr, addrlen);
+        return throwIfError(n);
+    }
 
     static {
         IOUtil.load();

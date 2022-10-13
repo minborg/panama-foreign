@@ -1,12 +1,14 @@
 package sun.nio.ch;
 
 import jdk.internal.misc.Unsafe;
-import jdk.internal.sys.sockaddr_in;
-import jdk.internal.sys.sockaddr_in6;
+import jdk.internal.include.netinet.sockaddr_in;
+import jdk.internal.include.netinet.sockaddr_in6;
 
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.util.stream.Stream;
+
+import static jdk.internal.nio.ch.NetUtils.SOCKET_ADDRESS;
 
 /**
  * Represents a triplet of native socket addresses; source, cached and target.
@@ -48,10 +50,7 @@ sealed public interface NativeSocketAddressTriplet {
 
         private static final Unsafe UNSAFE = Unsafe.getUnsafe();
 
-        private static final long SEGMENT_SIZE = Stream.of(sockaddr_in.$LAYOUT(), sockaddr_in6.$LAYOUT())
-                .mapToLong(MemoryLayout::byteSize)
-                .max()
-                .orElseThrow(InternalError::new);
+        private static final long SEGMENT_SIZE = SOCKET_ADDRESS.byteSize();
 
         private final long baseAddress;
         private final NativeSocketAddress source;

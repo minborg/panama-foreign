@@ -25,12 +25,13 @@
 /*
  * @test
  * @enablePreview
- * @modules java.base/jdk.internal.foreign
+ * @modules java.base/jdk.internal.foreign java.base/jdk.internal.include.netinet
  * @run testng/othervm --enable-native-access=ALL-UNNAMED TestInternalMemoryLayout
  */
 
 import jdk.internal.foreign.InternalMemoryLayout;
 import jdk.internal.foreign.LayoutTransformer;
+import jdk.internal.include.netinet.Util;
 import org.testng.annotations.*;
 
 import java.lang.foreign.MemoryLayout;
@@ -45,8 +46,6 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static java.lang.foreign.ValueLayout.*;
-import static java.util.Objects.requireNonNull;
-import static java.util.stream.Collectors.joining;
 import static org.testng.Assert.*;
 
 @Test
@@ -158,6 +157,48 @@ public class TestInternalMemoryLayout {
                 .mapToObj(i -> sl.elementLayout())
                 .toArray(MemoryLayout[]::new))
                 : ml;
+
+    }
+
+    @Test
+    public void testTransformSock() {
+
+        var original = MemoryLayout.structLayout(
+                JAVA_BYTE.withName("sin6_len"),
+                JAVA_BYTE.withName("sin6_family"),
+                JAVA_SHORT.withName("sin6_port"),
+                JAVA_INT.withName("sin6_flowinfo"),
+                MemoryLayout.structLayout(
+                        MemoryLayout.unionLayout(
+                                MemoryLayout.sequenceLayout(16, JAVA_BYTE).withName("__u6_addr8"),
+                                MemoryLayout.sequenceLayout(8, JAVA_SHORT).withName("__u6_addr16"),
+                                MemoryLayout.sequenceLayout(4, JAVA_INT.withName("__u6_addr32")
+                                ).withName("__u6_addr")
+                        ).withName("sin6_addr"),
+                        JAVA_INT.withName("sin6_scope_id")
+                ).withName("sockaddr_in6"));
+
+        var nwkOrder = Util.networkOrder(original);
+
+        System.out.println("original = " + original);
+        System.out.println("nwkOrder = " + nwkOrder);
+
+        assertNotEquals(original, nwkOrder);
+        assertTrue(original.toString().equalsIgnoreCase(nwkOrder.toString()));
+
+        long obo = original.byteOffset(MemoryLayout.PathElement.groupElement("sockaddr_in6"), MemoryLayout.PathElement.groupElement("sin6_scope_id"));
+        long nbo = nwkOrder.byteOffset(MemoryLayout.PathElement.groupElement("sockaddr_in6"), MemoryLayout.PathElement.groupElement("sin6_scope_id"));
+
+        System.out.println("obo = " + obo);
+
+        System.out.println("MemoryLayout.PathElement.groupElement(\"sockaddr_in6\") = " + PathElement.groupElement("sockaddr_in6"));
+
+        assertEquals(nbo, obo);
+
+/*
+        original.varHandle(MemoryLayout.PathElement.groupElement("sockaddr_in6"), MemoryLayout.PathElement.groupElement("sin6_scope_id"));
+        nwkOrder.varHandle(MemoryLayout.PathElement.groupElement("sin6_scope_id"));
+*/
 
     }
 

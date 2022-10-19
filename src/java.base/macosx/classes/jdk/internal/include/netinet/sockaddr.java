@@ -2,9 +2,19 @@
 
 package jdk.internal.include.netinet;
 
-import java.lang.invoke.VarHandle;
 import java.lang.foreign.*;
+import java.lang.invoke.VarHandle;
 
+import static java.lang.foreign.ValueLayout.PathElement;
+/**
+ * {@snippet :
+ * struct sockaddr {
+ *     __uint8_t sa_len;
+ *     sa_family_t sa_family;
+ *     char sa_data[14];
+ * };
+ * }
+ */
 public class sockaddr {
 
     static final StructLayout $struct$LAYOUT = MemoryLayout.structLayout(
@@ -15,14 +25,26 @@ public class sockaddr {
     public static MemoryLayout $LAYOUT() {
         return sockaddr.$struct$LAYOUT;
     }
-    static final VarHandle sa_len$VH = $struct$LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("sa_len"));
+    static final VarHandle sa_len$VH = $struct$LAYOUT.varHandle(PathElement.groupElement("sa_len"));
     public static VarHandle sa_len$VH() {
         return sockaddr.sa_len$VH;
     }
+    /**
+     * Getter for field:
+     * {@snippet :
+     * __uint8_t sa_len;
+     * }
+     */
     public static byte sa_len$get(MemorySegment seg) {
         return (byte)sockaddr.sa_len$VH.get(seg);
     }
-    public static void sa_len$set( MemorySegment seg, byte x) {
+    /**
+     * Setter for field:
+     * {@snippet :
+     * __uint8_t sa_len;
+     * }
+     */
+    public static void sa_len$set(MemorySegment seg, byte x) {
         sockaddr.sa_len$VH.set(seg, x);
     }
     public static byte sa_len$get(MemorySegment seg, long index) {
@@ -31,14 +53,26 @@ public class sockaddr {
     public static void sa_len$set(MemorySegment seg, long index, byte x) {
         sockaddr.sa_len$VH.set(seg.asSlice(index*sizeof()), x);
     }
-    static final VarHandle sa_family$VH = $struct$LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("sa_family"));
+    static final VarHandle sa_family$VH = $struct$LAYOUT.varHandle(PathElement.groupElement("sa_family"));
     public static VarHandle sa_family$VH() {
         return sockaddr.sa_family$VH;
     }
+    /**
+     * Getter for field:
+     * {@snippet :
+     * sa_family_t sa_family;
+     * }
+     */
     public static byte sa_family$get(MemorySegment seg) {
         return (byte)sockaddr.sa_family$VH.get(seg);
     }
-    public static void sa_family$set( MemorySegment seg, byte x) {
+    /**
+     * Setter for field:
+     * {@snippet :
+     * sa_family_t sa_family;
+     * }
+     */
+    public static void sa_family$set(MemorySegment seg, byte x) {
         sockaddr.sa_family$VH.set(seg, x);
     }
     public static byte sa_family$get(MemorySegment seg, long index) {
@@ -52,7 +86,7 @@ public class sockaddr {
     }
     public static long sizeof() { return $LAYOUT().byteSize(); }
     public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate($LAYOUT()); }
-    public static MemorySegment allocateArray(int len, SegmentAllocator allocator) {
+    public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
         return allocator.allocate(MemoryLayout.sequenceLayout(len, $LAYOUT()));
     }
     public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, $LAYOUT(), 1, session); }

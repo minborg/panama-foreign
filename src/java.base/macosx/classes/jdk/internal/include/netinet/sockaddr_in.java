@@ -4,10 +4,19 @@ package jdk.internal.include.netinet;
 
 import java.lang.foreign.*;
 import java.lang.invoke.VarHandle;
-import java.util.Objects;
 
 import static java.lang.foreign.ValueLayout.PathElement;
-
+/**
+ * {@snippet :
+ * struct sockaddr_in {
+ *     __uint8_t sin_len;
+ *     sa_family_t sin_family;
+ *     in_port_t sin_port;
+ *     struct in_addr sin_addr;
+ *     char sin_zero[8];
+ * };
+ * }
+ */
 public class sockaddr_in {
 
     static final StructLayout $struct$LAYOUT = Util.networkOrder(MemoryLayout.structLayout(
@@ -26,10 +35,22 @@ public class sockaddr_in {
     public static VarHandle sin_len$VH() {
         return sockaddr_in.sin_len$VH;
     }
+    /**
+     * Getter for field:
+     * {@snippet :
+     * __uint8_t sin_len;
+     * }
+     */
     public static byte sin_len$get(MemorySegment seg) {
         return (byte)sockaddr_in.sin_len$VH.get(seg);
     }
-    public static void sin_len$set( MemorySegment seg, byte x) {
+    /**
+     * Setter for field:
+     * {@snippet :
+     * __uint8_t sin_len;
+     * }
+     */
+    public static void sin_len$set(MemorySegment seg, byte x) {
         sockaddr_in.sin_len$VH.set(seg, x);
     }
     public static byte sin_len$get(MemorySegment seg, long index) {
@@ -42,10 +63,22 @@ public class sockaddr_in {
     public static VarHandle sin_family$VH() {
         return sockaddr_in.sin_family$VH;
     }
+    /**
+     * Getter for field:
+     * {@snippet :
+     * sa_family_t sin_family;
+     * }
+     */
     public static byte sin_family$get(MemorySegment seg) {
         return (byte)sockaddr_in.sin_family$VH.get(seg);
     }
-    public static void sin_family$set( MemorySegment seg, byte x) {
+    /**
+     * Setter for field:
+     * {@snippet :
+     * sa_family_t sin_family;
+     * }
+     */
+    public static void sin_family$set(MemorySegment seg, byte x) {
         sockaddr_in.sin_family$VH.set(seg, x);
     }
     public static byte sin_family$get(MemorySegment seg, long index) {
@@ -58,10 +91,22 @@ public class sockaddr_in {
     public static VarHandle sin_port$VH() {
         return sockaddr_in.sin_port$VH;
     }
+    /**
+     * Getter for field:
+     * {@snippet :
+     * in_port_t sin_port;
+     * }
+     */
     public static short sin_port$get(MemorySegment seg) {
         return (short)sockaddr_in.sin_port$VH.get(seg);
     }
-    public static void sin_port$set( MemorySegment seg, short x) {
+    /**
+     * Setter for field:
+     * {@snippet :
+     * in_port_t sin_port;
+     * }
+     */
+    public static void sin_port$set(MemorySegment seg, short x) {
         sockaddr_in.sin_port$VH.set(seg, x);
     }
     public static short sin_port$get(MemorySegment seg, long index) {
@@ -70,6 +115,59 @@ public class sockaddr_in {
     public static void sin_port$set(MemorySegment seg, long index, short x) {
         sockaddr_in.sin_port$VH.set(seg.asSlice(index*sizeof()), x);
     }
+    /**
+     * {@snippet :
+     * struct in_addr {
+     *     in_addr_t s_addr;
+     * };
+     * }
+     */
+    public static final class in_addr {
+
+        // Suppresses default constructor, ensuring non-instantiability.
+        private in_addr() {}
+        static final StructLayout in_addr$struct$LAYOUT = MemoryLayout.structLayout(
+            Constants$root.C_INT$LAYOUT.withName("s_addr")
+        ).withName("in_addr");
+        public static MemoryLayout $LAYOUT() {
+            return in_addr.in_addr$struct$LAYOUT;
+        }
+        static final VarHandle s_addr$VH = in_addr$struct$LAYOUT.varHandle(PathElement.groupElement("s_addr"));
+        public static VarHandle s_addr$VH() {
+            return in_addr.s_addr$VH;
+        }
+        /**
+         * Getter for field:
+         * {@snippet :
+         * in_addr_t s_addr;
+         * }
+         */
+        public static int s_addr$get(MemorySegment seg) {
+            return (int)in_addr.s_addr$VH.get(seg);
+        }
+        /**
+         * Setter for field:
+         * {@snippet :
+         * in_addr_t s_addr;
+         * }
+         */
+        public static void s_addr$set(MemorySegment seg, int x) {
+            in_addr.s_addr$VH.set(seg, x);
+        }
+        public static int s_addr$get(MemorySegment seg, long index) {
+            return (int)in_addr.s_addr$VH.get(seg.asSlice(index*sizeof()));
+        }
+        public static void s_addr$set(MemorySegment seg, long index, int x) {
+            in_addr.s_addr$VH.set(seg.asSlice(index*sizeof()), x);
+        }
+        public static long sizeof() { return $LAYOUT().byteSize(); }
+        public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate($LAYOUT()); }
+        public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
+            return allocator.allocate(MemoryLayout.sequenceLayout(len, $LAYOUT()));
+        }
+        public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, $LAYOUT(), 1, session); }
+    }
+
     public static MemorySegment sin_addr$slice(MemorySegment seg) {
         return seg.asSlice(4, 4);
     }
@@ -78,46 +176,10 @@ public class sockaddr_in {
     }
     public static long sizeof() { return $LAYOUT().byteSize(); }
     public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate($LAYOUT()); }
-    public static MemorySegment allocateArray(int len, SegmentAllocator allocator) {
+    public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
         return allocator.allocate(MemoryLayout.sequenceLayout(len, $LAYOUT()));
     }
     public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, $LAYOUT(), 1, session); }
-
-    public final class SocketaddrIn {
-
-        public final MemorySegment segment;
-
-        public SocketaddrIn(MemorySegment segment) {
-            this.segment = Objects.requireNonNull(segment);
-        }
-
-        public void sinLen(byte sinLen) {
-            sockaddr_in.sin_len$set(segment, sinLen);
-        }
-
-        public byte sinLen() {
-            return sockaddr_in.sin_len$get(segment);
-        }
-
-        public void sinFamily(byte sinFamily) {
-            sockaddr_in.sin_family$set(segment, sinFamily);
-        }
-
-        public byte sinFamily() {
-            return sockaddr_in.sin_family$get(segment);
-        }
-
-        public void sinPort(short sinPort) {
-            sockaddr_in.sin_port$set(segment, sinPort);
-        }
-
-        public short sinPort() {
-            return sockaddr_in.sin_port$get(segment);
-        }
-
-    }
-
-
 }
 
 

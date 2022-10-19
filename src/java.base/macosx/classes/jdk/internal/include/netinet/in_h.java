@@ -3,11 +3,8 @@
 package jdk.internal.include.netinet;
 
 import static java.lang.foreign.ValueLayout.*;
+public class in_h  {
 
-public final class in_h {
-
-    // Suppresses default constructor, ensuring non-instantiability.
-    private in_h() {}
     public static final OfByte C_CHAR = Constants$root.C_CHAR$LAYOUT;
     public static final OfShort C_SHORT = Constants$root.C_SHORT$LAYOUT;
     public static final OfInt C_INT = Constants$root.C_INT$LAYOUT;
@@ -16,9 +13,27 @@ public final class in_h {
     public static final OfFloat C_FLOAT = Constants$root.C_FLOAT$LAYOUT;
     public static final OfDouble C_DOUBLE = Constants$root.C_DOUBLE$LAYOUT;
     public static final OfAddress C_POINTER = Constants$root.C_POINTER$LAYOUT;
+    /**
+     * {@snippet lang = text:
+     * #define AF_UNSPEC 0
+     * }
+     */
+    public static int AF_UNSPEC() {
+        return (int)0L;
+    }
+    /**
+     * {@snippet :
+     * #define AF_INET 2
+     * }
+     */
     public static int AF_INET() {
         return (int)2L;
     }
+    /**
+     * {@snippet :
+     * #define AF_INET6 30
+     * }
+     */
     public static int AF_INET6() {
         return (int)30L;
     }

@@ -1,14 +1,10 @@
 package sun.nio.ch;
 
 import jdk.internal.misc.Unsafe;
-import jdk.internal.include.netinet.sockaddr_in;
-import jdk.internal.include.netinet.sockaddr_in6;
 
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.util.stream.Stream;
 
-import static jdk.internal.nio.ch.NetUtils.SOCKET_ADDRESS;
+import static jdk.internal.include.support.ch.NetUtils.SOCKET_ADDRESS;
 
 /**
  * Represents a triplet of native socket addresses; source, cached and target.

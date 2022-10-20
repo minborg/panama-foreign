@@ -2,10 +2,10 @@
 
 package jdk.internal.include.netinet;
 
-import java.lang.foreign.*;
-import java.lang.invoke.VarHandle;
+import jdk.internal.include.common.Constants$root;
 
-import static java.lang.foreign.ValueLayout.PathElement;
+import java.lang.foreign.*;
+
 /**
  * {@snippet :
  * struct sockaddr_in6 {
@@ -18,9 +18,9 @@ import static java.lang.foreign.ValueLayout.PathElement;
  * };
  * }
  */
-public class sockaddr_in6 {
+final class sockaddr_in6 {
 
-    static final StructLayout $struct$LAYOUT = Util.networkOrder(MemoryLayout.structLayout(
+    static final StructLayout $struct$LAYOUT = MemoryLayout.structLayout(
         Constants$root.C_CHAR$LAYOUT.withName("sin6_len"),
         Constants$root.C_CHAR$LAYOUT.withName("sin6_family"),
         Constants$root.C_SHORT$LAYOUT.withName("sin6_port"),
@@ -33,122 +33,11 @@ public class sockaddr_in6 {
             ).withName("__u6_addr")
         ).withName("sin6_addr"),
         Constants$root.C_INT$LAYOUT.withName("sin6_scope_id")
-    ).withName("sockaddr_in6"));
-    public static MemoryLayout $LAYOUT() {
+    ).withName("sockaddr_in6");
+    static MemoryLayout $LAYOUT() {
         return sockaddr_in6.$struct$LAYOUT;
     }
-    static final VarHandle sin6_len$VH = $struct$LAYOUT.varHandle(PathElement.groupElement("sin6_len"));
-    public static VarHandle sin6_len$VH() {
-        return sockaddr_in6.sin6_len$VH;
-    }
-    /**
-     * Getter for field:
-     * {@snippet :
-     * __uint8_t sin6_len;
-     * }
-     */
-    public static byte sin6_len$get(MemorySegment seg) {
-        return (byte)sockaddr_in6.sin6_len$VH.get(seg);
-    }
-    /**
-     * Setter for field:
-     * {@snippet :
-     * __uint8_t sin6_len;
-     * }
-     */
-    public static void sin6_len$set(MemorySegment seg, byte x) {
-        sockaddr_in6.sin6_len$VH.set(seg, x);
-    }
-    public static byte sin6_len$get(MemorySegment seg, long index) {
-        return (byte)sockaddr_in6.sin6_len$VH.get(seg.asSlice(index*sizeof()));
-    }
-    public static void sin6_len$set(MemorySegment seg, long index, byte x) {
-        sockaddr_in6.sin6_len$VH.set(seg.asSlice(index*sizeof()), x);
-    }
-    static final VarHandle sin6_family$VH = $struct$LAYOUT.varHandle(PathElement.groupElement("sin6_family"));
-    public static VarHandle sin6_family$VH() {
-        return sockaddr_in6.sin6_family$VH;
-    }
-    /**
-     * Getter for field:
-     * {@snippet :
-     * sa_family_t sin6_family;
-     * }
-     */
-    public static byte sin6_family$get(MemorySegment seg) {
-        return (byte)sockaddr_in6.sin6_family$VH.get(seg);
-    }
-    /**
-     * Setter for field:
-     * {@snippet :
-     * sa_family_t sin6_family;
-     * }
-     */
-    public static void sin6_family$set(MemorySegment seg, byte x) {
-        sockaddr_in6.sin6_family$VH.set(seg, x);
-    }
-    public static byte sin6_family$get(MemorySegment seg, long index) {
-        return (byte)sockaddr_in6.sin6_family$VH.get(seg.asSlice(index*sizeof()));
-    }
-    public static void sin6_family$set(MemorySegment seg, long index, byte x) {
-        sockaddr_in6.sin6_family$VH.set(seg.asSlice(index*sizeof()), x);
-    }
-    static final VarHandle sin6_port$VH = $struct$LAYOUT.varHandle(PathElement.groupElement("sin6_port"));
-    public static VarHandle sin6_port$VH() {
-        return sockaddr_in6.sin6_port$VH;
-    }
-    /**
-     * Getter for field:
-     * {@snippet :
-     * in_port_t sin6_port;
-     * }
-     */
-    public static short sin6_port$get(MemorySegment seg) {
-        return (short)sockaddr_in6.sin6_port$VH.get(seg);
-    }
-    /**
-     * Setter for field:
-     * {@snippet :
-     * in_port_t sin6_port;
-     * }
-     */
-    public static void sin6_port$set(MemorySegment seg, short x) {
-        sockaddr_in6.sin6_port$VH.set(seg, x);
-    }
-    public static short sin6_port$get(MemorySegment seg, long index) {
-        return (short)sockaddr_in6.sin6_port$VH.get(seg.asSlice(index*sizeof()));
-    }
-    public static void sin6_port$set(MemorySegment seg, long index, short x) {
-        sockaddr_in6.sin6_port$VH.set(seg.asSlice(index*sizeof()), x);
-    }
-    static final VarHandle sin6_flowinfo$VH = $struct$LAYOUT.varHandle(PathElement.groupElement("sin6_flowinfo"));
-    public static VarHandle sin6_flowinfo$VH() {
-        return sockaddr_in6.sin6_flowinfo$VH;
-    }
-    /**
-     * Getter for field:
-     * {@snippet :
-     * __uint32_t sin6_flowinfo;
-     * }
-     */
-    public static int sin6_flowinfo$get(MemorySegment seg) {
-        return (int)sockaddr_in6.sin6_flowinfo$VH.get(seg);
-    }
-    /**
-     * Setter for field:
-     * {@snippet :
-     * __uint32_t sin6_flowinfo;
-     * }
-     */
-    public static void sin6_flowinfo$set(MemorySegment seg, int x) {
-        sockaddr_in6.sin6_flowinfo$VH.set(seg, x);
-    }
-    public static int sin6_flowinfo$get(MemorySegment seg, long index) {
-        return (int)sockaddr_in6.sin6_flowinfo$VH.get(seg.asSlice(index*sizeof()));
-    }
-    public static void sin6_flowinfo$set(MemorySegment seg, long index, int x) {
-        sockaddr_in6.sin6_flowinfo$VH.set(seg.asSlice(index*sizeof()), x);
-    }
+
     /**
      * {@snippet :
      * struct in6_addr {
@@ -156,7 +45,7 @@ public class sockaddr_in6 {
      * };
      * }
      */
-    public static final class in6_addr {
+    static final class in6_addr {
 
         // Suppresses default constructor, ensuring non-instantiability.
         private in6_addr() {}
@@ -179,7 +68,7 @@ public class sockaddr_in6 {
          * };
          * }
          */
-        public static final class __u6_addr {
+        static final class __u6_addr {
 
             // Suppresses default constructor, ensuring non-instantiability.
             private __u6_addr() {}
@@ -191,71 +80,8 @@ public class sockaddr_in6 {
             public static MemoryLayout $LAYOUT() {
                 return __u6_addr.in6_addr$__u6_addr$union$LAYOUT;
             }
-            public static MemorySegment __u6_addr8$slice(MemorySegment seg) {
-                return seg.asSlice(0, 16);
-            }
-            public static MemorySegment __u6_addr16$slice(MemorySegment seg) {
-                return seg.asSlice(0, 16);
-            }
-            public static MemorySegment __u6_addr32$slice(MemorySegment seg) {
-                return seg.asSlice(0, 16);
-            }
-            public static long sizeof() { return $LAYOUT().byteSize(); }
-            public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate($LAYOUT()); }
-            public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
-                return allocator.allocate(MemoryLayout.sequenceLayout(len, $LAYOUT()));
-            }
-            public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, $LAYOUT(), 1, session); }
         }
-
-        public static MemorySegment __u6_addr$slice(MemorySegment seg) {
-            return seg.asSlice(0, 16);
-        }
-        public static long sizeof() { return $LAYOUT().byteSize(); }
-        public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate($LAYOUT()); }
-        public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
-            return allocator.allocate(MemoryLayout.sequenceLayout(len, $LAYOUT()));
-        }
-        public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, $LAYOUT(), 1, session); }
     }
 
-    public static MemorySegment sin6_addr$slice(MemorySegment seg) {
-        return seg.asSlice(8, 16);
-    }
-    static final VarHandle sin6_scope_id$VH = $struct$LAYOUT.varHandle(PathElement.groupElement("sin6_scope_id"));
-    public static VarHandle sin6_scope_id$VH() {
-        return sockaddr_in6.sin6_scope_id$VH;
-    }
-    /**
-     * Getter for field:
-     * {@snippet :
-     * __uint32_t sin6_scope_id;
-     * }
-     */
-    public static int sin6_scope_id$get(MemorySegment seg) {
-        return (int)sockaddr_in6.sin6_scope_id$VH.get(seg);
-    }
-    /**
-     * Setter for field:
-     * {@snippet :
-     * __uint32_t sin6_scope_id;
-     * }
-     */
-    public static void sin6_scope_id$set(MemorySegment seg, int x) {
-        sockaddr_in6.sin6_scope_id$VH.set(seg, x);
-    }
-    public static int sin6_scope_id$get(MemorySegment seg, long index) {
-        return (int)sockaddr_in6.sin6_scope_id$VH.get(seg.asSlice(index*sizeof()));
-    }
-    public static void sin6_scope_id$set(MemorySegment seg, long index, int x) {
-        sockaddr_in6.sin6_scope_id$VH.set(seg.asSlice(index*sizeof()), x);
-    }
-    public static long sizeof() { return $LAYOUT().byteSize(); }
-    public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate($LAYOUT()); }
-    public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
-        return allocator.allocate(MemoryLayout.sequenceLayout(len, $LAYOUT()));
-    }
-    public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, $LAYOUT(), 1, session); }
+    private sockaddr_in6() {}
 }
-
-

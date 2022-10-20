@@ -27,6 +27,11 @@ package sun.nio.ch;
 
 import jdk.internal.access.JavaIOFileDescriptorAccess;
 import jdk.internal.access.SharedSecrets;
+import jdk.internal.include.CurrentOs;
+import jdk.internal.include.common.Os;
+import jdk.internal.include.netinet.SockaddrIn6Struct;
+import jdk.internal.include.netinet.SockaddrInStruct;
+import jdk.internal.include.sys.SocketH;
 import jdk.internal.ref.CleanerFactory;
 import sun.net.ResourceManager;
 import sun.net.ext.ExtendedSocketOptions;
@@ -54,11 +59,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
-import static jdk.internal.include.sys.socket_h.*;
-import static jdk.internal.nio.ch.DatagramChannelImplSupport.disconnect0;
-import static jdk.internal.nio.ch.NetUtils.MAX_PACKET_LEN;
-import static jdk.internal.nio.ch.NetUtils.SOCKET_ADDRESS;
-import static jdk.internal.nio.ch.SocketReturnValueHandler.throwIfError;
+import static jdk.internal.include.netinet.InH.AF_INET;
+import static jdk.internal.include.netinet.InH.AF_INET6;
+import static jdk.internal.include.sys.SocketH.*;
+import static jdk.internal.include.support.ch.NetUtils.MAX_PACKET_LEN;
+import static jdk.internal.include.support.ch.NetUtils.SOCKET_ADDRESS;
+import static jdk.internal.include.support.ch.SocketReturnValueHandler.throwIfError;
 
 /**
  * An implementation of DatagramChannels.
@@ -1933,8 +1939,8 @@ class DatagramChannelImpl2
     private static final MemorySegment ADD_LEN = createAddLen();
 
     static MemorySegment createAddLen() {
-        var segment = MemorySession.global().allocate(socklen_t);
-        VarHandle handle = socklen_t.varHandle();
+        var segment = MemorySession.global().allocate(socklen_t());
+        VarHandle handle = socklen_t().varHandle();
         handle.set(SOCKET_ADDRESS.byteSize());
         return segment;
     }
@@ -1989,6 +1995,27 @@ class DatagramChannelImpl2
         len = Math.min(len, MAX_PACKET_LEN);
         int n = (int) sendto(sockfd, buff, len, 0, destAddr, addrlen);
         return throwIfError(n);
+    }
+
+    public static void disconnect0(FileDescriptor fd, boolean isIPv6) throws IOException {
+        final int rv;
+        // This will prune byte code the branch not taken
+        if (CurrentOs.OS == Os.MAC_OS) {
+            rv = disconnectx(FD_ACCESS.get(fd), SocketH.SAE_ASSOCID_ANY(), SocketH.SAE_CONNID_ANY());
+        } else {
+            try (var session = MemorySession.openImplicit()) {
+                var segment = session.allocate(SockaddrIn6Struct.layout());
+                byte len = (byte)(isIPv6 ? SockaddrIn6Struct.sizeof() : SockaddrInStruct.sizeof());
+
+                        SockaddrIn6Struct.sin6_family$set(segment,
+                        (byte) (isIPv6 ? AF_INET6() : AF_INET()),
+                        len);
+                rv = SocketH.connect(FD_ACCESS.get(fd), segment, len);
+            }
+        }
+        // Todo: add proper error handling here
+        // Todo: investigate how to access errno
+        throwIfError(rv);
     }
 
     static {

@@ -2,6 +2,9 @@
 
 package jdk.internal.include.sys;
 
+import jdk.internal.include.common.RuntimeHelper;
+import jdk.internal.include.common.Constants$root;
+
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.invoke.MethodHandle;
 
@@ -9,33 +12,6 @@ final class constants$0 {
 
     // Suppresses default constructor, ensuring non-instantiability.
     private constants$0() {}
-    static final FunctionDescriptor __darwin_check_fd_set_overflow$FUNC = FunctionDescriptor.of(Constants$root.C_INT$LAYOUT,
-        Constants$root.C_INT$LAYOUT,
-        Constants$root.C_POINTER$LAYOUT,
-        Constants$root.C_INT$LAYOUT
-    );
-    static final MethodHandle __darwin_check_fd_set_overflow$MH = RuntimeHelper.downcallHandle(
-        "__darwin_check_fd_set_overflow",
-        constants$0.__darwin_check_fd_set_overflow$FUNC
-    );
-    static final FunctionDescriptor accept$FUNC = FunctionDescriptor.of(Constants$root.C_INT$LAYOUT,
-        Constants$root.C_INT$LAYOUT,
-        Constants$root.C_POINTER$LAYOUT,
-        Constants$root.C_POINTER$LAYOUT
-    );
-    static final MethodHandle accept$MH = RuntimeHelper.downcallHandle(
-        "accept",
-        constants$0.accept$FUNC
-    );
-    static final FunctionDescriptor bind$FUNC = FunctionDescriptor.of(Constants$root.C_INT$LAYOUT,
-        Constants$root.C_INT$LAYOUT,
-        Constants$root.C_POINTER$LAYOUT,
-        Constants$root.C_INT$LAYOUT
-    );
-    static final MethodHandle bind$MH = RuntimeHelper.downcallHandle(
-        "bind",
-        constants$0.bind$FUNC
-    );
     static final FunctionDescriptor connect$FUNC = FunctionDescriptor.of(Constants$root.C_INT$LAYOUT,
         Constants$root.C_INT$LAYOUT,
         Constants$root.C_POINTER$LAYOUT,
@@ -45,24 +21,38 @@ final class constants$0 {
         "connect",
         constants$0.connect$FUNC
     );
-    static final FunctionDescriptor getpeername$FUNC = FunctionDescriptor.of(Constants$root.C_INT$LAYOUT,
+    static final FunctionDescriptor recvfrom$FUNC = FunctionDescriptor.of(Constants$root.C_LONG_LONG$LAYOUT,
+        Constants$root.C_INT$LAYOUT,
+        Constants$root.C_POINTER$LAYOUT,
+        Constants$root.C_LONG_LONG$LAYOUT,
         Constants$root.C_INT$LAYOUT,
         Constants$root.C_POINTER$LAYOUT,
         Constants$root.C_POINTER$LAYOUT
     );
-    static final MethodHandle getpeername$MH = RuntimeHelper.downcallHandle(
-        "getpeername",
-        constants$0.getpeername$FUNC
+    static final MethodHandle recvfrom$MH = RuntimeHelper.downcallHandle(
+        "recvfrom",
+        constants$0.recvfrom$FUNC
     );
-    static final FunctionDescriptor getsockname$FUNC = FunctionDescriptor.of(Constants$root.C_INT$LAYOUT,
+    static final FunctionDescriptor sendto$FUNC = FunctionDescriptor.of(Constants$root.C_LONG_LONG$LAYOUT,
         Constants$root.C_INT$LAYOUT,
         Constants$root.C_POINTER$LAYOUT,
-        Constants$root.C_POINTER$LAYOUT
+        Constants$root.C_LONG_LONG$LAYOUT,
+        Constants$root.C_INT$LAYOUT,
+        Constants$root.C_POINTER$LAYOUT,
+        Constants$root.C_INT$LAYOUT
     );
-    static final MethodHandle getsockname$MH = RuntimeHelper.downcallHandle(
-        "getsockname",
-        constants$0.getsockname$FUNC
+    static final MethodHandle sendto$MH = RuntimeHelper.downcallHandle(
+        "sendto",
+        constants$0.sendto$FUNC
     );
+    static final FunctionDescriptor disconnectx$FUNC = FunctionDescriptor.of(Constants$root.C_INT$LAYOUT,
+        Constants$root.C_INT$LAYOUT,
+        Constants$root.C_INT$LAYOUT,
+        Constants$root.C_INT$LAYOUT
+    );
+    static final MethodHandle disconnectx$MH = RuntimeHelper.downcallHandle(
+        "disconnectx",
+        constants$0.disconnectx$FUNC
+    );
+
 }
-
-

@@ -31,7 +31,7 @@
 
 import jdk.internal.foreign.InternalMemoryLayout;
 import jdk.internal.foreign.LayoutTransformer;
-import jdk.internal.include.netinet.Util;
+import jdk.internal.include.common.Util;
 import org.testng.annotations.*;
 
 import java.lang.foreign.MemoryLayout;

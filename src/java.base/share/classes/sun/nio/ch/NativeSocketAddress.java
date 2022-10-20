@@ -44,18 +44,18 @@ import java.util.Optional;
 import jdk.internal.access.JavaNetInetAddressAccess;
 import jdk.internal.access.SharedSecrets;
 import jdk.internal.foreign.InternalArrays;
-import jdk.internal.include.netinet.sockaddr_in;
-import jdk.internal.include.netinet.sockaddr_in6;
+import jdk.internal.include.netinet.SockaddrInStruct;
+import jdk.internal.include.netinet.SockaddrIn6Struct;
 
 import static java.lang.foreign.MemoryLayout.PathElement.groupElement;
 import static java.lang.foreign.ValueLayout.*;
 import static java.net.StandardProtocolFamily.INET;
 import static java.net.StandardProtocolFamily.INET6;
-import static jdk.internal.include.netinet.in_h.AF_INET;
-import static jdk.internal.include.netinet.in_h.AF_INET6;
-import static jdk.internal.include.netinet.sockaddr.sa_family$get;
-import static jdk.internal.include.netinet.sockaddr_in.*;
-import static jdk.internal.include.netinet.sockaddr_in6.*;
+import static jdk.internal.include.netinet.InH.AF_INET;
+import static jdk.internal.include.netinet.InH.AF_INET6;
+import static jdk.internal.include.netinet.SockaddrStruct.sa_family$get;
+import static jdk.internal.include.netinet.SockaddrInStruct.*;
+import static jdk.internal.include.netinet.SockaddrIn6Struct.*;
 
 /**
  * Represents a native socket address buffer that is the union of
@@ -323,7 +323,7 @@ public sealed interface NativeSocketAddress {
 
         private final class Sin4View extends AbstractSinView implements SinView {
 
-            private static final VarHandle INT_ADDRESS_VH = sockaddr_in.$LAYOUT().varHandle(
+            private static final VarHandle INT_ADDRESS_VH = SockaddrInStruct.layout().varHandle(
                     groupElement("sin_addr"),
                     groupElement("s_addr"));
 
@@ -371,7 +371,7 @@ public sealed interface NativeSocketAddress {
 
             @Override
             public int sizeOf() {
-                return (int) sockaddr_in.sizeof();
+                return (int) SockaddrInStruct.sizeof();
             }
 
             @Override
@@ -388,7 +388,7 @@ public sealed interface NativeSocketAddress {
         private final class Sin6View extends AbstractSinView implements SinView {
 
             private static final short FFFF = -1;
-            private static final long OFFSET_SIN6_ADDR = sockaddr_in6.$LAYOUT()
+            private static final long OFFSET_SIN6_ADDR = SockaddrIn6Struct.layout()
                     .byteOffset(groupElement("sin6_addr"));
 
             private static final OfInt JAVA_INT_NETWORK_ORDER = JAVA_INT.withOrder(ByteOrder.BIG_ENDIAN);
@@ -447,7 +447,7 @@ public sealed interface NativeSocketAddress {
 
             @Override
             public int sizeOf() {
-                return (int) sockaddr_in6.sizeof();
+                return (int) SockaddrIn6Struct.sizeof();
             }
 
             @Override

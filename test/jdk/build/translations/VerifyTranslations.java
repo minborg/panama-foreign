@@ -54,7 +54,7 @@ public class VerifyTranslations {
      * Known classes that are guaranteed not to be a translation in an Oracle built image
      */
     private static final Set<String> EXEMPTED_NAMES = Stream.of(
-                    "java.base/jdk/internal/sys/sockaddr_in"
+                    "java.base/jdk/internal/include/netinet/sockaddr_in"
             )
             .flatMap(n -> Stream.of(n + ".class", n + ".java"))
             .collect(Collectors.toUnmodifiableSet());

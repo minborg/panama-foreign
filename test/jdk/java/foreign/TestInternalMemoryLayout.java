@@ -25,12 +25,13 @@
 /*
  * @test
  * @enablePreview
- * @modules java.base/jdk.internal.foreign java.base/jdk.internal.include.netinet
+ * @modules java.base/jdk.internal.foreign java.base/jdk.internal.include.common
  * @run testng/othervm --enable-native-access=ALL-UNNAMED TestInternalMemoryLayout
  */
 
 import jdk.internal.foreign.InternalMemoryLayout;
 import jdk.internal.foreign.LayoutTransformer;
+
 import jdk.internal.include.common.Util;
 import org.testng.annotations.*;
 

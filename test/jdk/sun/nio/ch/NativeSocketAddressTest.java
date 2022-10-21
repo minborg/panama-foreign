@@ -25,18 +25,20 @@
  * @test
  * @enablePreview
  * @modules java.base/sun.nio.ch
- * @modules java.base/jdk.internal.ref java.base/jdk.internal.sys
+ * @modules java.base/jdk.internal.ref java.base/jdk.internal.include.sys java.base/jdk.internal.include.netinet
  * @run testng/othervm --enable-native-access=ALL-UNNAMED NativeSocketAddressTest
  */
 
-import jdk.internal.include.netinet.sockaddr_in;
-import jdk.internal.include.netinet.sockaddr_in6;
+import jdk.internal.include.netinet.SockaddrIn6Struct;
+import jdk.internal.include.netinet.SockaddrInStruct;
+
 import org.testng.annotations.*;
 import sun.nio.ch.NativeSocketAddress;
 import sun.nio.ch.NativeSocketAddressTriplet;
 
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.MemorySession;
 import java.lang.foreign.ValueLayout;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -47,8 +49,8 @@ import java.util.Optional;
 
 import static java.net.StandardProtocolFamily.INET;
 import static java.net.StandardProtocolFamily.INET6;
-import static jdk.internal.include.netinet.in_h.AF_INET;
-import static jdk.internal.include.netinet.in_h.AF_INET6;
+import static jdk.internal.include.netinet.InH.AF_INET;
+import static jdk.internal.include.netinet.InH.AF_INET6;
 import static org.testng.Assert.*;
 
 public class NativeSocketAddressTest {
@@ -59,8 +61,8 @@ public class NativeSocketAddressTest {
     public void testNetworkOrder() {
         // If this fails, nothing will ever work.
         // The $LAYOUT() has to be manually edited to reflect "network order" (=big endian) rather than "native order"
-        assertInNetworkOrder(sockaddr_in.$LAYOUT(), "sin_port");
-        assertInNetworkOrder(sockaddr_in6.$LAYOUT(), "sin6_port");
+        assertInNetworkOrder(SockaddrInStruct.layout(), "sin_port");
+        assertInNetworkOrder(SockaddrIn6Struct.layout(), "sin6_port");
     }
 
     static void assertInNetworkOrder(MemoryLayout layout, String name) {
@@ -122,7 +124,7 @@ public class NativeSocketAddressTest {
             var inetSocketAddress = new InetSocketAddress("128.129.130.131", 0xabcd);
             nas.encode(INET, inetSocketAddress);
             //final MemorySegment segment = MemorySegment.ofAddress(nas.address(), sockaddr_in.sizeof());
-            final MemorySegment segment = nas.segment().asSlice(0, sockaddr_in.sizeof());
+            final MemorySegment segment = nas.segment().asSlice(0, SockaddrInStruct.sizeof());
             final String actual = HexFormat.ofDelimiter(" ").formatHex(segment.toArray(ValueLayout.JAVA_BYTE));
             System.out.println("hex4 = " + actual);
             var expect = String.format("00 " + // sin_len
@@ -143,7 +145,7 @@ public class NativeSocketAddressTest {
             var inetSocketAddress = new InetSocketAddress("8000:8101:8202:8303:8404:8505:8606:8707", 0xabcd);
             nas.encode(INET6, inetSocketAddress);
             // final MemorySegment segment = MemorySegment.ofAddress(nas.address(), sockaddr_in6.sizeof());
-            final MemorySegment segment = nas.segment().asSlice(0, sockaddr_in6.sizeof());
+            final MemorySegment segment = nas.segment().asSlice(0, SockaddrIn6Struct.sizeof());
             final String actual = HexFormat.ofDelimiter(" ").formatHex(segment.toArray(ValueLayout.JAVA_BYTE));
             System.out.println("hex6 = " + actual);
             var expect = String.format(
@@ -166,7 +168,7 @@ public class NativeSocketAddressTest {
             var inetSocketAddress = new InetSocketAddress("128.129.130.131", 0xabcd);
             nas.encode(INET6, inetSocketAddress);
             //final MemorySegment segment = MemorySegment.ofAddress(nas.address(), sockaddr_in6.sizeof());
-            final MemorySegment segment = nas.segment().asSlice(0, sockaddr_in6.sizeof());
+            final MemorySegment segment = nas.segment().asSlice(0, SockaddrIn6Struct.sizeof());
             final String actual = HexFormat.ofDelimiter(" ").formatHex(segment.toArray(ValueLayout.JAVA_BYTE));
             System.out.println("hex6With4 = " + actual);
             var expect = String.format(
@@ -189,7 +191,7 @@ public class NativeSocketAddressTest {
             var inetSocketAddress = new InetSocketAddress("fe80:0:0:0:1819:41bf:ea81:1516", 60499);
             nas.encode(INET6, inetSocketAddress);
             // final MemorySegment segment = MemorySegment.ofAddress(nas.address(), sockaddr_in6.sizeof());
-            final MemorySegment segment = nas.segment().asSlice(0, sockaddr_in6.sizeof());
+            final MemorySegment segment = nas.segment().asSlice(0, SockaddrIn6Struct.sizeof());
             final String actual = HexFormat.ofDelimiter(" ").formatHex(segment.toArray(ValueLayout.JAVA_BYTE));
             System.out.println("hexSuspectedError = " + actual);
             var expect = String.format(

@@ -29,6 +29,8 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner.Cleanable;
@@ -65,13 +67,17 @@ import java.security.PrivilegedExceptionAction;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
+import jdk.internal.foreign.MemoryInspection;
+import jdk.internal.include.netinet.SockaddrIn6Struct;
 import jdk.internal.ref.CleanerFactory;
 import sun.net.ResourceManager;
 import sun.net.ext.ExtendedSocketOptions;
@@ -939,14 +945,14 @@ class DatagramChannelImpl
                             targetSockAddr.segment().address(), addressLen);
         } catch (NoRouteToHostException nrthe) {
             // Todo: Remove this debugging feature
-            throw new NoRouteToHostException(nrthe.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr + ", addressLen=" + addressLen);
+            throw new NoRouteToHostException(nrthe.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr + ", addressLen=" + addressLen + " " + toHex(targetSockAddr.segment()) + " " + toString(targetSockAddr.segment()));
         } catch (PortUnreachableException pue) {
             if (isConnected())
                 throw pue;
             written = rem;
         } catch (SocketException se) {
             // Todo: Remove this debugging feature
-            throw new SocketException(se.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr+ ", addressLen=" + addressLen, se);
+            throw new SocketException(se.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr+ ", addressLen=" + addressLen+ " " + toHex(targetSockAddr.segment())+ " " + toString(targetSockAddr.segment()), se);
         }
         if (written > 0)
             bb.position(pos + written);
@@ -1957,4 +1963,16 @@ class DatagramChannelImpl
     static {
         IOUtil.load();
     }
+
+    // Todo: Remove these
+
+    private static String toString(MemorySegment segment) {
+        return MemoryInspection.inspect(segment, SockaddrIn6Struct.layout(), MemoryInspection.standardRenderer())
+                .collect(Collectors.joining(System.lineSeparator()));
+    }
+
+    private static String toHex(MemorySegment segment) {
+        return HexFormat.ofDelimiter(" ").formatHex(segment.toArray(ValueLayout.JAVA_BYTE));
+    }
+
 }

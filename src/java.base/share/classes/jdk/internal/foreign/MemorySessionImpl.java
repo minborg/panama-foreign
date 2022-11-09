@@ -36,6 +36,8 @@ import java.util.Objects;
 import jdk.internal.misc.ScopedMemoryAccess;
 import jdk.internal.vm.annotation.ForceInline;
 
+import static jdk.internal.foreign.MappedMemorySegmentImpl.SCOPED_MEMORY_ACCESS;
+
 /**
  * This class manages the temporal bounds associated with a memory segment as well
  * as thread confinement. A session has a liveness bit, which is updated when the session is closed
@@ -76,7 +78,7 @@ public abstract sealed class MemorySessionImpl
         }
     }
 
-    public void addCloseAction(Runnable runnable) {
+    public final void addCloseAction(Runnable runnable) {
         Objects.requireNonNull(runnable);
         addInternal(ResourceList.ResourceCleanup.ofRunnable(runnable));
     }
@@ -91,7 +93,7 @@ public abstract sealed class MemorySessionImpl
      * new segment to the client). For this reason, it's not worth adding extra complexity to the segment
      * initialization logic here - and using an optimistic logic works well in practice.
      */
-    public void addOrCleanupIfFail(ResourceList.ResourceCleanup resource) {
+    public final void addOrCleanupIfFail(ResourceList.ResourceCleanup resource) {
         try {
             addInternal(resource);
         } catch (Throwable ex) {
@@ -129,17 +131,40 @@ public abstract sealed class MemorySessionImpl
     }
 
     @Override
-    public MemorySegment allocate(long byteSize, long byteAlignment) {
+    public final MemorySegment allocate(long byteSize, long byteAlignment) {
         Utils.checkAllocationSizeAndAlign(byteSize, byteAlignment);
         return NativeMemorySegmentImpl.makeNativeSegment(byteSize, byteAlignment, this);
     }
 
-    public abstract void release0();
+    @ForceInline
+    public void release0() {
+        int value;
+        do {
+            value = (int)STATE.getVolatile(this);
+            if (value <= OPEN) {
+                //cannot get here - we can't close segment twice
+                throw alreadyClosed();
+            }
+        } while (!STATE.compareAndSet(this, value, value - 1));
+    }
 
-    public abstract void acquire0();
+    @ForceInline
+    public void acquire0() {
+        int value;
+        do {
+            value = (int)STATE.getVolatile(this);
+            if (value < OPEN) {
+                //segment is not open!
+                throw alreadyClosed();
+            } else if (value == MAX_FORKS) {
+                //overflow
+                throw tooManyAcquires();
+            }
+        } while (!STATE.compareAndSet(this, value, value + 1));
+    }
 
     @Override
-    public void whileAlive(Runnable action) {
+    public final void whileAlive(Runnable action) {
         Objects.requireNonNull(action);
         acquire0();
         try {
@@ -168,8 +193,9 @@ public abstract sealed class MemorySessionImpl
      * Returns true, if this session is still open. This method may be called in any thread.
      * @return {@code true} if this session is not closed yet.
      */
-    public boolean isAlive() {
-        return state >= OPEN;
+    @Override
+    public final boolean isAlive() {
+        return state() >= OPEN;
     }
 
     /**
@@ -181,11 +207,11 @@ public abstract sealed class MemorySessionImpl
      * please use {@link #checkValidState()}.
      */
     @ForceInline
-    public void checkValidStateRaw() {
+    public final void checkValidStateRaw() {
         if (owner != null && owner != Thread.currentThread()) {
             throw WRONG_THREAD;
         }
-        if (state < OPEN) {
+        if (!isAlive()) {
             throw ALREADY_CLOSED;
         }
     }
@@ -195,7 +221,7 @@ public abstract sealed class MemorySessionImpl
      * @throws IllegalStateException if this session is already closed or if this is
      * a confined session and this method is called outside of the owner thread.
      */
-    public void checkValidState() {
+    public final void checkValidState() {
         try {
             checkValidStateRaw();
         } catch (ScopedMemoryAccess.ScopedAccessError error) {
@@ -204,7 +230,7 @@ public abstract sealed class MemorySessionImpl
     }
 
     @Override
-    protected Object clone() throws CloneNotSupportedException {
+    protected final Object clone() throws CloneNotSupportedException {
         throw new CloneNotSupportedException();
     }
 
@@ -217,12 +243,28 @@ public abstract sealed class MemorySessionImpl
      * @throws IllegalStateException if this session is already closed or if this is
      * a confined session and this method is called outside of the owner thread.
      */
-    public void close() {
+    public final void close() {
         justClose();
         resourceList.cleanup();
     }
 
-    abstract void justClose();
+    void justClose() {
+        int prevState = (int) STATE.compareAndExchange(this, OPEN, CLOSING);
+        if (prevState < 0) {
+            throw alreadyClosed();
+        } else if (prevState != OPEN) {
+            throw alreadyAcquired(prevState);
+        }
+        boolean success = SCOPED_MEMORY_ACCESS.closeScope(this);
+        STATE.setVolatile(this, success ? CLOSED : OPEN);
+        if (!success) {
+            throw alreadyAcquired(1);
+        }
+    }
+
+    private int state() {
+        return (int)STATE.get(this);
+    }
 
     public static MemorySessionImpl heapSession(Object ref) {
         return new GlobalSession(ref);

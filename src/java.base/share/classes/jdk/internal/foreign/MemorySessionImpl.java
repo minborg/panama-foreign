@@ -34,9 +34,14 @@ import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.IntUnaryOperator;
+
 import jdk.internal.misc.ScopedMemoryAccess;
 import jdk.internal.ref.CleanerFactory;
 import jdk.internal.vm.annotation.ForceInline;
+
+import static jdk.internal.foreign.MappedMemorySegmentImpl.SCOPED_MEMORY_ACCESS;
 
 /**
  * This class manages the temporal bounds associated with a memory segment as well
@@ -58,7 +63,7 @@ public abstract sealed class MemorySessionImpl
     static final int CLOSING = -1;
     static final int CLOSED = -2;
 
-    static final VarHandle STATE;
+/*    static final VarHandle STATE;*/
     static final int MAX_FORKS = Integer.MAX_VALUE;
 
     public static final MemorySessionImpl GLOBAL = new GlobalSession(null);
@@ -68,15 +73,16 @@ public abstract sealed class MemorySessionImpl
 
     final ResourceList resourceList;
     final Thread owner;
-    int state = OPEN;
+    // MemorySession::isAlive can be called from any thread. Hence, we need to be thread-safe in handling the state.
+    final AtomicInteger state = new AtomicInteger(OPEN);
 
-    static {
+/*    static {
         try {
             STATE = MethodHandles.lookup().findVarHandle(MemorySessionImpl.class, "state", int.class);
         } catch (Throwable ex) {
             throw new ExceptionInInitializerError(ex);
         }
-    }
+    }*/
 
     public void addCloseAction(Runnable runnable) {
         Objects.requireNonNull(runnable);
@@ -136,9 +142,40 @@ public abstract sealed class MemorySessionImpl
         return NativeMemorySegmentImpl.makeNativeSegment(byteSize, byteAlignment, this);
     }
 
-    public abstract void release0();
+    private static final IntUnaryOperator INCREMENT = new IntUnaryOperator() {
+        @Override
+        public int applyAsInt(int value) {
+            if (value < OPEN) {
+                //segment is not open!
+                throw alreadyClosed();
+            } else if (value == MAX_FORKS) {
+                //overflow
+                throw tooManyAcquires();
+            }
+            return value + 1;
+        }
+    };
 
-    public abstract void acquire0();
+    private static final IntUnaryOperator DECREMENT = new IntUnaryOperator() {
+        @Override
+        public int applyAsInt(int value) {
+            if (value <= OPEN) {
+                //cannot get here - we can't close segment twice
+                throw alreadyClosed();
+            }
+            return value - 1;
+        }
+    };
+
+    @ForceInline
+    public void acquire0() {
+        state.getAndUpdate(INCREMENT);
+    }
+
+    @ForceInline
+    public void release0() {
+        state.getAndUpdate(DECREMENT);
+    }
 
     @Override
     public void whileAlive(Runnable action) {
@@ -171,8 +208,12 @@ public abstract sealed class MemorySessionImpl
      * @return {@code true} if this session is not closed yet.
      */
     public boolean isAlive() {
-        return state >= OPEN;
+        return state.get() >= OPEN;
     }
+
+    /*{
+        return state >= OPEN;
+    }*/
 
     @ForceInline
     public static MemorySessionImpl toSessionImpl(MemorySession session) {
@@ -192,7 +233,7 @@ public abstract sealed class MemorySessionImpl
         if (owner != null && owner != Thread.currentThread()) {
             throw WRONG_THREAD;
         }
-        if (state < OPEN) {
+        if (!isAlive()) {
             throw ALREADY_CLOSED;
         }
     }
@@ -229,7 +270,19 @@ public abstract sealed class MemorySessionImpl
         resourceList.cleanup();
     }
 
-    abstract void justClose();
+    void justClose() {
+        int prevState = state.compareAndExchange(OPEN, CLOSING);
+        if (prevState < 0) {
+            throw alreadyClosed();
+        } else if (prevState != OPEN) {
+            throw alreadyAcquired(prevState);
+        }
+        boolean success = SCOPED_MEMORY_ACCESS.closeScope(this);
+        state.set(success ? CLOSED : OPEN);
+        if (!success) {
+            throw alreadyAcquired(1);
+        }
+    }
 
     public static MemorySessionImpl heapSession(Object ref) {
         return new GlobalSession(ref);

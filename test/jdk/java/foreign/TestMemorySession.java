@@ -262,7 +262,7 @@ public class TestMemorySession {
     public void testConfinedSessionWithImplicitDependency() {
         Arena root = Arena.openConfined();
         // Create many implicit sessions which depend on 'root', and let them become unreachable.
-        for (int i = 0 ; i < N_THREADS ; i++) {
+        for (int i = 0; i < N_THREADS; i++) {
             keepAlive(MemorySession.implicit(), root.session());
         }
         // Now let's keep trying to close 'root' until we succeed. This is trickier than it seems: cleanup action
@@ -274,7 +274,7 @@ public class TestMemorySession {
                 break; // success!
             } catch (IllegalStateException ex) {
                 kickGC();
-                for (int i = 0; i < N_THREADS; i++) {  // add more races from current thread
+                for (int i = 0 ; i < N_THREADS ; i++) {  // add more races from current thread
                     try (Arena arena = Arena.openConfined()) {
                         keepAlive(arena.session(), root.session());
                         // dummy
@@ -290,14 +290,14 @@ public class TestMemorySession {
         Arena root = Arena.openConfined();
         List<Thread> threads = new ArrayList<>();
         // Create many implicit sessions which depend on 'root', and let them become unreachable.
-        for (int i = 0 ; i < N_THREADS ; i++) {
+        for (int i = 0; i < N_THREADS; i++) {
             Arena arena = Arena.openShared(); // create session inside same thread!
             keepAlive(arena.session(), root.session());
             Thread t = new Thread(arena::close); // close from another thread!
             threads.add(t);
             t.start();
         }
-        for (int i = 0; i < N_THREADS; i++) { // add more races from current thread
+        for (int i = 0 ; i < N_THREADS ; i++) { // add more races from current thread
             try (Arena arena = Arena.openConfined()) {
                 keepAlive(arena.session(), root.session());
                 // dummy

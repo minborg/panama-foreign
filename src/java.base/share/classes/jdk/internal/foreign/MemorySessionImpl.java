@@ -216,6 +216,12 @@ public abstract sealed class MemorySessionImpl
         }
     }
 
+    void assertIsAccessibleByCurrentThread() {
+        if (owner != null && owner != Thread.currentThread()) {
+            throw wrongThread();
+        }
+    }
+
     /**
      * Checks that this session is still alive (see {@link #isAlive()}).
      * @throws IllegalStateException if this session is already closed or if this is

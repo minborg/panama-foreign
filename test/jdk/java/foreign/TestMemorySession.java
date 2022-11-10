@@ -202,6 +202,14 @@ public class TestMemorySession {
     }
 
     @Test
+    public void testCloseConfinedLockInSameThread() {
+        Arena arena = Arena.openConfined();
+        Arena handle = Arena.openConfined();
+        keepAlive(handle.session(), arena.session());
+        handle.close();
+    }
+
+    @Test
     public void testCloseConfinedLock() {
         Arena arena = Arena.openConfined();
         Arena handle = Arena.openConfined();

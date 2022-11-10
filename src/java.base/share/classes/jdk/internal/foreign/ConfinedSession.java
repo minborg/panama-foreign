@@ -37,6 +37,23 @@ final class ConfinedSession extends MemorySessionImpl {
         super(owner, new ConfinedResourceList());
     }
 
+    @Override
+    public void acquire0() {
+        assertIsAccessibleByCurrentThread();
+        super.acquire0();
+    }
+
+    // It is possible to that release0 is called by another thread: this session was kept alive by some other confined session
+    // which is implicitly released (in which case the release call comes from the cleaner thread). Or,
+    // this session might be kept alive by a shared session, which means the release call can come from any
+    // thread. Hence, release0() is not checked for thread usage
+
+    @Override
+    void justClose() {
+        assertIsAccessibleByCurrentThread();
+        super.justClose();
+    }
+
     /**
      * A confined resource list; no races are possible here.
      */

@@ -2,6 +2,7 @@
 
 package jdk.internal.include.netinet;
 
+import jdk.internal.include.common.Constants$root;
 import jdk.internal.include.common.RuntimeHelper;
 import jdk.internal.include.common.Util;
 
@@ -31,9 +32,9 @@ public final class SockaddrInStruct {
     public static MemoryLayout layout() {
         return LAYOUT;
     }
-    static final VarHandle sin_len$VH = layout().varHandle(PathElement.groupElement("sin_len"));
+    static final VarHandle sin_len$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sin_len"));
     public static VarHandle sin_len$VH() {
-        return SockaddrInStruct.sin_len$VH;
+        return sin_len$VH;
     }
     /**
      * Getter for field:
@@ -42,7 +43,7 @@ public final class SockaddrInStruct {
      * }
      */
     public static byte sin_len$get(MemorySegment seg) {
-        return (byte) SockaddrInStruct.sin_len$VH.get(seg);
+        return (byte)sin_len$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -51,17 +52,17 @@ public final class SockaddrInStruct {
      * }
      */
     public static void sin_len$set(MemorySegment seg, byte x) {
-        SockaddrInStruct.sin_len$VH.set(seg, x);
+        sin_len$VH.set(seg, x);
     }
     public static byte sin_len$get(MemorySegment seg, long index) {
-        return (byte) SockaddrInStruct.sin_len$VH.get(seg.asSlice(index*sizeof()));
+        return (byte)sin_len$VH.get(seg.asSlice(index*sizeof()));
     }
     public static void sin_len$set(MemorySegment seg, long index, byte x) {
-        SockaddrInStruct.sin_len$VH.set(seg.asSlice(index*sizeof()), x);
+        sin_len$VH.set(seg.asSlice(index*sizeof()), x);
     }
-    static final VarHandle sin_family$VH = layout().varHandle(PathElement.groupElement("sin_family"));
+    static final VarHandle sin_family$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sin_family"));
     public static VarHandle sin_family$VH() {
-        return SockaddrInStruct.sin_family$VH;
+        return sin_family$VH;
     }
     /**
      * Getter for field:
@@ -70,7 +71,7 @@ public final class SockaddrInStruct {
      * }
      */
     public static byte sin_family$get(MemorySegment seg) {
-        return (byte) SockaddrInStruct.sin_family$VH.get(seg);
+        return (byte)sin_family$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -79,17 +80,17 @@ public final class SockaddrInStruct {
      * }
      */
     public static void sin_family$set(MemorySegment seg, byte x) {
-        SockaddrInStruct.sin_family$VH.set(seg, x);
+        sin_family$VH.set(seg, x);
     }
     public static byte sin_family$get(MemorySegment seg, long index) {
-        return (byte) SockaddrInStruct.sin_family$VH.get(seg.asSlice(index*sizeof()));
+        return (byte)sin_family$VH.get(seg.asSlice(index*sizeof()));
     }
     public static void sin_family$set(MemorySegment seg, long index, byte x) {
-        SockaddrInStruct.sin_family$VH.set(seg.asSlice(index*sizeof()), x);
+        sin_family$VH.set(seg.asSlice(index*sizeof()), x);
     }
-    static final VarHandle sin_port$VH = layout().varHandle(PathElement.groupElement("sin_port"));
+    static final VarHandle sin_port$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sin_port"));
     public static VarHandle sin_port$VH() {
-        return SockaddrInStruct.sin_port$VH;
+        return sin_port$VH;
     }
     /**
      * Getter for field:
@@ -98,7 +99,7 @@ public final class SockaddrInStruct {
      * }
      */
     public static short sin_port$get(MemorySegment seg) {
-        return (short) SockaddrInStruct.sin_port$VH.get(seg);
+        return (short)sin_port$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -107,13 +108,13 @@ public final class SockaddrInStruct {
      * }
      */
     public static void sin_port$set(MemorySegment seg, short x) {
-        SockaddrInStruct.sin_port$VH.set(seg, x);
+        sin_port$VH.set(seg, x);
     }
     public static short sin_port$get(MemorySegment seg, long index) {
-        return (short) SockaddrInStruct.sin_port$VH.get(seg.asSlice(index*sizeof()));
+        return (short)sin_port$VH.get(seg.asSlice(index*sizeof()));
     }
     public static void sin_port$set(MemorySegment seg, long index, short x) {
-        SockaddrInStruct.sin_port$VH.set(seg.asSlice(index*sizeof()), x);
+        sin_port$VH.set(seg.asSlice(index*sizeof()), x);
     }
     /**
      * {@snippet :
@@ -127,10 +128,13 @@ public final class SockaddrInStruct {
         // Suppresses default constructor, ensuring non-instantiability.
         private in_addr() {}
 
+        private static final MemoryLayout LAYOUT = Util.networkOrder(sockaddr_in.in_addr.$LAYOUT());
+
         public static MemoryLayout layout() {
-            return sockaddr_in.in_addr.$LAYOUT();
+            return LAYOUT;
         }
-        static final VarHandle s_addr$VH = layout().varHandle(PathElement.groupElement("s_addr"));
+
+        static final VarHandle s_addr$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("s_addr"));
         public static VarHandle s_addr$VH() {
             return in_addr.s_addr$VH;
         }
@@ -141,7 +145,7 @@ public final class SockaddrInStruct {
          * }
          */
         public static int s_addr$get(MemorySegment seg) {
-            return (int) in_addr.s_addr$VH.get(seg);
+            return (int)in_addr.s_addr$VH.get(seg);
         }
         /**
          * Setter for field:
@@ -153,7 +157,7 @@ public final class SockaddrInStruct {
             in_addr.s_addr$VH.set(seg, x);
         }
         public static int s_addr$get(MemorySegment seg, long index) {
-            return (int) in_addr.s_addr$VH.get(seg.asSlice(index*sizeof()));
+            return (int)in_addr.s_addr$VH.get(seg.asSlice(index*sizeof()));
         }
         public static void s_addr$set(MemorySegment seg, long index, int x) {
             in_addr.s_addr$VH.set(seg.asSlice(index*sizeof()), x);
@@ -178,6 +182,7 @@ public final class SockaddrInStruct {
         return allocator.allocate(MemoryLayout.sequenceLayout(len, layout()));
     }
     public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) { return RuntimeHelper.asArray(addr, layout(), 1, scope); }
+
 }
 
 

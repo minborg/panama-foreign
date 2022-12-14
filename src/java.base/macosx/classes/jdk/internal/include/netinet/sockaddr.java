@@ -5,7 +5,6 @@ package jdk.internal.include.netinet;
 import jdk.internal.include.common.Constants$root;
 
 import java.lang.foreign.*;
-
 /**
  * {@snippet :
  * struct sockaddr {
@@ -22,11 +21,11 @@ final class sockaddr {
         Constants$root.C_CHAR$LAYOUT.withName("sa_family"),
         MemoryLayout.sequenceLayout(14, Constants$root.C_CHAR$LAYOUT).withName("sa_data")
     ).withName("sockaddr");
-
     static MemoryLayout $LAYOUT() {
         return sockaddr.$struct$LAYOUT;
     }
 
     private sockaddr() {}
-
 }
+
+

@@ -4,8 +4,8 @@ package jdk.internal.include.netinet;
 
 import jdk.internal.include.common.Constants$root;
 
+import java.lang.invoke.VarHandle;
 import java.lang.foreign.*;
-
 /**
  * {@snippet :
  * struct sockaddr_in6 {
@@ -77,9 +77,11 @@ final class sockaddr_in6 {
                 MemoryLayout.sequenceLayout(8, Constants$root.C_SHORT$LAYOUT).withName("__u6_addr16"),
                 MemoryLayout.sequenceLayout(4, Constants$root.C_INT$LAYOUT).withName("__u6_addr32")
             );
+
             public static MemoryLayout $LAYOUT() {
-                return __u6_addr.in6_addr$__u6_addr$union$LAYOUT;
+                return in6_addr$__u6_addr$union$LAYOUT;
             }
+
         }
     }
 

@@ -22,9 +22,9 @@ public final class SockaddrStruct {
         return LAYOUT;
     }
 
-    static final VarHandle sa_len$VH = layout().varHandle(PathElement.groupElement("sa_len"));
+    static final VarHandle sa_len$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sa_len"));
     public static VarHandle sa_len$VH() {
-        return SockaddrStruct.sa_len$VH;
+        return sa_len$VH;
     }
     /**
      * Getter for field:
@@ -33,7 +33,7 @@ public final class SockaddrStruct {
      * }
      */
     public static byte sa_len$get(MemorySegment seg) {
-        return (byte) SockaddrStruct.sa_len$VH.get(seg);
+        return (byte)sa_len$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -42,17 +42,17 @@ public final class SockaddrStruct {
      * }
      */
     public static void sa_len$set(MemorySegment seg, byte x) {
-        SockaddrStruct.sa_len$VH.set(seg, x);
+        sa_len$VH.set(seg, x);
     }
     public static byte sa_len$get(MemorySegment seg, long index) {
-        return (byte) SockaddrStruct.sa_len$VH.get(seg.asSlice(index*sizeof()));
+        return (byte)sa_len$VH.get(seg.asSlice(index*sizeof()));
     }
     public static void sa_len$set(MemorySegment seg, long index, byte x) {
-        SockaddrStruct.sa_len$VH.set(seg.asSlice(index*sizeof()), x);
+        sa_len$VH.set(seg.asSlice(index*sizeof()), x);
     }
-    static final VarHandle sa_family$VH = layout().varHandle(PathElement.groupElement("sa_family"));
+    static final VarHandle sa_family$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sa_family"));
     public static VarHandle sa_family$VH() {
-        return SockaddrStruct.sa_family$VH;
+        return sa_family$VH;
     }
     /**
      * Getter for field:
@@ -61,7 +61,7 @@ public final class SockaddrStruct {
      * }
      */
     public static byte sa_family$get(MemorySegment seg) {
-        return (byte) SockaddrStruct.sa_family$VH.get(seg);
+        return (byte)sa_family$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -70,13 +70,13 @@ public final class SockaddrStruct {
      * }
      */
     public static void sa_family$set(MemorySegment seg, byte x) {
-        SockaddrStruct.sa_family$VH.set(seg, x);
+        sa_family$VH.set(seg, x);
     }
     public static byte sa_family$get(MemorySegment seg, long index) {
-        return (byte) SockaddrStruct.sa_family$VH.get(seg.asSlice(index*sizeof()));
+        return (byte)sa_family$VH.get(seg.asSlice(index*sizeof()));
     }
     public static void sa_family$set(MemorySegment seg, long index, byte x) {
-        SockaddrStruct.sa_family$VH.set(seg.asSlice(index*sizeof()), x);
+        sa_family$VH.set(seg.asSlice(index*sizeof()), x);
     }
     public static MemorySegment sa_data$slice(MemorySegment seg) {
         return seg.asSlice(2, 14);
@@ -87,6 +87,7 @@ public final class SockaddrStruct {
         return allocator.allocate(MemoryLayout.sequenceLayout(len, layout()));
     }
     public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) { return RuntimeHelper.asArray(addr, layout(), 1, scope); }
+
 }
 
 

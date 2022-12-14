@@ -8,8 +8,6 @@ import jdk.internal.include.common.Util;
 import java.lang.foreign.*;
 import java.lang.invoke.VarHandle;
 
-import static java.lang.foreign.MemoryLayout.PathElement;
-
 /**
  * {@snippet :
  * struct sockaddr_in6 {
@@ -27,15 +25,19 @@ public final class SockaddrIn6Struct {
     // Suppresses default constructor, ensuring non-instantiability.
     private SockaddrIn6Struct() {
     }
+
     private static final MemoryLayout LAYOUT = Util.networkOrder(sockaddr_in6.$LAYOUT());
 
     public static MemoryLayout layout() {
         return LAYOUT;
     }
-    static final VarHandle sin6_len$VH = layout().varHandle(PathElement.groupElement("sin6_len"));
+
+    static final VarHandle sin6_len$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sin6_len"));
+
     public static VarHandle sin6_len$VH() {
-        return SockaddrIn6Struct.sin6_len$VH;
+        return sin6_len$VH;
     }
+
     /**
      * Getter for field:
      * {@snippet :
@@ -43,7 +45,7 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static byte sin6_len$get(MemorySegment seg) {
-        return (byte) SockaddrIn6Struct.sin6_len$VH.get(seg);
+        return (byte)sin6_len$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -52,26 +54,25 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static void sin6_len$set(MemorySegment seg, byte x) {
-        SockaddrIn6Struct.sin6_len$VH.set(seg, x);
+        sin6_len$VH.set(seg, x);
     }
     public static byte sin6_len$get(MemorySegment seg, long index) {
-        return (byte) SockaddrIn6Struct.sin6_len$VH.get(seg.asSlice(index*sizeof()));
+        return (byte)sin6_len$VH.get(seg.asSlice(index*sizeof()));
     }
     public static void sin6_len$set(MemorySegment seg, long index, byte x) {
-        SockaddrIn6Struct.sin6_len$VH.set(seg.asSlice(index*sizeof()), x);
+        sin6_len$VH.set(seg.asSlice(index*sizeof()), x);
     }
-    static final VarHandle sin6_family$VH = layout().varHandle(PathElement.groupElement("sin6_family"));
+    static final VarHandle sin6_family$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sin6_family"));
     public static VarHandle sin6_family$VH() {
-        return SockaddrIn6Struct.sin6_family$VH;
+        return sin6_family$VH;
     }
     /**
      * Getter for field:
      * {@snippet :
-     * sa_family_t sin6_family;
-     * }
+     * sa_family_t sin6_family;* }
      */
     public static byte sin6_family$get(MemorySegment seg) {
-        return (byte) SockaddrIn6Struct.sin6_family$VH.get(seg);
+        return (byte)sin6_family$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -80,17 +81,21 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static void sin6_family$set(MemorySegment seg, byte x) {
-        SockaddrIn6Struct.sin6_family$VH.set(seg, x);
+        sin6_family$VH.set(seg, x);
     }
+
     public static byte sin6_family$get(MemorySegment seg, long index) {
-        return (byte) SockaddrIn6Struct.sin6_family$VH.get(seg.asSlice(index*sizeof()));
+        return (byte)sin6_family$VH.get(seg.asSlice(index*sizeof()));
     }
+
     public static void sin6_family$set(MemorySegment seg, long index, byte x) {
-        SockaddrIn6Struct.sin6_family$VH.set(seg.asSlice(index*sizeof()), x);
+        sin6_family$VH.set(seg.asSlice(index*sizeof()), x);
     }
-    static final VarHandle sin6_port$VH = layout().varHandle(PathElement.groupElement("sin6_port"));
+
+    static final VarHandle sin6_port$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sin6_port"));
+
     public static VarHandle sin6_port$VH() {
-        return SockaddrIn6Struct.sin6_port$VH;
+        return sin6_port$VH;
     }
     /**
      * Getter for field:
@@ -99,7 +104,7 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static short sin6_port$get(MemorySegment seg) {
-        return (short) SockaddrIn6Struct.sin6_port$VH.get(seg);
+        return (short)sin6_port$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -108,17 +113,21 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static void sin6_port$set(MemorySegment seg, short x) {
-        SockaddrIn6Struct.sin6_port$VH.set(seg, x);
+        sin6_port$VH.set(seg, x);
     }
+
     public static short sin6_port$get(MemorySegment seg, long index) {
-        return (short) SockaddrIn6Struct.sin6_port$VH.get(seg.asSlice(index*sizeof()));
+        return (short)sin6_port$VH.get(seg.asSlice(index*sizeof()));
     }
+
     public static void sin6_port$set(MemorySegment seg, long index, short x) {
-        SockaddrIn6Struct.sin6_port$VH.set(seg.asSlice(index*sizeof()), x);
+        sin6_port$VH.set(seg.asSlice(index*sizeof()), x);
     }
-    static final VarHandle sin6_flowinfo$VH = layout().varHandle(PathElement.groupElement("sin6_flowinfo"));
+
+    static final VarHandle sin6_flowinfo$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sin6_flowinfo"));
+
     public static VarHandle sin6_flowinfo$VH() {
-        return SockaddrIn6Struct.sin6_flowinfo$VH;
+        return sin6_flowinfo$VH;
     }
     /**
      * Getter for field:
@@ -127,7 +136,7 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static int sin6_flowinfo$get(MemorySegment seg) {
-        return (int) SockaddrIn6Struct.sin6_flowinfo$VH.get(seg);
+        return (int)sin6_flowinfo$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -136,13 +145,15 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static void sin6_flowinfo$set(MemorySegment seg, int x) {
-        SockaddrIn6Struct.sin6_flowinfo$VH.set(seg, x);
+        sin6_flowinfo$VH.set(seg, x);
     }
+
     public static int sin6_flowinfo$get(MemorySegment seg, long index) {
-        return (int) SockaddrIn6Struct.sin6_flowinfo$VH.get(seg.asSlice(index*sizeof()));
+        return (int)sin6_flowinfo$VH.get(seg.asSlice(index*sizeof()));
     }
+
     public static void sin6_flowinfo$set(MemorySegment seg, long index, int x) {
-        SockaddrIn6Struct.sin6_flowinfo$VH.set(seg.asSlice(index*sizeof()), x);
+        sin6_flowinfo$VH.set(seg.asSlice(index*sizeof()), x);
     }
     /**
      * {@snippet :
@@ -161,6 +172,7 @@ public final class SockaddrIn6Struct {
         public static MemoryLayout layout() {
             return LAYOUT;
         }
+
         /**
          * {@snippet :
          * union {
@@ -180,40 +192,63 @@ public final class SockaddrIn6Struct {
             public static MemoryLayout layout() {
                 return LAYOUT;
             }
+
             public static MemorySegment __u6_addr8$slice(MemorySegment seg) {
                 return seg.asSlice(0, 16);
             }
+
             public static MemorySegment __u6_addr16$slice(MemorySegment seg) {
                 return seg.asSlice(0, 16);
             }
+
             public static MemorySegment __u6_addr32$slice(MemorySegment seg) {
                 return seg.asSlice(0, 16);
             }
-            public static long sizeof() { return layout().byteSize(); }
-            public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate(layout()); }
+
+            public static long sizeof() {
+                return layout().byteSize();
+            }
+
+            public static MemorySegment allocate(SegmentAllocator allocator) {
+                return allocator.allocate(layout());
+            }
+
             public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
                 return allocator.allocate(MemoryLayout.sequenceLayout(len, layout()));
             }
-            public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) { return RuntimeHelper.asArray(addr, layout(), 1, scope); }
+
+            public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) {
+                return RuntimeHelper.asArray(addr, layout(), 1, scope); }
         }
 
         public static MemorySegment __u6_addr$slice(MemorySegment seg) {
             return seg.asSlice(0, 16);
         }
-        public static long sizeof() { return layout().byteSize(); }
-        public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate(layout()); }
+
+        public static long sizeof() {
+            return layout().byteSize();
+        }
+
+        public static MemorySegment allocate(SegmentAllocator allocator) {
+            return allocator.allocate(layout());
+        }
+
         public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
             return allocator.allocate(MemoryLayout.sequenceLayout(len, layout()));
         }
-        public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) { return RuntimeHelper.asArray(addr, layout(), 1, scope); }
+
+        public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) {
+            return RuntimeHelper.asArray(addr, layout(), 1, scope); }
     }
 
     public static MemorySegment sin6_addr$slice(MemorySegment seg) {
         return seg.asSlice(8, 16);
     }
-    static final VarHandle sin6_scope_id$VH = layout().varHandle(PathElement.groupElement("sin6_scope_id"));
+
+    static final VarHandle sin6_scope_id$VH = layout().varHandle(MemoryLayout.PathElement.groupElement("sin6_scope_id"));
+
     public static VarHandle sin6_scope_id$VH() {
-        return SockaddrIn6Struct.sin6_scope_id$VH;
+        return sin6_scope_id$VH;
     }
     /**
      * Getter for field:
@@ -222,7 +257,7 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static int sin6_scope_id$get(MemorySegment seg) {
-        return (int) SockaddrIn6Struct.sin6_scope_id$VH.get(seg);
+        return (int)sin6_scope_id$VH.get(seg);
     }
     /**
      * Setter for field:
@@ -231,20 +266,31 @@ public final class SockaddrIn6Struct {
      * }
      */
     public static void sin6_scope_id$set(MemorySegment seg, int x) {
-        SockaddrIn6Struct.sin6_scope_id$VH.set(seg, x);
+        sin6_scope_id$VH.set(seg, x);
     }
+
     public static int sin6_scope_id$get(MemorySegment seg, long index) {
-        return (int) SockaddrIn6Struct.sin6_scope_id$VH.get(seg.asSlice(index*sizeof()));
+        return (int)sin6_scope_id$VH.get(seg.asSlice(index*sizeof()));
     }
+
     public static void sin6_scope_id$set(MemorySegment seg, long index, int x) {
-        SockaddrIn6Struct.sin6_scope_id$VH.set(seg.asSlice(index*sizeof()), x);
+        sin6_scope_id$VH.set(seg.asSlice(index*sizeof()), x);
     }
-    public static long sizeof() { return layout().byteSize(); }
-    public static MemorySegment allocate(SegmentAllocator allocator) { return allocator.allocate(layout()); }
+
+    public static long sizeof() {
+        return layout().byteSize();
+    }
+
+    public static MemorySegment allocate(SegmentAllocator allocator) {
+        return allocator.allocate(layout());
+    }
+
     public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
         return allocator.allocate(MemoryLayout.sequenceLayout(len, layout()));
     }
-    public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) { return RuntimeHelper.asArray(addr, layout(), 1, scope); }
-}
 
+    public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) {
+        return RuntimeHelper.asArray(addr, layout(), 1, scope);
+    }
+}
 

@@ -32,27 +32,22 @@ final class sockaddr_in {
         return sockaddr_in.$struct$LAYOUT;
     }
 
-    /**
-     * {@snippet :
-     * struct in_addr {
-     *     in_addr_t s_addr;
-     * };
-     * }
-     */
     static final class in_addr {
 
         // Suppresses default constructor, ensuring non-instantiability.
-        private in_addr() {}
-
-        static final StructLayout in_addr$struct$LAYOUT = MemoryLayout.structLayout(
-            Constants$root.C_INT$LAYOUT.withName("s_addr")
-        ).withName("in_addr");
-
-        public static MemoryLayout $LAYOUT() {
-            return in_addr.in_addr$struct$LAYOUT;
+        private in_addr() {
         }
 
+        static final StructLayout in_addr$struct$LAYOUT = MemoryLayout.structLayout(
+                Constants$root.C_INT$LAYOUT.withName("s_addr")
+        ).withName("in_addr");
+
+        static MemoryLayout $LAYOUT() {
+            return in_addr$struct$LAYOUT;
+        }
     }
 
     private sockaddr_in() {}
 }
+
+

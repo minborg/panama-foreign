@@ -8,8 +8,8 @@ import java.net.SocketException;
 import java.util.Map;
 import java.util.function.Function;
 
-import static jdk.internal.include.errno_h.*;
-import static jdk.internal.include.errno_h.EINPROGRESS;
+import static jdk.internal.include.ErrorNo.*;
+import static jdk.internal.include.ErrorNo.EINPROGRESS;
 
 public final class SocketReturnValueHandler {
 

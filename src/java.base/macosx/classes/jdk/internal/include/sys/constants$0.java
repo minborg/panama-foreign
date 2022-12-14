@@ -2,8 +2,8 @@
 
 package jdk.internal.include.sys;
 
-import jdk.internal.include.common.RuntimeHelper;
 import jdk.internal.include.common.Constants$root;
+import jdk.internal.include.common.RuntimeHelper;
 
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.invoke.MethodHandle;
@@ -54,5 +54,6 @@ final class constants$0 {
         "disconnectx",
         constants$0.disconnectx$FUNC
     );
-
 }
+
+

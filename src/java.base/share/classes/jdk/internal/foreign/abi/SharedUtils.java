@@ -39,10 +39,8 @@ import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.MemorySession;
-import java.lang.foreign.PaddingLayout;
+import java.lang.foreign.SegmentScope;
 import java.lang.foreign.SegmentAllocator;
-import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.VaList;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
@@ -110,17 +108,18 @@ public final class SharedUtils {
      * @param cDesc the function descriptor of the native function (with actual return layout)
      * @return the adapted handle
      */
-    public static MethodHandle adaptDowncallForIMR(MethodHandle handle, FunctionDescriptor cDesc) {
+    public static MethodHandle adaptDowncallForIMR(MethodHandle handle, FunctionDescriptor cDesc, CallingSequence sequence) {
         if (handle.type().returnType() != void.class)
             throw new IllegalArgumentException("return expected to be void for in memory returns: " + handle.type());
-        if (handle.type().parameterType(2) != MemorySegment.class)
+        int imrAddrIdx = sequence.numLeadingParams();
+        if (handle.type().parameterType(imrAddrIdx) != MemorySegment.class)
             throw new IllegalArgumentException("MemorySegment expected as third param: " + handle.type());
         if (cDesc.returnLayout().isEmpty())
             throw new IllegalArgumentException("Return layout needed: " + cDesc);
 
         MethodHandle ret = identity(MemorySegment.class); // (MemorySegment) MemorySegment
         handle = collectArguments(ret, 1, handle); // (MemorySegment, MemorySegment, SegmentAllocator, MemorySegment, ...) MemorySegment
-        handle = mergeArguments(handle, 0, 3);  // (MemorySegment, MemorySegment, SegmentAllocator, ...) MemorySegment
+        handle = mergeArguments(handle, 0, 1 + imrAddrIdx);  // (MemorySegment, MemorySegment, SegmentAllocator, ...) MemorySegment
         handle = collectArguments(handle, 0, insertArguments(MH_ALLOC_BUFFER, 1, cDesc.returnLayout().get())); // (SegmentAllocator, MemorySegment, SegmentAllocator, ...) MemorySegment
         handle = mergeArguments(handle, 0, 2);  // (SegmentAllocator, MemorySegment, ...) MemorySegment
         handle = swapArguments(handle, 0, 1); // (MemorySegment, SegmentAllocator, ...) MemorySegment
@@ -289,7 +288,7 @@ public final class SharedUtils {
             throw new IllegalArgumentException("Symbol is NULL: " + symbol);
     }
 
-    public static VaList newVaList(Consumer<VaList.Builder> actions, MemorySession session) {
+    public static VaList newVaList(Consumer<VaList.Builder> actions, SegmentScope session) {
         return switch (CABI.current()) {
             case WIN_64 -> Windowsx64Linker.newVaList(actions, session);
             case SYS_V -> SysVx64Linker.newVaList(actions, session);
@@ -298,7 +297,7 @@ public final class SharedUtils {
         };
     }
 
-    public static VaList newVaListOfAddress(long address, MemorySession session) {
+    public static VaList newVaListOfAddress(long address, SegmentScope session) {
         return switch (CABI.current()) {
             case WIN_64 -> Windowsx64Linker.newVaListOfAddress(address, session);
             case SYS_V -> SysVx64Linker.newVaListOfAddress(address, session);

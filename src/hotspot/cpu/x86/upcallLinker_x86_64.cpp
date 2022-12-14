@@ -175,7 +175,7 @@ address UpcallLinker::make_upcall_stub(jobject receiver, Method* entry,
   const CallRegs call_regs = ForeignGlobals::parse_call_regs(jconv);
   CodeBuffer buffer("upcall_stub", /* code_size = */ 2048, /* locs_size = */ 1024);
 
-  VMStorage shuffle_reg = VMS_RBX;
+  VMStorage shuffle_reg = as_VMStorage(rbx);
   JavaCallingConvention out_conv;
   NativeCallingConvention in_conv(call_regs._arg_regs);
   ArgumentShuffle arg_shuffle(in_sig_bt, total_in_args, out_sig_bt, total_out_args, &in_conv, &out_conv, shuffle_reg);
@@ -209,10 +209,14 @@ address UpcallLinker::make_upcall_stub(jobject receiver, Method* entry,
   int frame_data_offset      = reg_save_area_offset   + reg_save_area_size;
   int frame_bottom_offset    = frame_data_offset      + sizeof(UpcallStub::FrameData);
 
+  StubLocations locs;
   int ret_buf_offset = -1;
   if (needs_return_buffer) {
     ret_buf_offset = frame_bottom_offset;
     frame_bottom_offset += ret_buf_size;
+    // use a free register for shuffling code to pick up return
+    // buffer address from
+    locs.set(StubLocations::RETURN_BUFFER, abi._scratch1);
   }
 
   int frame_size = frame_bottom_offset;
@@ -274,9 +278,9 @@ address UpcallLinker::make_upcall_stub(jobject receiver, Method* entry,
   arg_spilller.generate_fill(_masm, arg_save_area_offset);
   if (needs_return_buffer) {
     assert(ret_buf_offset != -1, "no return buffer allocated");
-    __ lea(abi._ret_buf_addr_reg, Address(rsp, ret_buf_offset));
+    __ lea(as_Register(locs.get(StubLocations::RETURN_BUFFER)), Address(rsp, ret_buf_offset));
   }
-  arg_shuffle.generate(_masm, shuffle_reg, abi._shadow_space_bytes, 0);
+  arg_shuffle.generate(_masm, shuffle_reg, abi._shadow_space_bytes, 0, locs);
   __ block_comment("} argument shuffle");
 
   __ block_comment("{ receiver ");
@@ -302,11 +306,11 @@ address UpcallLinker::make_upcall_stub(jobject receiver, Method* entry,
         case T_CHAR:
         case T_INT:
         case T_LONG:
-        j_expected_result_reg = VMS_RAX;
+        j_expected_result_reg = as_VMStorage(rax);
         break;
         case T_FLOAT:
         case T_DOUBLE:
-          j_expected_result_reg = VMS_XMM0;
+          j_expected_result_reg = as_VMStorage(xmm0);
           break;
         default:
           fatal("unexpected return type: %s", type2name(ret_type));
@@ -322,10 +326,10 @@ address UpcallLinker::make_upcall_stub(jobject receiver, Method* entry,
     int offset = 0;
     for (int i = 0; i < call_regs._ret_regs.length(); i++) {
       VMStorage reg = call_regs._ret_regs.at(i);
-      if (reg.type() == RegType::INTEGER) {
+      if (reg.type() == StorageType::INTEGER) {
         __ movptr(as_Register(reg), Address(rscratch1, offset));
         offset += 8;
-      } else if (reg.type() == RegType::VECTOR) {
+      } else if (reg.type() == StorageType::VECTOR) {
         __ movdqu(as_XMMRegister(reg), Address(rscratch1, offset));
         offset += 16;
       } else {

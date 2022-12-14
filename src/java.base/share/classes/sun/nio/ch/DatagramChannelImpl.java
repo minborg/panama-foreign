@@ -76,6 +76,8 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import jdk.internal.access.JavaNioAccess;
+import jdk.internal.access.SharedSecrets;
 import jdk.internal.foreign.MemoryInspection;
 import jdk.internal.include.netinet.SockaddrIn6Struct;
 import jdk.internal.ref.CleanerFactory;
@@ -93,6 +95,8 @@ class DatagramChannelImpl
 {
     // Used to make native read and write calls
     private static final NativeDispatcher nd = new DatagramDispatcher();
+
+    private static final JavaNioAccess NIO_ACCESS = SharedSecrets.getJavaNioAccess();
 
     // true if interruptible (can be false to emulate legacy DatagramSocket)
     private final boolean interruptible;
@@ -789,13 +793,18 @@ class DatagramChannelImpl
                                         boolean connected)
         throws IOException
     {
-        int n = receive0(fd,
-                         ((DirectBuffer)bb).address() + pos, rem,
-                         sourceSockAddr.segment().address(),
-                         connected);
-        if (n > 0)
-            bb.position(pos + n);
-        return n;
+        NIO_ACCESS.acquireSession(bb);
+        try {
+            int n = receive0(fd,
+                            ((DirectBuffer)bb).address() + pos, rem,
+                            sourceSockAddr.segment().address(),
+                            connected);
+            if (n > 0)
+                bb.position(pos + n);
+            return n;
+        } finally {
+            NIO_ACCESS.releaseSession(bb);
+        }
     }
 
     /**
@@ -939,7 +948,9 @@ class DatagramChannelImpl
         int rem = (pos <= lim ? lim - pos : 0);
 
         int written;
+
         int addressLen = targetSocketAddress(target);
+        NIO_ACCESS.acquireSession(bb);
         try {
             written = send0(fd, ((DirectBuffer)bb).address() + pos, rem,
                             targetSockAddr.segment().address(), addressLen);
@@ -953,6 +964,8 @@ class DatagramChannelImpl
         } catch (SocketException se) {
             // Todo: Remove this debugging feature
             throw new SocketException(se.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr+ ", addressLen=" + addressLen+ " " + toHex(targetSockAddr.segment())+ " " + toString(targetSockAddr.segment()), se);
+        } finally {
+            NIO_ACCESS.releaseSession(bb);
         }
         if (written > 0)
             bb.position(pos + written);

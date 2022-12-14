@@ -42,8 +42,9 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.MemorySession;
+import java.lang.foreign.SegmentScope;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -1942,7 +1943,7 @@ class DatagramChannelImpl2
     private static final MemorySegment ADD_LEN = createAddLen();
 
     static MemorySegment createAddLen() {
-        var segment = MemorySession.global().allocate(socklen_t());
+        var segment = MemorySegment.allocateNative(socklen_t(), SegmentScope.global());
         VarHandle handle = socklen_t().varHandle();
         handle.set(segment, SOCKET_ADDRESS.byteSize());
         return segment;
@@ -2006,8 +2007,8 @@ class DatagramChannelImpl2
         if (CurrentOs.OS == Os.MAC_OS) {
             rv = disconnectx(FD_ACCESS.get(fd), SocketH.SAE_ASSOCID_ANY(), SocketH.SAE_CONNID_ANY());
         } else {
-            try (var session = MemorySession.openImplicit()) {
-                var segment = session.allocate(SockaddrIn6Struct.layout());
+            try (var arena = Arena.openConfined()) {
+                var segment = arena.allocate(SockaddrIn6Struct.layout());
                 byte len = (byte)(isIPv6 ? SockaddrIn6Struct.sizeof() : SockaddrInStruct.sizeof());
 
                         SockaddrIn6Struct.sin6_family$set(segment,

@@ -33,16 +33,17 @@
  *   TestUpcallHighArity
  */
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.MemorySession;
 
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.lang.foreign.SegmentScope;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -86,7 +87,7 @@ public class TestUpcallHighArity extends CallGeneratorHelper {
         for (int i = 0; i < o.length; i++) {
             if (layouts.get(i) instanceof GroupLayout) {
                 MemorySegment ms = (MemorySegment) o[i];
-                MemorySegment copy = MemorySegment.allocateNative(ms.byteSize());
+                MemorySegment copy = MemorySegment.allocateNative(ms.byteSize(), SegmentScope.auto());
                 copy.copyFrom(ms);
                 o[i] = copy;
             }
@@ -101,8 +102,8 @@ public class TestUpcallHighArity extends CallGeneratorHelper {
         MethodHandle target = MethodHandles.insertArguments(MH_passAndSave, 1, capturedArgs, upcallDescriptor.argumentLayouts())
                                          .asCollector(Object[].class, upcallType.parameterCount())
                                          .asType(upcallType);
-        try (MemorySession session = MemorySession.openConfined()) {
-            MemorySegment upcallStub = LINKER.upcallStub(target, upcallDescriptor, session);
+        try (Arena arena = Arena.openConfined()) {
+            MemorySegment upcallStub = LINKER.upcallStub(target, upcallDescriptor, arena.scope());
             Object[] args = new Object[upcallType.parameterCount() + 1];
             args[0] = upcallStub;
             List<MemoryLayout> argLayouts = upcallDescriptor.argumentLayouts();

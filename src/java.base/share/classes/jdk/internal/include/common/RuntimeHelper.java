@@ -17,7 +17,7 @@ public final class RuntimeHelper {
     private static final SegmentAllocator THROWING_ALLOCATOR = (x, y) -> { throw new AssertionError("should not reach here"); };
 
     public final static SegmentAllocator CONSTANT_ALLOCATOR =
-            (size, align) -> MemorySegment.allocateNative(size, align);
+            (size, align) -> MemorySegment.allocateNative(size, align, SegmentScope.auto());
 
     static {
         
@@ -36,7 +36,7 @@ public final class RuntimeHelper {
     }
 
     public static MemorySegment lookupGlobalVariable(String name, MemoryLayout layout) {
-        return SYMBOL_LOOKUP.find(name).map(symbol -> MemorySegment.ofAddress(symbol.address(), layout.byteSize(), symbol.session())).orElse(null);
+        return SYMBOL_LOOKUP.find(name).map(symbol -> MemorySegment.ofAddress(symbol.address(), layout.byteSize(), symbol.scope())).orElse(null);
     }
 
     public static MethodHandle downcallHandle(String name, FunctionDescriptor fdesc) {
@@ -55,18 +55,18 @@ public final class RuntimeHelper {
                 orElse(null);
     }
 
-    public static <Z> MemorySegment upcallStub(Class<Z> fi, Z z, FunctionDescriptor fdesc, MemorySession session) {
+    public static <Z> MemorySegment upcallStub(Class<Z> fi, Z z, FunctionDescriptor fdesc, SegmentScope scope) {
         try {
             MethodHandle handle = MH_LOOKUP.findVirtual(fi, "apply", fdesc.toMethodType());
             handle = handle.bindTo(z);
-            return LINKER.upcallStub(handle, fdesc, session);
+            return LINKER.upcallStub(handle, fdesc, scope);
         } catch (Throwable ex) {
             throw new AssertionError(ex);
         }
     }
 
-    public static MemorySegment asArray(MemorySegment addr, MemoryLayout layout, int numElements, MemorySession session) {
-         return MemorySegment.ofAddress(addr.address(), numElements * layout.byteSize(), session);
+    public static MemorySegment asArray(MemorySegment addr, MemoryLayout layout, int numElements, SegmentScope scope) {
+         return MemorySegment.ofAddress(addr.address(), numElements * layout.byteSize(), scope);
     }
 
     // Internals only below this point

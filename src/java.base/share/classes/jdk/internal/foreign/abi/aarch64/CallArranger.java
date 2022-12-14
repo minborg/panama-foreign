@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, 2022, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2019, 2021, Arm Limited. All rights reserved.
+ * Copyright (c) 2019, 2022, Arm Limited. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,7 +42,7 @@ import jdk.internal.foreign.abi.aarch64.linux.LinuxAArch64CallArranger;
 import jdk.internal.foreign.abi.aarch64.macos.MacOsAArch64CallArranger;
 import jdk.internal.foreign.Utils;
 
-import java.lang.foreign.MemorySession;
+import java.lang.foreign.SegmentScope;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodType;
 import java.util.List;
@@ -85,12 +85,11 @@ public abstract class CallArranger {
         new VMStorage[] { r0, r1 },
         new VMStorage[] { v0, v1, v2, v3 },
         new VMStorage[] { r9, r10, r11, r12, r13, r14, r15 },
-        new VMStorage[] { v16, v17, v18, v19, v20, v21, v22, v23, v25,
+        new VMStorage[] { v16, v17, v18, v19, v20, v21, v22, v23, v24, v25,
                           v26, v27, v28, v29, v30, v31 },
         16,  // Stack is always 16 byte aligned on AArch64
         0,   // No shadow space
-        r9,  // target addr reg
-        r10  // return buffer addr reg
+        r9, r10  // scratch 1 & 2
     );
 
     public record Bindings(CallingSequence callingSequence,
@@ -120,7 +119,7 @@ public abstract class CallArranger {
     }
 
     public Bindings getBindings(MethodType mt, FunctionDescriptor cDesc, boolean forUpcall, LinkerOptions options) {
-        CallingSequenceBuilder csb = new CallingSequenceBuilder(C, forUpcall);
+        CallingSequenceBuilder csb = new CallingSequenceBuilder(C, forUpcall, options);
 
         BindingCalculator argCalc = forUpcall ? new BoxBindingCalculator(true) : new UnboxBindingCalculator(true);
         BindingCalculator retCalc = forUpcall ? new UnboxBindingCalculator(false) : new BoxBindingCalculator(false);
@@ -153,13 +152,13 @@ public abstract class CallArranger {
         MethodHandle handle = new DowncallLinker(C, bindings.callingSequence).getBoundMethodHandle();
 
         if (bindings.isInMemoryReturn) {
-            handle = SharedUtils.adaptDowncallForIMR(handle, cDesc);
+            handle = SharedUtils.adaptDowncallForIMR(handle, cDesc, bindings.callingSequence);
         }
 
         return handle;
     }
 
-    public MemorySegment arrangeUpcall(MethodHandle target, MethodType mt, FunctionDescriptor cDesc, MemorySession session) {
+    public MemorySegment arrangeUpcall(MethodHandle target, MethodType mt, FunctionDescriptor cDesc, SegmentScope session) {
         Bindings bindings = getBindings(mt, cDesc, true);
 
         if (bindings.isInMemoryReturn) {
@@ -187,21 +186,13 @@ public abstract class CallArranger {
             this.forArguments = forArguments;
         }
 
+        void alignStack(long alignment) {
+            stackOffset = Utils.alignUp(stackOffset, alignment);
+        }
+
         VMStorage stackAlloc(long size, long alignment) {
             assert forArguments : "no stack returns";
-            // Implementation limit: each arg must take up at least an 8 byte stack slot (on the Java side)
-            // There is currently no way to address stack offsets that are not multiples of 8 bytes
-            // The VM can only address multiple-of-4-bytes offsets, which is also not good enough for some ABIs
-            // see JDK-8283462 and related issues
-            long stackSlotAlignment = Math.max(alignment, STACK_SLOT_SIZE);
-            long alignedStackOffset = Utils.alignUp(stackOffset, stackSlotAlignment);
-            // macos-aarch64 ABI potentially requires addressing stack offsets that are not multiples of 8 bytes
-            // Reject such call types here, to prevent undefined behavior down the line
-            // Reject if the above stack-slot-aligned offset does not match the offset the ABI really wants
-            // Except for variadic arguments, which _are_ passed at 8-byte-aligned offsets
-            if (requiresSubSlotStackPacking() && alignedStackOffset != Utils.alignUp(stackOffset, alignment)
-                    && !forVarArgs) // varargs are given a pass on all aarch64 ABIs
-                throw new UnsupportedOperationException("Call type not supported on this platform");
+            long alignedStackOffset = Utils.alignUp(stackOffset, alignment);
 
             short encodedSize = (short) size;
             assert (encodedSize & 0xFFFF) == size;
@@ -213,7 +204,10 @@ public abstract class CallArranger {
         }
 
         VMStorage stackAlloc(MemoryLayout layout) {
-            return stackAlloc(layout.byteSize(), layout.byteAlignment());
+            long stackSlotAlignment = requiresSubSlotStackPacking() && !forVarArgs
+                    ? layout.byteAlignment()
+                    : Math.max(layout.byteAlignment(), STACK_SLOT_SIZE);
+            return stackAlloc(layout.byteSize(), stackSlotAlignment);
         }
 
         VMStorage[] regAlloc(int type, int count) {
@@ -246,11 +240,31 @@ public abstract class CallArranger {
             return storage[0];
         }
 
+        VMStorage[] nextStorageForHFA(GroupLayout group) {
+            final int nFields = group.memberLayouts().size();
+            VMStorage[] regs = regAlloc(StorageType.VECTOR, nFields);
+            if (regs == null && requiresSubSlotStackPacking() && !forVarArgs) {
+                // For the ABI variants that pack arguments spilled to the
+                // stack, HFA arguments are spilled as if their individual
+                // fields had been allocated separately rather than as if the
+                // struct had been spilled as a whole.
+
+                VMStorage[] slots = new VMStorage[nFields];
+                for (int i = 0; i < nFields; i++) {
+                    slots[i] = stackAlloc(group.memberLayouts().get(i));
+                }
+
+                return slots;
+            } else {
+                return regs;
+            }
+        }
+
         void adjustForVarArgs() {
             // This system passes all variadic parameters on the stack. Ensure
             // no further arguments are allocated to registers.
-            nRegs[StorageClasses.INTEGER] = MAX_REGISTER_ARGUMENTS;
-            nRegs[StorageClasses.VECTOR] = MAX_REGISTER_ARGUMENTS;
+            nRegs[StorageType.INTEGER] = MAX_REGISTER_ARGUMENTS;
+            nRegs[StorageType.VECTOR] = MAX_REGISTER_ARGUMENTS;
             forVarArgs = true;
         }
     }
@@ -281,6 +295,12 @@ public abstract class CallArranger {
                         .vmStore(storage, type);
                 offset += STACK_SLOT_SIZE;
             }
+
+            if (requiresSubSlotStackPacking()) {
+                // Pad to the next stack slot boundary instead of packing
+                // additional arguments into the unused space.
+                storageCalculator.alignStack(STACK_SLOT_SIZE);
+            }
         }
 
         protected void spillStructBox(Binding.Builder bindings, MemoryLayout layout) {
@@ -299,6 +319,12 @@ public abstract class CallArranger {
                         .vmLoad(storage, type)
                         .bufferStore(offset, type);
                 offset += STACK_SLOT_SIZE;
+            }
+
+            if (requiresSubSlotStackPacking()) {
+                // Pad to the next stack slot boundary instead of packing
+                // additional arguments into the unused space.
+                storageCalculator.alignStack(STACK_SLOT_SIZE);
             }
         }
 
@@ -328,14 +354,14 @@ public abstract class CallArranger {
                 case STRUCT_REGISTER: {
                     assert carrier == MemorySegment.class;
                     VMStorage[] regs = storageCalculator.regAlloc(
-                        StorageClasses.INTEGER, layout);
+                        StorageType.INTEGER, layout);
                     if (regs != null) {
                         int regIndex = 0;
                         long offset = 0;
                         while (offset < layout.byteSize()) {
                             final long copy = Math.min(layout.byteSize() - offset, 8);
                             VMStorage storage = regs[regIndex++];
-                            boolean useFloat = storage.type() == StorageClasses.VECTOR;
+                            boolean useFloat = storage.type() == StorageType.VECTOR;
                             Class<?> type = SharedUtils.primitiveCarrierForSize(copy, useFloat);
                             if (offset + copy < layout.byteSize()) {
                                 bindings.dup();
@@ -354,21 +380,20 @@ public abstract class CallArranger {
                     bindings.copy(layout)
                             .unboxAddress();
                     VMStorage storage = storageCalculator.nextStorage(
-                        StorageClasses.INTEGER, AArch64.C_POINTER);
+                        StorageType.INTEGER, AArch64.C_POINTER);
                     bindings.vmStore(storage, long.class);
                     break;
                 }
                 case STRUCT_HFA: {
                     assert carrier == MemorySegment.class;
                     GroupLayout group = (GroupLayout)layout;
-                    VMStorage[] regs = storageCalculator.regAlloc(
-                        StorageClasses.VECTOR, group.memberLayouts().size());
+                    VMStorage[] regs = storageCalculator.nextStorageForHFA(group);
                     if (regs != null) {
                         long offset = 0;
                         for (int i = 0; i < group.memberLayouts().size(); i++) {
                             VMStorage storage = regs[i];
                             final long size = group.memberLayouts().get(i).byteSize();
-                            boolean useFloat = storage.type() == StorageClasses.VECTOR;
+                            boolean useFloat = storage.type() == StorageType.VECTOR;
                             Class<?> type = SharedUtils.primitiveCarrierForSize(size, useFloat);
                             if (i + 1 < group.memberLayouts().size()) {
                                 bindings.dup();
@@ -385,19 +410,19 @@ public abstract class CallArranger {
                 case POINTER: {
                     bindings.unboxAddress();
                     VMStorage storage =
-                        storageCalculator.nextStorage(StorageClasses.INTEGER, layout);
+                        storageCalculator.nextStorage(StorageType.INTEGER, layout);
                     bindings.vmStore(storage, long.class);
                     break;
                 }
                 case INTEGER: {
                     VMStorage storage =
-                        storageCalculator.nextStorage(StorageClasses.INTEGER, layout);
+                        storageCalculator.nextStorage(StorageType.INTEGER, layout);
                     bindings.vmStore(storage, carrier);
                     break;
                 }
                 case FLOAT: {
                     VMStorage storage =
-                        storageCalculator.nextStorage(StorageClasses.VECTOR, layout);
+                        storageCalculator.nextStorage(StorageType.VECTOR, layout);
                     bindings.vmStore(storage, carrier);
                     break;
                 }
@@ -430,7 +455,7 @@ public abstract class CallArranger {
                     assert carrier == MemorySegment.class;
                     bindings.allocate(layout);
                     VMStorage[] regs = storageCalculator.regAlloc(
-                            StorageClasses.INTEGER, layout);
+                            StorageType.INTEGER, layout);
                     if (regs != null) {
                         int regIndex = 0;
                         long offset = 0;
@@ -438,7 +463,7 @@ public abstract class CallArranger {
                             final long copy = Math.min(layout.byteSize() - offset, 8);
                             VMStorage storage = regs[regIndex++];
                             bindings.dup();
-                            boolean useFloat = storage.type() == StorageClasses.VECTOR;
+                            boolean useFloat = storage.type() == StorageType.VECTOR;
                             Class<?> type = SharedUtils.primitiveCarrierForSize(copy, useFloat);
                             bindings.vmLoad(storage, type)
                                     .bufferStore(offset, type);
@@ -451,7 +476,7 @@ public abstract class CallArranger {
                 case STRUCT_REFERENCE -> {
                     assert carrier == MemorySegment.class;
                     VMStorage storage = storageCalculator.nextStorage(
-                            StorageClasses.INTEGER, AArch64.C_POINTER);
+                            StorageType.INTEGER, AArch64.C_POINTER);
                     bindings.vmLoad(storage, long.class)
                             .boxAddress(layout);
                 }
@@ -459,14 +484,13 @@ public abstract class CallArranger {
                     assert carrier == MemorySegment.class;
                     bindings.allocate(layout);
                     GroupLayout group = (GroupLayout) layout;
-                    VMStorage[] regs = storageCalculator.regAlloc(
-                            StorageClasses.VECTOR, group.memberLayouts().size());
+                    VMStorage[] regs = storageCalculator.nextStorageForHFA(group);
                     if (regs != null) {
                         long offset = 0;
                         for (int i = 0; i < group.memberLayouts().size(); i++) {
                             VMStorage storage = regs[i];
                             final long size = group.memberLayouts().get(i).byteSize();
-                            boolean useFloat = storage.type() == StorageClasses.VECTOR;
+                            boolean useFloat = storage.type() == StorageType.VECTOR;
                             Class<?> type = SharedUtils.primitiveCarrierForSize(size, useFloat);
                             bindings.dup()
                                     .vmLoad(storage, type)
@@ -479,18 +503,18 @@ public abstract class CallArranger {
                 }
                 case POINTER -> {
                     VMStorage storage =
-                            storageCalculator.nextStorage(StorageClasses.INTEGER, layout);
+                            storageCalculator.nextStorage(StorageType.INTEGER, layout);
                     bindings.vmLoad(storage, long.class)
                             .boxAddressRaw(Utils.pointeeSize(layout));
                 }
                 case INTEGER -> {
                     VMStorage storage =
-                            storageCalculator.nextStorage(StorageClasses.INTEGER, layout);
+                            storageCalculator.nextStorage(StorageType.INTEGER, layout);
                     bindings.vmLoad(storage, carrier);
                 }
                 case FLOAT -> {
                     VMStorage storage =
-                            storageCalculator.nextStorage(StorageClasses.VECTOR, layout);
+                            storageCalculator.nextStorage(StorageType.VECTOR, layout);
                     bindings.vmLoad(storage, carrier);
                 }
                 default -> throw new UnsupportedOperationException("Unhandled class " + argumentClass);

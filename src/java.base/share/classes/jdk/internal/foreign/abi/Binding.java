@@ -25,10 +25,12 @@
 package jdk.internal.foreign.abi;
 
 import jdk.internal.foreign.NativeMemorySegmentImpl;
+import jdk.internal.foreign.Utils;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.MemorySession;
+import java.lang.foreign.SegmentScope;
 import java.lang.foreign.SegmentAllocator;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -195,14 +197,14 @@ public interface Binding {
     /**
      * A binding context is used as an helper to carry out evaluation of certain bindings; for instance,
      * it helps {@link Allocate} bindings, by providing the {@link SegmentAllocator} that should be used for
-     * the allocation operation, or {@link BoxAddress} bindings, by providing the {@link MemorySession} that
+     * the allocation operation, or {@link BoxAddress} bindings, by providing the {@link SegmentScope} that
      * should be used to create an unsafe struct from a memory address.
      */
     class Context implements AutoCloseable {
         private final SegmentAllocator allocator;
-        private final MemorySession session;
+        private final SegmentScope session;
 
-        private Context(SegmentAllocator allocator, MemorySession session) {
+        private Context(SegmentAllocator allocator, SegmentScope session) {
             this.allocator = allocator;
             this.session = session;
         }
@@ -211,21 +213,26 @@ public interface Binding {
             return allocator;
         }
 
-        public MemorySession session() {
+        public SegmentScope session() {
             return session;
         }
 
         @Override
         public void close() {
-            session().close();
+            throw new UnsupportedOperationException();
         }
 
         /**
          * Create a binding context from given native scope.
          */
         public static Context ofBoundedAllocator(long size) {
-            MemorySession scope = MemorySession.openConfined();
-            return new Context(SegmentAllocator.newNativeArena(size, scope), scope);
+            Arena arena = Arena.openConfined();
+            return new Context(SegmentAllocator.slicingAllocator(MemorySegment.allocateNative(size, arena.scope())), arena.scope()) {
+                @Override
+                public void close() {
+                    arena.close();
+                }
+            };
         }
 
         /**
@@ -235,7 +242,7 @@ public interface Binding {
         public static Context ofAllocator(SegmentAllocator allocator) {
             return new Context(allocator, null) {
                 @Override
-                public MemorySession session() {
+                public SegmentScope session() {
                     throw new UnsupportedOperationException();
                 }
             };
@@ -246,10 +253,15 @@ public interface Binding {
          * the context's allocator is accessed.
          */
         public static Context ofSession() {
-            MemorySession scope = MemorySession.openConfined();
-            return new Context(null, scope) {
+            Arena arena = Arena.openConfined();
+            return new Context(null, arena.scope()) {
                 @Override
                 public SegmentAllocator allocator() { throw new UnsupportedOperationException(); }
+
+                @Override
+                public void close() {
+                    arena.close();
+                }
             };
         }
 
@@ -264,7 +276,7 @@ public interface Binding {
             }
 
             @Override
-            public MemorySession session() {
+            public SegmentScope session() {
                 throw new UnsupportedOperationException();
             }
 
@@ -356,7 +368,28 @@ public interface Binding {
     }
 
     static Binding cast(Class<?> fromType, Class<?> toType) {
-        return new Cast(fromType, toType);
+        if (fromType == int.class) {
+            if (toType == boolean.class) {
+                return Cast.INT_TO_BOOLEAN;
+            } else if (toType == byte.class) {
+                return Cast.INT_TO_BYTE;
+            } else if (toType == short.class) {
+                return Cast.INT_TO_SHORT;
+            } else if (toType == char.class) {
+                return Cast.INT_TO_CHAR;
+            }
+        } else if (toType == int.class) {
+            if (fromType == boolean.class) {
+                return Cast.BOOLEAN_TO_INT;
+            } else if (fromType == byte.class) {
+                return Cast.BYTE_TO_INT;
+            } else if (fromType == short.class) {
+                return Cast.SHORT_TO_INT;
+            } else if (fromType == char.class) {
+                return Cast.CHAR_TO_INT;
+            }
+        }
+        throw new IllegalArgumentException("Unknown conversion: " + fromType + " -> " + toType);
     }
 
 
@@ -665,8 +698,8 @@ public interface Binding {
         @Override
         public void interpret(Deque<Object> stack, BindingInterpreter.StoreFunc storeFunc,
                               BindingInterpreter.LoadFunc loadFunc, Context context) {
-            MemorySession session = needsSession ?
-                    context.session() : MemorySession.global();
+            SegmentScope session = needsSession ?
+                    context.session() : SegmentScope.global();
             stack.push(NativeMemorySegmentImpl.makeNativeSegmentUnchecked((long) stack.pop(), size, session));
         }
     }
@@ -702,7 +735,40 @@ public interface Binding {
      *   value onto the stack.
      *
      */
-    record Cast(Class<?> fromType, Class<?> toType) implements Binding {
+    enum Cast implements Binding {
+        INT_TO_BOOLEAN(int.class, boolean.class) {
+            @Override
+            public void interpret(Deque<Object> stack, BindingInterpreter.StoreFunc storeFunc,
+                                  BindingInterpreter.LoadFunc loadFunc, Context context) {
+                // implement least significant byte non-zero test
+                int arg = (int) stack.pop();
+                boolean result = Utils.byteToBoolean((byte) arg);
+                stack.push(result);
+            }
+        },
+        INT_TO_BYTE(int.class, byte.class),
+        INT_TO_CHAR(int.class, char.class),
+        INT_TO_SHORT(int.class, short.class),
+        BOOLEAN_TO_INT(boolean.class, int.class),
+        BYTE_TO_INT(byte.class, int.class),
+        CHAR_TO_INT(char.class, int.class),
+        SHORT_TO_INT(short.class, int.class);
+
+        private final Class<?> fromType;
+        private final Class<?> toType;
+
+        Cast(Class<?> fromType, Class<?> toType) {
+            this.fromType = fromType;
+            this.toType = toType;
+        }
+
+        public Class<?> fromType() {
+            return fromType;
+        }
+
+        public Class<?> toType() {
+            return toType;
+        }
 
         @Override
         public Tag tag() {

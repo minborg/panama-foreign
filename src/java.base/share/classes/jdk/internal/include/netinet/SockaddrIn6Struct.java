@@ -194,7 +194,7 @@ public final class SockaddrIn6Struct {
             public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
                 return allocator.allocate(MemoryLayout.sequenceLayout(len, layout()));
             }
-            public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, layout(), 1, session); }
+            public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) { return RuntimeHelper.asArray(addr, layout(), 1, scope); }
         }
 
         public static MemorySegment __u6_addr$slice(MemorySegment seg) {
@@ -205,7 +205,7 @@ public final class SockaddrIn6Struct {
         public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
             return allocator.allocate(MemoryLayout.sequenceLayout(len, layout()));
         }
-        public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, layout(), 1, session); }
+        public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) { return RuntimeHelper.asArray(addr, layout(), 1, scope); }
     }
 
     public static MemorySegment sin6_addr$slice(MemorySegment seg) {
@@ -244,7 +244,7 @@ public final class SockaddrIn6Struct {
     public static MemorySegment allocateArray(long len, SegmentAllocator allocator) {
         return allocator.allocate(MemoryLayout.sequenceLayout(len, layout()));
     }
-    public static MemorySegment ofAddress(MemorySegment addr, MemorySession session) { return RuntimeHelper.asArray(addr, layout(), 1, session); }
+    public static MemorySegment ofAddress(MemorySegment addr, SegmentScope scope) { return RuntimeHelper.asArray(addr, layout(), 1, scope); }
 }
 
 

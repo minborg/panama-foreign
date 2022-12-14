@@ -26,12 +26,35 @@
 
 #include "code/vmreg.hpp"
 #include "oops/oopsHierarchy.hpp"
-#include "prims/vmstorage.inline.hpp"
+#include "prims/vmstorage.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "utilities/growableArray.hpp"
 #include "utilities/macros.hpp"
 
 #include CPU_HEADER(foreignGlobals)
+
+// needs to match StubLocations in Java code.
+// placeholder locations to be filled in by
+// the code gen code
+class StubLocations {
+public:
+  enum Location : uint32_t {
+    TARGET_ADDRESS,
+    RETURN_BUFFER,
+    CAPTURED_STATE_BUFFER,
+    LOCATION_LIMIT
+  };
+private:
+  VMStorage _locs[LOCATION_LIMIT];
+public:
+  StubLocations();
+
+  void set(uint32_t loc, VMStorage storage);
+  void set_frame_data(uint32_t loc, int offset);
+  VMStorage get(uint32_t loc) const;
+  VMStorage get(VMStorage placeholder) const;
+  int data_offset(uint32_t loc) const;
+};
 
 class CallingConventionClosure {
 public:
@@ -50,7 +73,7 @@ struct CallRegs {
 class ForeignGlobals {
 private:
   template<typename T>
-  static void parse_register_array(objArrayOop jarray, int type_index, GrowableArray<T>& array, T (*converter)(int));
+  static void parse_register_array(objArrayOop jarray, StorageType type_index, GrowableArray<T>& array, T (*converter)(int));
 
 public:
   static const ABIDescriptor parse_abi_descriptor(jobject jabi);
@@ -93,7 +116,6 @@ private:
 };
 
 struct Move {
-  BasicType bt;
   VMStorage from;
   VMStorage to;
 };
@@ -110,13 +132,13 @@ public:
     VMStorage shuffle_temp);
 
   int out_arg_bytes() const { return _out_arg_bytes; }
-  void generate(MacroAssembler* masm, VMStorage tmp, int in_stk_bias, int out_stk_bias) const {
-    pd_generate(masm, tmp, in_stk_bias, out_stk_bias);
+  void generate(MacroAssembler* masm, VMStorage tmp, int in_stk_bias, int out_stk_bias, const StubLocations& locs) const {
+    pd_generate(masm, tmp, in_stk_bias, out_stk_bias, locs);
   }
 
   void print_on(outputStream* os) const;
 private:
-  void pd_generate(MacroAssembler* masm, VMStorage tmp, int in_stk_bias, int out_stk_bias) const;
+  void pd_generate(MacroAssembler* masm, VMStorage tmp, int in_stk_bias, int out_stk_bias, const StubLocations& locs) const;
 };
 
 #endif // SHARE_PRIMS_FOREIGN_GLOBALS

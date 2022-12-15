@@ -2,13 +2,14 @@
 
 package jdk.internal.include.sys;
 
+import jdk.internal.include.common.CaptureCallStateUtil;
 import jdk.internal.include.common.RuntimeHelper;
-import jdk.internal.include.common.Util;
 
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SegmentScope;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
 
 import static jdk.internal.include.common.Util.shouldNotReachHere;
 
@@ -46,14 +47,48 @@ public final class SocketH {
      *        error, -1 is returned, and {@code errno} is set to indicate the error.
      * @see <a href="https://man7.org/linux/man-pages/man2/connect.2.html">connect</a> for further details.
      */
+    @Deprecated(forRemoval = true)
     public static int connect(int sockfd, MemorySegment addr, int addlen) {
-        var mh$ = connect$MH();
+        throw new UnsupportedOperationException();
+/*        var mh$ = connect$MH();
         try {
             return (int)mh$.invokeExact(sockfd, addr, addlen);
         } catch (Throwable ex$) {
             throw shouldNotReachHere(ex$);
+        }*/
+    }
+
+    /**
+     * Connects the socket referred to by the
+     * file descriptor sockfd to the address specified by addr.  The
+     * addrlen argument specifies the size of addr.  The format of the
+     * address in addr is determined by the address space of the socket
+     * sockfd;
+     *
+     * {@snippet :
+     * int connect(int, struct sockaddr*, socklen_t);
+     *}
+     *
+     * @param sockfd the socket file descriptor.
+     * @param addr   points to a sockaddr structure in
+     *               which the sending address is to be stored. The length
+     *               and format of the address depend on the address
+     *               family of the socket.
+     * @param addlen the length of the supplied sockaddr
+     *               structure
+     * @param errCap the segment to use for capturing errCap
+     * @return If the connection or binding succeeds, zero is returned.  On
+     *         error, -1 is returned, and {@code errno} is set to indicate the error.
+     * @see <a href="https://man7.org/linux/man-pages/man2/connect.2.html">connect</a> for further details.
+     */
+    public static int connect(int sockfd, MemorySegment addr, int addlen, MemorySegment errCap) {
+        try {
+            return (int) CONNECT_MH.invokeExact(sockfd, addr, addlen, errCap);
+        } catch (Throwable ex$) {
+            throw shouldNotReachHere(ex$);
         }
     }
+
 
     /**
      * Receives a message from a
@@ -110,10 +145,10 @@ public final class SocketH {
     public static long recvfrom(int socket,
                                 MemorySegment buffer, long length,
                                 int flags,
-                                MemorySegment address, MemorySegment addressLen) {
-        var mh$ = recvfrom$MH();
+                                MemorySegment address, MemorySegment addressLen,
+                                MemorySegment errCap) {
         try {
-            return (long)mh$.invokeExact(socket, buffer, length, flags, address, addressLen);
+            return (long)RECVFROM_MH.invokeExact(socket, buffer, length, flags, address, addressLen, errCap);
         } catch (Throwable ex$) {
             throw shouldNotReachHere(ex$);
         }
@@ -157,10 +192,10 @@ public final class SocketH {
     public static long sendto(int socket,
                               MemorySegment message, long length,
                               int flags,
-                              MemorySegment destAddr, int destLen) {
-        var mh$ = sendto$MH();
+                              MemorySegment destAddr, int destLen,
+                              MemorySegment errCap) {
         try {
-            return (long)mh$.invokeExact(socket, message, length, flags, destAddr, destLen);
+            return (long)SENDTO_MH.invokeExact(socket, message, length, flags, destAddr, destLen, errCap);
         } catch (Throwable ex$) {
             throw shouldNotReachHere(ex$);
         }
@@ -179,17 +214,26 @@ public final class SocketH {
      *         to indicate the error.
      * @see <a href="https://www.manpagez.com/man/2/disconnectx/">disconnectx</a>
      */
-    public static int disconnectx(int socket, int associd, int connid) {
-        var mh$ = disconnectx$MH();
+    public static int disconnectx(int socket, int associd, int connid, MemorySegment errCap) {
         try {
-            return (int)mh$.invokeExact(socket, associd, connid);
+            return (int)DISCONNECTX_MH.invokeExact(socket, associd, connid, errCap);
         } catch (Throwable ex$) {
             throw shouldNotReachHere(ex$);
         }
     }
+
+    public static int errno(MemorySegment errCap) {
+        return (int) ERRNO_VH.get(errCap);
+    }
+
+    public static MemorySegment allocateErrCap() {
+        return MemorySegment.allocateNative(ERRNO_CSS_BYTE_SIZE, SegmentScope.auto());
+    }
+/*
     static MethodHandle connect$MH() {
         return RuntimeHelper.requireNonNull(constants$0.connect$MH,"connect");
-    }
+    }*/
+/*
     static MethodHandle recvfrom$MH() {
         return RuntimeHelper.requireNonNull(constants$0.recvfrom$MH,"recvfrom");
     }
@@ -198,6 +242,37 @@ public final class SocketH {
     }
     static MethodHandle disconnectx$MH() {
         return RuntimeHelper.requireNonNull(constants$0.disconnectx$MH,"disconnectx");
+    }*/
+
+    private static final String ERRNO = "errno";
+    private static final MethodHandle CONNECT_MH;
+    private static final VarHandle ERRNO_VH;
+    private static final long ERRNO_CSS_BYTE_SIZE;
+    private static final MethodHandle RECVFROM_MH;
+    private static final MethodHandle SENDTO_MH;
+    private static final MethodHandle DISCONNECTX_MH;
+
+    static {
+
+        var connectCapture = CaptureCallStateUtil
+                .createCapture("connect", constants$0.connect$FUNC, ERRNO);
+
+        CONNECT_MH = connectCapture.methodHandle();
+        ERRNO_VH = connectCapture.captureHandle();
+        ERRNO_CSS_BYTE_SIZE = connectCapture.ccsByteSize();
+
+        RECVFROM_MH = CaptureCallStateUtil
+                .createCapture("recvfrom", constants$0.recvfrom$FUNC, ERRNO)
+                .methodHandle();
+
+        SENDTO_MH = CaptureCallStateUtil
+                .createCapture("sendto", constants$0.sendto$FUNC, ERRNO)
+                .methodHandle();
+
+        DISCONNECTX_MH = CaptureCallStateUtil
+                .createCapture("disconnectx", constants$0.disconnectx$FUNC, ERRNO)
+                .methodHandle();
+
     }
 
     private SocketH() {}

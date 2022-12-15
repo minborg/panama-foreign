@@ -63,12 +63,15 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import static jdk.internal.include.ErrorNo.*;
 import static jdk.internal.include.netinet.InH.AF_INET;
 import static jdk.internal.include.netinet.InH.AF_INET6;
 import static jdk.internal.include.sys.SocketH.*;
 import static jdk.internal.include.support.ch.NetUtils.MAX_PACKET_LEN;
 import static jdk.internal.include.support.ch.NetUtils.SOCKET_ADDRESS;
-import static jdk.internal.include.support.ch.SocketReturnValueHandler.throwIfError;
+import static jdk.internal.include.support.ch.SocketReturnValueHandler.handleSocketError;
+import static sun.nio.ch.IOStatus.INTERRUPTED;
+import static sun.nio.ch.IOStatus.UNAVAILABLE;
 
 /**
  * An implementation of DatagramChannels.
@@ -123,6 +126,9 @@ class DatagramChannelImpl2
     private static final int ST_CONNECTED = 1;
     private static final int ST_CLOSING = 2;
     private static final int ST_CLOSED = 3;
+
+    private final MemorySegment errCap;
+
     private int state;
 
     // IDs of native threads doing reads and writes, for signalling
@@ -219,6 +225,7 @@ class DatagramChannelImpl2
                 ResourceManager.afterUdpClose();
             }
         }
+        this.errCap = SocketH.allocateErrCap();
 
         Runnable releaser = releaserFor(fd, sockAddrs);
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
@@ -259,6 +266,7 @@ class DatagramChannelImpl2
                 ResourceManager.afterUdpClose();
             }
         }
+        this.errCap = SocketH.allocateErrCap();
 
         Runnable releaser = releaserFor(fd, sockAddrs);
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
@@ -726,7 +734,7 @@ class DatagramChannelImpl2
             try {
                 long startNanos = System.nanoTime();
                 int n = receive(dst, connected);
-                while (n == IOStatus.UNAVAILABLE && isOpen()) {
+                while (n == UNAVAILABLE && isOpen()) {
                     long remainingNanos = nanos - (System.nanoTime() - startNanos);
                     if (remainingNanos <= 0) {
                         throw new SocketTimeoutException("Receive timed out");
@@ -785,7 +793,7 @@ class DatagramChannelImpl2
                 MemorySegment.ofBuffer(bb).asSlice(pos),
                 rem,
                 sourceSockAddr.segment(),
-                connected);
+                connected, errCap);
         if (n > 0)
             bb.position(pos + n);
         return n;
@@ -866,7 +874,7 @@ class DatagramChannelImpl2
             } finally {
                 endWrite(blocking, completed);
             }
-            assert n >= 0 || n == IOStatus.UNAVAILABLE;
+            assert n >= 0 || n == UNAVAILABLE;
             return IOStatus.normalize(n);
         } finally {
             writeLock.unlock();
@@ -935,7 +943,7 @@ class DatagramChannelImpl2
         int addressLen = targetSocketAddress(target);
         try {
             written = send0(fd, MemorySegment.ofBuffer(bb).asSlice(pos), rem,
-                            targetSockAddr.segment(), addressLen);
+                            targetSockAddr.segment(), addressLen, errCap);
         } catch (NoRouteToHostException nrthe) {
             // Todo: Remove this debugging feature
             throw new NoRouteToHostException(nrthe.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr + ", addressLen=" + addressLen + " "+toHex(targetSockAddr.segment()));
@@ -1358,7 +1366,7 @@ class DatagramChannelImpl2
 
                     // disconnect socket
                     boolean isIPv6 = (family == StandardProtocolFamily.INET6);
-                    disconnect0(fd, isIPv6);
+                    disconnect0(fd, isIPv6, errCap);
 
                     // no longer connected
                     remoteAddress = null;
@@ -1582,7 +1590,7 @@ class DatagramChannelImpl2
 
                 // join the group
                 int n = Net.join6(fd, groupAddress, index, sourceAddress);
-                if (n == IOStatus.UNAVAILABLE)
+                if (n == UNAVAILABLE)
                     throw new UnsupportedOperationException();
 
                 key = new MembershipKeyImpl.Type6(this, group, interf, source,
@@ -1600,7 +1608,7 @@ class DatagramChannelImpl2
 
                 // join the group
                 int n = Net.join4(fd, groupAddress, targetAddress, sourceAddress);
-                if (n == IOStatus.UNAVAILABLE)
+                if (n == UNAVAILABLE)
                     throw new UnsupportedOperationException();
 
                 key = new MembershipKeyImpl.Type4(this, group, interf, source,
@@ -1705,7 +1713,7 @@ class DatagramChannelImpl2
                 n = Net.block4(fd, key4.groupAddress(), key4.interfaceAddress(),
                                Net.inet4AsInt(source));
             }
-            if (n == IOStatus.UNAVAILABLE) {
+            if (n == UNAVAILABLE) {
                 // ancient kernel
                 throw new UnsupportedOperationException();
             }
@@ -1954,7 +1962,8 @@ class DatagramChannelImpl2
                                 MemorySegment buff,
                                 int len,
                                 MemorySegment srcAddr,
-                                boolean connected) throws IOException {
+                                boolean connected,
+                                MemorySegment errCap) throws IOException {
         final int sockfd = FD_ACCESS.get(fd);
         len = Math.min(len, MAX_PACKET_LEN);
         boolean retry = false;
@@ -1962,29 +1971,26 @@ class DatagramChannelImpl2
 
         do {
             retry = false;
-            n = (int) recvfrom(sockfd, buff, len, 0, srcAddr, ADD_LEN);
-/*
+            n = (int) recvfrom(sockfd, buff, len, 0, srcAddr, ADD_LEN, errCap);
+
             if (n < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    return IOS_UNAVAILABLE;
+                int errno = SocketH.errno(errCap);
+                if (errno == EAGAIN() || errno == EWOULDBLOCK()) {
+                    return UNAVAILABLE;
                 }
-                if (errno == EINTR) {
-                    return IOS_INTERRUPTED;
+                if (errno == EINTR()) {
+                    return INTERRUPTED;
                 }
-                if (errno == ECONNREFUSED) {
-                    if (connected == JNI_FALSE) {
-                        retry = JNI_TRUE;
+                if (errno == ECONNREFUSED()) {
+                    if (!connected) {
+                        retry = true;
                     } else {
-                        JNU_ThrowByName(env, JNU_JAVANETPKG "PortUnreachableException", 0);
-                        return IOS_THROWN;
+                        throw new PortUnreachableException();
                     }
                 } else {
-                    return handleSocketError(env, errno);
+                    return handleSocketError(n, errCap);
                 }
-
-
-        } */
-            throwIfError(n); // Todo: Move into the commented code above
+            }
         } while (retry);
         return n;
     }
@@ -1994,18 +2000,19 @@ class DatagramChannelImpl2
                              MemorySegment buff,
                              int len,
                              MemorySegment destAddr,
-                             int addrlen) throws IOException {
+                             int addrlen,
+                             MemorySegment errCap) throws IOException {
         final int sockfd = FD_ACCESS.get(fd);
         len = Math.min(len, MAX_PACKET_LEN);
-        int n = (int) sendto(sockfd, buff, len, 0, destAddr, addrlen);
-        return throwIfError(n);
+        int n = (int) sendto(sockfd, buff, len, 0, destAddr, addrlen, errCap);
+        return handleSocketError(n, errCap);
     }
 
-    public static void disconnect0(FileDescriptor fd, boolean isIPv6) throws IOException {
+    public static void disconnect0(FileDescriptor fd, boolean isIPv6, MemorySegment errCap) throws IOException {
         final int rv;
         // This will prune byte code the branch not taken
         if (CurrentOs.OS == Os.MAC_OS) {
-            rv = disconnectx(FD_ACCESS.get(fd), SocketH.SAE_ASSOCID_ANY(), SocketH.SAE_CONNID_ANY());
+            rv = disconnectx(FD_ACCESS.get(fd), SocketH.SAE_ASSOCID_ANY(), SocketH.SAE_CONNID_ANY(), errCap);
         } else {
             try (var arena = Arena.openConfined()) {
                 var segment = arena.allocate(SockaddrIn6Struct.layout());
@@ -2014,12 +2021,12 @@ class DatagramChannelImpl2
                         SockaddrIn6Struct.sin6_family$set(segment,
                         (byte) (isIPv6 ? AF_INET6() : AF_INET()),
                         len);
-                rv = SocketH.connect(FD_ACCESS.get(fd), segment, len);
+                rv = SocketH.connect(FD_ACCESS.get(fd), segment, len, errCap);
             }
         }
         // Todo: add proper error handling here
         // Todo: investigate how to access errno
-        throwIfError(rv);
+        handleSocketError(rv, errCap);
     }
 
     static {
@@ -2035,6 +2042,5 @@ class DatagramChannelImpl2
     private static String toHex(MemorySegment segment) {
         return HexFormat.ofDelimiter(" ").formatHex(segment.toArray(ValueLayout.JAVA_BYTE));
     }
-
 
 }

@@ -1,5 +1,7 @@
 package jdk.internal.include;
 
+import java.util.OptionalInt;
+
 public final class ErrorNo {
     private ErrorNo() {}
 
@@ -85,6 +87,10 @@ public final class ErrorNo {
 
     public static int EWOULDBLOCK() {
         return errno_h.EWOULDBLOCK();
+    }
+
+    public static int EPROTO() {
+        return errno_h.EPROTO();
     }
 
 }

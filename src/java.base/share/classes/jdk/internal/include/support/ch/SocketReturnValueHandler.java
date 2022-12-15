@@ -1,15 +1,18 @@
 package jdk.internal.include.support.ch;
 
+import jdk.internal.include.sys.SocketH;
+
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.net.BindException;
 import java.net.ConnectException;
 import java.net.NoRouteToHostException;
+import java.net.ProtocolException;
 import java.net.SocketException;
 import java.util.Map;
 import java.util.function.Function;
 
 import static jdk.internal.include.ErrorNo.*;
-import static jdk.internal.include.ErrorNo.EINPROGRESS;
 
 public final class SocketReturnValueHandler {
 
@@ -17,12 +20,13 @@ public final class SocketReturnValueHandler {
     }
 
     // Todo: Move to support class
-    // Need to generate from asm/errorno.h
-    public static int throwIfError(int rv) throws IOException {
+
+    public static int handleSocketError(int rv, MemorySegment errCap) throws IOException {
         class Holder {
-            // Todo: Use a primitive IntMap that can be built up using plural cases
+            // Todo: Maybe use a primitive IntMap that can be built up using plural cases
             private static final Map<Integer, Function<String, ? extends IOException>> INTEGER_SUPPLIER_MAP = Map.of(
-                    // Todo: Add conditional EPROTO
+                    // Todo: make EPROTO conditional
+                    EPROTO(), ProtocolException::new,
                     ECONNREFUSED(), ConnectException::new,
                     ETIMEDOUT(), ConnectException::new,
                     ENOTCONN(), ConnectException::new,
@@ -32,11 +36,17 @@ public final class SocketReturnValueHandler {
                     EACCES(), BindException::new
             );
         }
-        if (0 <= rv || EINPROGRESS() == rv) {
+        if (0 <= rv) {
             // No error
             return rv;
         }
-        throw Holder.INTEGER_SUPPLIER_MAP.getOrDefault(rv, SocketException::new)
+        int errno = SocketH.errno(errCap);
+        if (errno == EINPROGRESS()) {
+            // Non-blocking connect
+            return 0;
+        }
+
+        throw Holder.INTEGER_SUPPLIER_MAP.getOrDefault(errno, SocketException::new)
                 .apply("NioSocketError");
     }
 

@@ -18,10 +18,10 @@ import static java.lang.foreign.ValueLayout.*;
 
 public final class RuntimeHelper {
 
-    private static final Linker LINKER = Linker.nativeLinker();
+    static final Linker LINKER = Linker.nativeLinker();
     private static final ClassLoader LOADER = RuntimeHelper.class.getClassLoader();
     private static final MethodHandles.Lookup MH_LOOKUP = MethodHandles.lookup();
-    private static final SymbolLookup SYMBOL_LOOKUP;
+    static final SymbolLookup SYMBOL_LOOKUP;
     private static final SegmentAllocator THROWING_ALLOCATOR = (x, y) -> { throw new AssertionError("should not reach here"); };
 
     public final static SegmentAllocator CONSTANT_ALLOCATOR =
@@ -222,4 +222,9 @@ public final class RuntimeHelper {
             }
         }
     }
+
+    static SymbolLookup symbolLookup() {
+        return SYMBOL_LOOKUP;
+    }
+
 }

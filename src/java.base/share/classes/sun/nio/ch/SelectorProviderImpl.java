@@ -43,7 +43,7 @@ public abstract class SelectorProviderImpl
 {
     @Override
     public DatagramChannel openDatagramChannel() throws IOException {
-        return new DatagramChannelImpl(this, /*interruptible*/true);
+        return new DatagramChannelImpl2(this, /*interruptible*/true);
     }
 
     /**
@@ -51,12 +51,12 @@ public abstract class SelectorProviderImpl
      * is not interruptible.
      */
     public DatagramChannel openUninterruptibleDatagramChannel() throws IOException {
-        return new DatagramChannelImpl(this, /*interruptible*/false);
+        return new DatagramChannelImpl2(this, /*interruptible*/false);
     }
 
     @Override
     public DatagramChannel openDatagramChannel(ProtocolFamily family) throws IOException {
-        return new DatagramChannelImpl(this, family, /*interruptible*/true);
+        return new DatagramChannelImpl2(this, family, /*interruptible*/true);
     }
 
     @Override

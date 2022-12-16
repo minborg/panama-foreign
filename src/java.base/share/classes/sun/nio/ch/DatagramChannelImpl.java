@@ -293,10 +293,11 @@ class DatagramChannelImpl
     public DatagramSocket socket() {
         DatagramSocket socket = this.socket;
         if (socket == null) {
-            socket = DatagramSocketAdaptor.create(this);
+            // socket = DatagramSocketAdaptor.create(this);
             if (!SOCKET.compareAndSet(this, null, socket)) {
                 socket = this.socket;
             }
+            throw new UnsupportedOperationException("Uncomment socket = DatagramSocketAdaptor.create(this); above");
         }
         return socket;
     }

@@ -72,17 +72,17 @@ public class DatagramSocketAdaptor
     extends MulticastSocket
 {
     // The channel being adapted
-    private final DatagramChannelImpl dc;
+    private final DatagramChannelImpl2 dc;
 
     // Timeout "option" value for receives
     private volatile int timeout;
 
-    private DatagramSocketAdaptor(DatagramChannelImpl dc) throws IOException {
+    private DatagramSocketAdaptor(DatagramChannelImpl2 dc) throws IOException {
         super(/*SocketAddress*/ DatagramSockets.NO_DELEGATE);
         this.dc = dc;
     }
 
-    static DatagramSocket create(DatagramChannelImpl dc) {
+    static DatagramSocket create(DatagramChannelImpl2 dc) {
         try {
             return new DatagramSocketAdaptor(dc);
         } catch (IOException e) {

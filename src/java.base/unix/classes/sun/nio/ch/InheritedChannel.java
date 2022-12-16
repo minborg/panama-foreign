@@ -134,7 +134,7 @@ class InheritedChannel {
         }
     }
 
-    public static class InheritedDatagramChannelImpl extends DatagramChannelImpl {
+    public static class InheritedDatagramChannelImpl extends DatagramChannelImpl2 {
 
         InheritedDatagramChannelImpl(SelectorProvider sp,
                                      FileDescriptor fd)

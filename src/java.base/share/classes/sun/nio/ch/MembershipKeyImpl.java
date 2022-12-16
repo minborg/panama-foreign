@@ -144,7 +144,7 @@ class MembershipKeyImpl
 
     public void drop() {
         // delegate to channel
-        ((DatagramChannelImpl)ch).drop(this);
+        ((DatagramChannelImpl2)ch).drop(this);
     }
 
     @Override
@@ -180,7 +180,7 @@ class MembershipKeyImpl
                 return this;
             }
 
-            ((DatagramChannelImpl)ch).block(this, toBlock);
+            ((DatagramChannelImpl2)ch).block(this, toBlock);
 
             // created blocked set if required and add source address
             if (blockedSet == null)
@@ -196,7 +196,7 @@ class MembershipKeyImpl
             if ((blockedSet == null) || !blockedSet.contains(toUnblock))
                 throw new IllegalStateException("not blocked");
 
-            ((DatagramChannelImpl)ch).unblock(this, toUnblock);
+            ((DatagramChannelImpl2)ch).unblock(this, toUnblock);
 
             blockedSet.remove(toUnblock);
         }

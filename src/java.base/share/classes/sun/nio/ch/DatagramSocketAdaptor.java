@@ -249,6 +249,13 @@ public class DatagramSocketAdaptor
                 bb.get(p.getData(), p.getOffset(), len);
                 DatagramPackets.setLength(p, len);
 
+                if (sender instanceof InetSocketAddress isa) {
+                    if (isa.getAddress().getAddress().length > 4) {
+                        System.out.println("ERROR:");
+                        System.out.println("sender = " + sender);
+                    }
+                }
+
                 // sender address
                 p.setSocketAddress(sender);
             } catch (SocketTimeoutException | ClosedByInterruptException e) {

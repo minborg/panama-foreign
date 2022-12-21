@@ -235,7 +235,7 @@ class DatagramChannelImpl
             }
         }
 
-        Runnable releaser = releaserFor(fd, sockAddrs);
+        Runnable releaser = releaserFor(fd);
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
     }
 
@@ -275,7 +275,7 @@ class DatagramChannelImpl
             }
         }
 
-        Runnable releaser = releaserFor(fd, sockAddrs);
+        Runnable releaser = releaserFor(fd);
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
 
         synchronized (stateLock) {
@@ -1947,7 +1947,7 @@ class DatagramChannelImpl
     /**
      * Returns an action to release the given file descriptor and socket addresses.
      */
-    private static Runnable releaserFor(FileDescriptor fd, NativeSocketAddressTriplet sockAddrs) {
+    private static Runnable releaserFor(FileDescriptor fd) {
         return () -> {
             try {
                 nd.close(fd);
@@ -1956,7 +1956,6 @@ class DatagramChannelImpl
             } finally {
                 // decrement socket count and release memory
                 ResourceManager.afterUdpClose();
-                sockAddrs.freeAll();
             }
         };
     }

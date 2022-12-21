@@ -49,7 +49,9 @@ import jdk.internal.util.ArraysSupport;
  *
  * This class is not thread safe.
  */
-class OldNativeSocketAddress {
+
+/* public */
+public class OldNativeSocketAddress {
     private static final JavaNetInetAddressAccess JNINA = SharedSecrets.getJavaNetInetAddressAccess();
     private static final Unsafe UNSAFE = Unsafe.getUnsafe();
     private static final long ARRAY_BASE_OFFSET = UNSAFE.arrayBaseOffset(byte[].class);
@@ -76,7 +78,8 @@ class OldNativeSocketAddress {
         return address;
     }
 
-    OldNativeSocketAddress() {
+    /* public */
+    public OldNativeSocketAddress() {
         long base = UNSAFE.allocateMemory(SIZEOF_SOCKETADDRESS);
         UNSAFE.setMemory(base, SIZEOF_SOCKETADDRESS, (byte) 0);
         this.address = base;
@@ -117,7 +120,8 @@ class OldNativeSocketAddress {
      * @return the size of the socket address (sizeof sockaddr or sockaddr6)
      * @throws UnsupportedAddressTypeException if the address type is not supported
      */
-    int encode(ProtocolFamily protocolFamily, InetSocketAddress isa) {
+    /* public */
+    public int encode(ProtocolFamily protocolFamily, InetSocketAddress isa) {
         if (protocolFamily == StandardProtocolFamily.INET) {
             // struct sockaddr
             InetAddress ia = isa.getAddress();
@@ -141,7 +145,8 @@ class OldNativeSocketAddress {
      * Return an InetSocketAddress to represent the socket address in this buffer.
      * @throws SocketException if the socket address is not AF_INET or AF_INET6
      */
-    InetSocketAddress decode() throws SocketException {
+    /* public */
+    public InetSocketAddress decode() throws SocketException {
         int family = family();
         if (family != AF_INET && family != AF_INET6)
             throw new SocketException("Socket family not recognized");

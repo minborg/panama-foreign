@@ -83,7 +83,7 @@ public final class SocketH {
      */
     public static int connect(int sockfd, MemorySegment addr, int addlen, MemorySegment errCap) {
         try {
-            return (int) CONNECT_MH.invokeExact(sockfd, addr, addlen, errCap);
+            return (int) CONNECT_MH.invokeExact(errCap, sockfd, addr, addlen);
         } catch (Throwable ex$) {
             throw shouldNotReachHere(ex$);
         }
@@ -148,7 +148,7 @@ public final class SocketH {
                                 MemorySegment address, MemorySegment addressLen,
                                 MemorySegment errCap) {
         try {
-            return (long)RECVFROM_MH.invokeExact(socket, buffer, length, flags, address, addressLen, errCap);
+            return (long)RECVFROM_MH.invokeExact(errCap, socket, buffer, length, flags, address, addressLen);
         } catch (Throwable ex$) {
             throw shouldNotReachHere(ex$);
         }
@@ -195,7 +195,8 @@ public final class SocketH {
                               MemorySegment destAddr, int destLen,
                               MemorySegment errCap) {
         try {
-            return (long)SENDTO_MH.invokeExact(socket, message, length, flags, destAddr, destLen, errCap);
+            // Todo: Investigate why errCap comes first!
+            return (long)SENDTO_MH.invokeExact(errCap, socket, message, length, flags, destAddr, destLen);
         } catch (Throwable ex$) {
             throw shouldNotReachHere(ex$);
         }
@@ -216,7 +217,7 @@ public final class SocketH {
      */
     public static int disconnectx(int socket, int associd, int connid, MemorySegment errCap) {
         try {
-            return (int)DISCONNECTX_MH.invokeExact(socket, associd, connid, errCap);
+            return (int)DISCONNECTX_MH.invokeExact(errCap, socket, associd, connid);
         } catch (Throwable ex$) {
             throw shouldNotReachHere(ex$);
         }

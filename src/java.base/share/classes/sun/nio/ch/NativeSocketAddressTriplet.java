@@ -1,8 +1,7 @@
 package sun.nio.ch;
 
-import jdk.internal.misc.Unsafe;
-
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SegmentScope;
 
 import static jdk.internal.include.support.ch.NetUtils.SOCKET_ADDRESS;
 
@@ -33,7 +32,8 @@ sealed public interface NativeSocketAddressTriplet {
      * Calling this method directly and then accessing any of the native socket addresses is <em>unsafe</em> and
      * results in unspecified behaviour including JVM crashes.
      */
-    void freeAll();
+    // Todo: Remove
+     void freeAll();
 
     /**
      * {@return a new native socket address triplet}.
@@ -44,11 +44,11 @@ sealed public interface NativeSocketAddressTriplet {
 
     final class Impl implements NativeSocketAddressTriplet {
 
-        private static final Unsafe UNSAFE = Unsafe.getUnsafe();
+        /*private static final Unsafe UNSAFE = Unsafe.getUnsafe();*/
 
         private static final long SEGMENT_SIZE = SOCKET_ADDRESS.byteSize();
 
-        private final long baseAddress;
+        /*private final long baseAddress;*/
         private final NativeSocketAddress source;
         private final NativeSocketAddress cached;
         private final NativeSocketAddress target;
@@ -56,22 +56,38 @@ sealed public interface NativeSocketAddressTriplet {
         public Impl() {
             // Allocate the backing native memory in a single chunk
             // This increases locality and makes a triple allocation either succeed or fail atomically
-            baseAddress = UNSAFE.allocateMemory(SEGMENT_SIZE * 3);
-            source = new NativeSocketAddress.Impl(ofShard(0));
-            cached = new NativeSocketAddress.Impl(ofShard(1));
-            target = new NativeSocketAddress.Impl(ofShard(2));
+            /*            baseAddress = UNSAFE.allocateMemory(SEGMENT_SIZE * 3);*/
+            var segment = MemorySegment.allocateNative(SEGMENT_SIZE * 3, SegmentScope.auto());
+            source = new NativeSocketAddress.Impl(ofShard(segment, 0));
+            cached = new NativeSocketAddress.Impl(ofShard(segment, 1));
+            target = new NativeSocketAddress.Impl(ofShard(segment, 2));
         }
 
-        @Override public NativeSocketAddress source() { return source; }
+        @Override
+        public NativeSocketAddress source() {
+            return source;
+        }
 
-        @Override public NativeSocketAddress cached() { return cached; }
+        @Override
+        public NativeSocketAddress cached() {
+            return cached;
+        }
 
-        @Override public NativeSocketAddress target() { return target; }
-        @Override public void freeAll() { UNSAFE.freeMemory(baseAddress); }
+        @Override
+        public NativeSocketAddress target() {
+            return target;
+        }
 
-        private MemorySegment ofShard(int shard) {
-            return MemorySegment.ofAddress(baseAddress + SEGMENT_SIZE * (long) shard, SEGMENT_SIZE)
-                    .fill((byte) 0);
+        @Override
+        public void freeAll() {
+            // no-op
+            /* UNSAFE.freeMemory(baseAddress); */
+        }
+
+        private MemorySegment ofShard(MemorySegment segment, int shard) {
+            return segment.asSlice(SEGMENT_SIZE * (long) shard, SEGMENT_SIZE);
+            /*return MemorySegment.ofAddress(baseAddress + SEGMENT_SIZE * (long) shard, SEGMENT_SIZE, scope)
+                    .fill((byte) 0);*/
         }
     }
 

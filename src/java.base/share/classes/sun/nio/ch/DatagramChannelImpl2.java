@@ -220,14 +220,13 @@ class DatagramChannelImpl2
             initialized = true;
         } finally {
             if (!initialized) {
-                if (sockAddrs != null) sockAddrs.freeAll();
                 if (fd != null) nd.close(fd);
                 ResourceManager.afterUdpClose();
             }
         }
         this.errCap = SocketH.allocateErrCap();
 
-        Runnable releaser = releaserFor(fd, sockAddrs);
+        Runnable releaser = releaserFor(fd);
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
     }
 
@@ -261,14 +260,13 @@ class DatagramChannelImpl2
             initialized = true;
         } finally {
             if (!initialized) {
-                if (sockAddrs != null) sockAddrs.freeAll();
                 nd.close(fd);
                 ResourceManager.afterUdpClose();
             }
         }
         this.errCap = SocketH.allocateErrCap();
 
-        Runnable releaser = releaserFor(fd, sockAddrs);
+        Runnable releaser = releaserFor(fd);
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
 
         synchronized (stateLock) {
@@ -286,12 +284,10 @@ class DatagramChannelImpl2
     public DatagramSocket socket() {
         DatagramSocket socket = this.socket;
         if (socket == null) {
-
-            throw new UnsupportedOperationException();             // Todo: Fix me!
-            // socket = DatagramSocketAdaptor.create(this);
-            /*if (!SOCKET.compareAndSet(this, null, socket)) {
+            socket = DatagramSocketAdaptor.create(this);
+            if (!SOCKET.compareAndSet(this, null, socket)) {
                 socket = this.socket;
-            }*/
+            }
         }
         return socket;
     }
@@ -807,6 +803,10 @@ class DatagramChannelImpl2
     private InetSocketAddress sourceSocketAddress() throws IOException {
         assert readLock.isHeldByCurrentThread();
         if (cachedInetSocketAddress != null && sourceSockAddr.equals(cachedSockAddr)) {
+            if (cachedInetSocketAddress.getAddress().getAddress().length > 4) {
+                System.out.println("ERROR CACHED:");
+                System.out.println("sender = " + cachedInetSocketAddress);
+            }
             return cachedInetSocketAddress;
         }
         InetSocketAddress isa = sourceSockAddr.decode();
@@ -815,6 +815,17 @@ class DatagramChannelImpl2
         cachedSockAddr = sourceSockAddr;
         sourceSockAddr = tmp;
         cachedInetSocketAddress = isa;
+
+        if (isa.getAddress().getAddress().length > 4) {
+            System.out.println("ERROR DIRECT:");
+            System.out.println("sender = " + isa);
+
+            System.out.println("Arrays.toString(sourceSockAddr.segment().toArray(ValueLayout.JAVA_BYTE)) = " + Arrays.toString(sourceSockAddr.segment().toArray(ValueLayout.JAVA_BYTE)));
+
+            System.out.println(HexFormat.ofDelimiter(" ").formatHex(sourceSockAddr.segment().toArray(ValueLayout.JAVA_BYTE)));
+
+        }
+
         return isa;
     }
 
@@ -1934,7 +1945,7 @@ class DatagramChannelImpl2
     /**
      * Returns an action to release the given file descriptor and socket addresses.
      */
-    private static Runnable releaserFor(FileDescriptor fd, NativeSocketAddressTriplet sockAddrs) {
+    private static Runnable releaserFor(FileDescriptor fd) {
         return () -> {
             try {
                 nd.close(fd);
@@ -1943,7 +1954,6 @@ class DatagramChannelImpl2
             } finally {
                 // decrement socket count and release memory
                 ResourceManager.afterUdpClose();
-                sockAddrs.freeAll();
             }
         };
     }
@@ -1953,7 +1963,11 @@ class DatagramChannelImpl2
     static MemorySegment createAddLen() {
         var segment = MemorySegment.allocateNative(socklen_t(), SegmentScope.global());
         VarHandle handle = socklen_t().varHandle();
-        handle.set(segment, SOCKET_ADDRESS.byteSize());
+        if (handle.varType() == int.class) {
+            handle.set(segment, (int) SOCKET_ADDRESS.byteSize());
+        } else {
+            handle.set(segment, SOCKET_ADDRESS.byteSize());
+        }
         return segment;
     }
 

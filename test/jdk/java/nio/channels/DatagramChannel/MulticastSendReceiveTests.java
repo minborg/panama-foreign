@@ -263,7 +263,6 @@ public class MulticastSendReceiveTests {
 
         for (NetworkInterface nif : ip4MulticastInterfaces) {
             InetAddress source = config.ip4Addresses(nif).iterator().next();
-            System.out.println("source = " + source);
             test(UNSPEC, nif, ip4Group, source);
             test(INET,   nif, ip4Group, source);
             if (IPSupport.hasIPv6() && canIPv6JoinIPv4Group) {

@@ -128,6 +128,9 @@ class DatagramChannelImpl2
     private static final int ST_CLOSED = 3;
 
     private final MemorySegment errCap;
+    private final MemorySegment addrLen;
+
+    private static final VarHandle SOCKLEN_T_VH = socklen_t().varHandle();
 
     private int state;
 
@@ -225,6 +228,7 @@ class DatagramChannelImpl2
             }
         }
         this.errCap = SocketH.allocateErrCap();
+        this.addrLen = MemorySegment.allocateNative(socklen_t(), SegmentScope.auto());
 
         Runnable releaser = releaserFor(fd);
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
@@ -265,6 +269,7 @@ class DatagramChannelImpl2
             }
         }
         this.errCap = SocketH.allocateErrCap();
+        this.addrLen = MemorySegment.allocateNative(socklen_t(), SegmentScope.auto());
 
         Runnable releaser = releaserFor(fd);
         this.cleaner = CleanerFactory.cleaner().register(this, releaser);
@@ -789,7 +794,7 @@ class DatagramChannelImpl2
                 MemorySegment.ofBuffer(bb).asSlice(pos),
                 rem,
                 sourceSockAddr.segment(),
-                connected, errCap);
+                connected, errCap, addrLen);
         if (n > 0)
             bb.position(pos + n);
         return n;
@@ -803,10 +808,6 @@ class DatagramChannelImpl2
     private InetSocketAddress sourceSocketAddress() throws IOException {
         assert readLock.isHeldByCurrentThread();
         if (cachedInetSocketAddress != null && sourceSockAddr.equals(cachedSockAddr)) {
-            if (cachedInetSocketAddress.getAddress().getAddress().length > 4) {
-                System.out.println("ERROR CACHED:");
-                System.out.println("sender = " + cachedInetSocketAddress);
-            }
             return cachedInetSocketAddress;
         }
         InetSocketAddress isa = sourceSockAddr.decode();
@@ -815,17 +816,6 @@ class DatagramChannelImpl2
         cachedSockAddr = sourceSockAddr;
         sourceSockAddr = tmp;
         cachedInetSocketAddress = isa;
-
-        if (isa.getAddress().getAddress().length > 4) {
-            System.out.println("ERROR DIRECT:");
-            System.out.println("sender = " + isa);
-
-            System.out.println("Arrays.toString(sourceSockAddr.segment().toArray(ValueLayout.JAVA_BYTE)) = " + Arrays.toString(sourceSockAddr.segment().toArray(ValueLayout.JAVA_BYTE)));
-
-            System.out.println(HexFormat.ofDelimiter(" ").formatHex(sourceSockAddr.segment().toArray(ValueLayout.JAVA_BYTE)));
-
-        }
-
         return isa;
     }
 
@@ -1958,34 +1948,28 @@ class DatagramChannelImpl2
         };
     }
 
-    private static final MemorySegment ADD_LEN = createAddLen();
-
-    static MemorySegment createAddLen() {
-        var segment = MemorySegment.allocateNative(socklen_t(), SegmentScope.global());
-        VarHandle handle = socklen_t().varHandle();
-        if (handle.varType() == int.class) {
-            handle.set(segment, (int) SOCKET_ADDRESS.byteSize());
-        } else {
-            handle.set(segment, SOCKET_ADDRESS.byteSize());
-        }
-        return segment;
-    }
-
     // https://linux.die.net/man/2/recvfrom
     private static int receive0(FileDescriptor fd,
                                 MemorySegment buff,
                                 int len,
                                 MemorySegment srcAddr,
                                 boolean connected,
-                                MemorySegment errCap) throws IOException {
+                                MemorySegment errCap,
+                                MemorySegment addrLen) throws IOException {
         final int sockfd = FD_ACCESS.get(fd);
         len = Math.min(len, MAX_PACKET_LEN);
         boolean retry = false;
         int n;
 
+        if (SOCKLEN_T_VH.varType() == int.class) {
+            SOCKLEN_T_VH.set(addrLen, (int) SOCKET_ADDRESS.byteSize());
+        } else {
+            SOCKLEN_T_VH.set(addrLen, SOCKET_ADDRESS.byteSize());
+        }
+
         do {
             retry = false;
-            n = (int) recvfrom(sockfd, buff, len, 0, srcAddr, ADD_LEN, errCap);
+            n = (int) recvfrom(sockfd, buff, len, 0, srcAddr, addrLen, errCap);
 
             if (n < 0) {
                 int errno = SocketH.errno(errCap);

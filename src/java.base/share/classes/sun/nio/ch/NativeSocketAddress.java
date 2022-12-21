@@ -128,19 +128,6 @@ public sealed interface NativeSocketAddress {
          */
         public InetSocketAddress decode() throws SocketException {
             var view = currentViewOrThrow();
-            if (view instanceof Sin6View) {
-                var e = new RuntimeException();
-                var path = Arrays.stream(e.getStackTrace())
-                        .limit(8)
-                        .map(StackTraceElement::toString)
-                        .collect(joining(System.lineSeparator()));
-                System.out.println("path = " + path);
-                System.out.println("view = " + view);
-                HexFormat hexFormat = HexFormat.ofDelimiter(" ");
-                System.out.println(hexFormat.formatHex(segment.toArray(JAVA_BYTE)));
-                System.out.println("view.address() = " + view.address());
-                System.out.println("view.port() = " + view.port());
-            }
             try {
                 return new InetSocketAddress(view.address(), view.port());
             } catch (Exception e) {

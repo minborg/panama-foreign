@@ -90,12 +90,6 @@ public class AdaptorBasic {
                 throw new Exception("Incorrect data received");
         }
 
-        System.out.println("ip.getSocketAddress() = " + ip.getSocketAddress());
-        System.out.println("ip.getSocketAddress().getClass().getName() = " + ip.getSocketAddress().getClass().getName());
-        var a = ((InetSocketAddress)ip.getSocketAddress()).getAddress();
-        var bytes = a.getAddress();
-        System.out.println("Arrays.toString(bytes) = " + Arrays.toString(bytes));
-
         if (!(ip.getSocketAddress().equals(dst))) {
             throw new Exception("Incorrect sender address, expected: " + dst
                 + " actual: " + ip.getSocketAddress());
@@ -147,15 +141,6 @@ public class AdaptorBasic {
     }
 
     public static void main(String[] args) throws Exception {
-
-        for (int i = 0; i < 10; i++) {
-            DatagramChannel dc = DatagramChannel.open();
-            DatagramSocket ds = dc.socket();
-            ds.bind(new InetSocketAddress(0));
-            System.out.println("ds.getLocalSocketAddress() = " + ds.getLocalSocketAddress());
-            Thread.sleep(1000);
-        }
-
         // need an UDP echo server
         try (TestServers.UdpEchoServer echoServer
                 = TestServers.UdpEchoServer.startNewServer(100)) {
@@ -164,59 +149,6 @@ public class AdaptorBasic {
                                         echoServer.getPort());
             test(address, 0, false, false);
             test(address, 0, false, true);
-
-            test(address, 0, false, false);
-
-            /*
-
-            It appears, DatagramSocket::receive0 does not always set the address...
-
-            dst: /192.168.1.126:55803
-socket: sun.nio.ch.DatagramSocketAdaptor@413a4b4
-src: /[0:0:0:0:0:0:0:0]:56345
-timeout: 0
-pre  op: DatagramPacket[off=13, len=42, addr=/192.168.1.126, port=55803]  ip: DatagramPacket[off=19, len=81, addr=null, port=0]
-path = java.base/sun.nio.ch.NativeSocketAddress$Impl.decode(NativeSocketAddress.java:132)
-java.base/sun.nio.ch.DatagramChannelImpl2.sourceSocketAddress(DatagramChannelImpl2.java:812)
-java.base/sun.nio.ch.DatagramChannelImpl2.trustedBlockingReceive(DatagramChannelImpl2.java:706)
-java.base/sun.nio.ch.DatagramChannelImpl2.blockingReceive(DatagramChannelImpl2.java:667)
-java.base/sun.nio.ch.DatagramSocketAdaptor.receive(DatagramSocketAdaptor.java:241)
-AdaptorBasic.test(AdaptorBasic.java:73)
-AdaptorBasic.test(AdaptorBasic.java:141)
-AdaptorBasic.main(AdaptorBasic.java:168)
-java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
-java.base/java.lang.reflect.Method.invoke(Method.java:578)
-view = AF_INET6, address=/0:0:0:0:0:0:0:0, port=55803
-1c 1e d9 fb 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-view.address() = /0:0:0:0:0:0:0:0
-view.port() = 55803
-ERROR DIRECT:
-sender = /[0:0:0:0:0:0:0:0]:55803
-Arrays.toString(sourceSockAddr.segment().toArray(ValueLayout.JAVA_BYTE)) = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-ERROR:
-sender = /[0:0:0:0:0:0:0:0]:55803
-rtt: 110
-post op: DatagramPacket[off=13, len=42, addr=/192.168.1.126, port=55803]  ip: DatagramPacket[off=19, len=42, addr=/0:0:0:0:0:0:0:0, port=55803]
-ip.getSocketAddress() = /[0:0:0:0:0:0:0:0]:55803
-ip.getSocketAddress().getClass().getName() = java.net.InetSocketAddress
-Arrays.toString(bytes) = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-STDERR:
-java.lang.Exception: Incorrect sender address, expected: /192.168.1.126:55803 actual: /[0:0:0:0:0:0:0:0]:55803
-	at AdaptorBasic.test(AdaptorBasic.java:101)
-	at AdaptorBasic.test(AdaptorBasic.java:141)
-	at AdaptorBasic.main(AdaptorBasic.java:168)
-	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:578)
-	at com.sun.javatest.regtest.agent.MainActionHelper$AgentVMRunnable.run(MainActionHelper.java:312)
-	at java.base/java.lang.Thread.run(Thread.java:1623)
-
-JavaTest Message: Test threw exception: java.lang.Exception
-JavaTest Message: shutting down test
-
-             */
-
-
             test(address, Integer.MAX_VALUE, false, false);
         }
         try (TestServers.UdpDiscardServer discardServer

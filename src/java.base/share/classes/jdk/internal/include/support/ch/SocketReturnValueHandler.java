@@ -21,7 +21,7 @@ public final class SocketReturnValueHandler {
 
     // Todo: Move to support class
 
-    public static int handleSocketError(int rv, MemorySegment errCap) throws IOException {
+    public static int handleSocketError(int n, MemorySegment errCap) throws IOException {
         class Holder {
             // Todo: Maybe use a primitive IntMap that can be built up using plural cases
             private static final Map<Integer, Function<String, ? extends IOException>> INTEGER_SUPPLIER_MAP = Map.of(
@@ -36,9 +36,9 @@ public final class SocketReturnValueHandler {
                     EACCES(), BindException::new
             );
         }
-        if (0 <= rv) {
+        if (n >= 0) {
             // No error
-            return rv;
+            return n;
         }
         int errno = SocketH.errno(errCap);
         if (errno == EINPROGRESS()) {
@@ -47,7 +47,7 @@ public final class SocketReturnValueHandler {
         }
 
         throw Holder.INTEGER_SUPPLIER_MAP.getOrDefault(errno, SocketException::new)
-                .apply("NioSocketError");
+                .apply("NioSocketError: n=" + n + ", errno=" + errno);
     }
 
 }

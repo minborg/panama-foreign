@@ -2007,10 +2007,10 @@ class DatagramChannelImpl2
     }
 
     public static void disconnect0(FileDescriptor fd, boolean isIPv6, MemorySegment errCap) throws IOException {
-        final int rv;
+        final int n;
         // This will prune byte code the branch not taken
         if (CurrentOs.OS == Os.MAC_OS) {
-            rv = disconnectx(FD_ACCESS.get(fd), SocketH.SAE_ASSOCID_ANY(), SocketH.SAE_CONNID_ANY(), errCap);
+            n = disconnectx(FD_ACCESS.get(fd), SocketH.SAE_ASSOCID_ANY(), SocketH.SAE_CONNID_ANY(), errCap);
         } else {
             try (var arena = Arena.openConfined()) {
                 var segment = arena.allocate(SockaddrIn6Struct.layout());
@@ -2019,12 +2019,12 @@ class DatagramChannelImpl2
                         SockaddrIn6Struct.sin6_family$set(segment,
                         (byte) (isIPv6 ? AF_INET6() : AF_INET()),
                         len);
-                rv = SocketH.connect(FD_ACCESS.get(fd), segment, len, errCap);
+                n = SocketH.connect(FD_ACCESS.get(fd), segment, len, errCap);
             }
         }
         // Todo: add proper error handling here
         // Todo: investigate how to access errno
-        handleSocketError(rv, errCap);
+        handleSocketError(n, errCap);
     }
 
     static {

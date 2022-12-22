@@ -38,7 +38,6 @@ import sun.nio.ch.NativeSocketAddressTriplet;
 
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.MemorySession;
 import java.lang.foreign.ValueLayout;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;

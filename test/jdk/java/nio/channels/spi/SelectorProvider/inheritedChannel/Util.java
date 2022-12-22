@@ -77,7 +77,7 @@ public class Util {
      */
     public static int getFD(DatagramChannel dc) {
         try {
-            Object fdObj = get("sun.nio.ch.DatagramChannelImpl", "fd", dc);
+            Object fdObj = get("sun.nio.ch.DatagramChannelImpl2", "fd", dc);
             return fdVal((FileDescriptor)fdObj);
         } catch (Exception x) {
             x.printStackTrace();

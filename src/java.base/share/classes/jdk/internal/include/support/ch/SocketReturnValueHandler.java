@@ -1,5 +1,6 @@
 package jdk.internal.include.support.ch;
 
+import jdk.internal.include.ErrorNo;
 import jdk.internal.include.sys.SocketH;
 
 import java.io.IOException;
@@ -22,7 +23,7 @@ public final class SocketReturnValueHandler {
     // Todo: Move to support class
 
     public static int handleSocketError(int n, MemorySegment errCap) throws IOException {
-        class Holder {
+        final class Holder {
             // Todo: Maybe use a primitive IntMap that can be built up using plural cases
             private static final Map<Integer, Function<String, ? extends IOException>> INTEGER_SUPPLIER_MAP = Map.of(
                     // Todo: make EPROTO conditional
@@ -47,7 +48,8 @@ public final class SocketReturnValueHandler {
         }
 
         throw Holder.INTEGER_SUPPLIER_MAP.getOrDefault(errno, SocketException::new)
-                .apply("NioSocketError: n=" + n + ", errno=" + errno);
+                .apply("NioSocketError: n=" + n
+                        + ", errno=" + errno + " " + ErrorNo.lookup(errno));
     }
 
 }

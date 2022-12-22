@@ -250,7 +250,7 @@ public class UnreferencedMulticastSockets {
                 m.setAccessible(true);
                 DatagramChannel datagramChannel = (DatagramChannel) m.invoke(MulticastSocket);
 
-                assert datagramChannel.getClass() == Class.forName("sun.nio.ch.DatagramChannelImpl");
+                assert datagramChannel.getClass() == Class.forName("sun.nio.ch.DatagramChannelImpl2");
 
                 Field fileDescriptorField = datagramChannel.getClass().getDeclaredField("fd");
                 fileDescriptorField.setAccessible(true);

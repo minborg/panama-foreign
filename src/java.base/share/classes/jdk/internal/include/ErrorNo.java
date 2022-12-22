@@ -1,6 +1,15 @@
 package jdk.internal.include;
 
-import java.util.OptionalInt;
+import com.sun.org.apache.xpath.internal.operations.Mod;
+
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+import static java.util.Collections.emptyList;
+import static java.util.stream.Collectors.*;
 
 public final class ErrorNo {
     private ErrorNo() {}
@@ -91,6 +100,25 @@ public final class ErrorNo {
 
     public static int EPROTO() {
         return errno_h.EPROTO();
+    }
+
+    public static List<String> lookup(int value) {
+        final class Holder {
+            private static final Map<Integer, List<String>> LOOKUP_MAP =
+                    Arrays.stream(ErrorNo.class.getMethods())
+                            .filter(m -> m.getParameterCount() == 0)
+                            .filter(m -> m.getReturnType() == int.class)
+                            .filter(m -> Modifier.isStatic(m.getModifiers()) && Modifier.isPublic(m.getModifiers()))
+                            .collect(groupingBy(m -> {
+                                        try {
+                                            return (int) m.invoke(null);
+                                        } catch (Exception e) {
+                                            return -1;
+                                        }
+                                    }
+                                    , mapping(Method::getName, toList())));
+        }
+        return Holder.LOOKUP_MAP.getOrDefault(value, emptyList());
     }
 
 }

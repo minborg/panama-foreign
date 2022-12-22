@@ -791,7 +791,8 @@ class DatagramChannelImpl2
     {
         int n = receive0(fd,
 //                ((DirectBuffer) bb).address() + pos,
-                MemorySegment.ofBuffer(bb).asSlice(pos),
+                //MemorySegment.ofBuffer(bb).asSlice(pos),
+                MemorySegment.ofBuffer(bb),
                 rem,
                 sourceSockAddr.segment(),
                 connected, errCap, addrLen);
@@ -943,7 +944,8 @@ class DatagramChannelImpl2
         int written;
         int addressLen = targetSocketAddress(target);
         try {
-            written = send0(fd, MemorySegment.ofBuffer(bb).asSlice(pos), rem,
+            // Todo: use MemorySegment instead of ByteBuffer
+            written = send0(fd, MemorySegment.ofBuffer(bb), rem,
                             targetSockAddr.segment(), addressLen, errCap);
         } catch (NoRouteToHostException nrthe) {
             // Todo: Remove this debugging feature
@@ -953,6 +955,10 @@ class DatagramChannelImpl2
                 throw pue;
             written = rem;
         } catch (SocketException se) {
+            System.out.println("fd = " + fd);
+            System.out.println("bb = " + bb);
+
+
             // Todo: Remove this debugging feature
             throw new SocketException(se.getMessage() + " (in send0(Native Method)). Target native socket address:" + targetSockAddr+ ", addressLen=" + addressLen+ " "+toHex(targetSockAddr.segment()), se);
         }

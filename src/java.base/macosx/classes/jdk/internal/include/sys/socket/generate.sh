@@ -1,6 +1,7 @@
+# sys/socket.h
 jextract --source \
-  -t jdk.internal.include.sys \
-  --output ../../../.. \
+  -t jdk.internal.include.sys.socket \
+  --output ../../../../.. \
   -I /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/sys/socket.h \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/sys/socket.h \
   --include-function sendto \

@@ -1,7 +1,7 @@
 package jdk.internal.include.support.ch;
 
 import jdk.internal.include.ErrorNo;
-import jdk.internal.include.sys.SocketH;
+import jdk.internal.include.sys.socket.SocketH;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

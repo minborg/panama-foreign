@@ -10,6 +10,8 @@ public final class CaptureCallStateUtil {
 
     private CaptureCallStateUtil() {}
 
+    public static final String ERRNO = "errno";
+
     public static Capture createCapture(String targetName,
                                         FunctionDescriptor functionDescriptor,
                                         String capturedState) {

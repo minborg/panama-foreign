@@ -32,7 +32,7 @@ import jdk.internal.include.CurrentOs;
 import jdk.internal.include.common.Os;
 import jdk.internal.include.netinet.SockaddrIn6Struct;
 import jdk.internal.include.netinet.SockaddrInStruct;
-import jdk.internal.include.sys.SocketH;
+import jdk.internal.include.sys.socket.SocketH;
 import jdk.internal.ref.CleanerFactory;
 import sun.net.ResourceManager;
 import sun.net.ext.ExtendedSocketOptions;
@@ -66,7 +66,7 @@ import java.util.stream.Collectors;
 import static jdk.internal.include.ErrorNo.*;
 import static jdk.internal.include.netinet.InH.AF_INET;
 import static jdk.internal.include.netinet.InH.AF_INET6;
-import static jdk.internal.include.sys.SocketH.*;
+import static jdk.internal.include.sys.socket.SocketH.*;
 import static jdk.internal.include.support.ch.NetUtils.MAX_PACKET_LEN;
 import static jdk.internal.include.support.ch.NetUtils.SOCKET_ADDRESS;
 import static jdk.internal.include.support.ch.SocketReturnValueHandler.handleSocketError;
@@ -1975,7 +1975,7 @@ class DatagramChannelImpl2
 
         do {
             retry = false;
-            n = (int) recvfrom(sockfd, buff, len, 0, srcAddr, addrLen, errCap);
+            n = (int) recvfrom(errCap, sockfd, buff, len, 0, srcAddr, addrLen);
 
             if (n < 0) {
                 int errno = SocketH.errno(errCap);
@@ -2008,7 +2008,7 @@ class DatagramChannelImpl2
                              MemorySegment errCap) throws IOException {
         final int sockfd = FD_ACCESS.get(fd);
         len = Math.min(len, MAX_PACKET_LEN);
-        int n = (int) sendto(sockfd, buff, len, 0, destAddr, addrlen, errCap);
+        int n = (int) sendto(errCap, sockfd, buff, len, 0, destAddr, addrlen);
         return handleSocketError(n, errCap);
     }
 
@@ -2016,7 +2016,7 @@ class DatagramChannelImpl2
         final int n;
         // This will prune byte code the branch not taken
         if (CurrentOs.OS == Os.MAC_OS) {
-            n = disconnectx(FD_ACCESS.get(fd), SocketH.SAE_ASSOCID_ANY(), SocketH.SAE_CONNID_ANY(), errCap);
+            n = disconnectx(errCap, FD_ACCESS.get(fd), SocketH.SAE_ASSOCID_ANY(), SocketH.SAE_CONNID_ANY());
         } else {
             try (var arena = Arena.openConfined()) {
                 var segment = arena.allocate(SockaddrIn6Struct.layout());
@@ -2025,7 +2025,7 @@ class DatagramChannelImpl2
                         SockaddrIn6Struct.sin6_family$set(segment,
                         (byte) (isIPv6 ? AF_INET6() : AF_INET()),
                         len);
-                n = SocketH.connect(FD_ACCESS.get(fd), segment, len, errCap);
+                n = SocketH.connect(errCap, FD_ACCESS.get(fd), segment, len);
             }
         }
         // Todo: add proper error handling here

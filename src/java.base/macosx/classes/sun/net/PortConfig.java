@@ -10,11 +10,17 @@ public final class PortConfig {
     private static final int UPPER = getUpper0();
 
     static int getLower0() {
-        return SysctlH.getValAsInt("net.inet.ip.portrange.first");
+        return requireNonNegativeOrElse(SysctlH.getValAsInt("net.inet.ip.portrange.first"), 49152);
     }
 
     static int getUpper0() {
-        return SysctlH.getValAsInt("net.inet.ip.portrange.last");
+        return requireNonNegativeOrElse(SysctlH.getValAsInt("net.inet.ip.portrange.last"), 65535);
+    }
+
+    private static int requireNonNegativeOrElse(int value, int def) {
+        return (value >= 0)
+                ? value
+                : def;
     }
 
     public static int getLower() {

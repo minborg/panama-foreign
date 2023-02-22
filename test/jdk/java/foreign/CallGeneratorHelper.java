@@ -138,31 +138,42 @@ public class CallGeneratorHelper extends NativeTestHelper {
                     typeStr;
         }
 
-        MemoryLayout layout(List<StructFieldType> fields) {
+        MemoryLayout layout(List<StructFieldType> elements) {
             if (this == STRUCT) {
                 long offset = 0L;
                 List<MemoryLayout> layouts = new ArrayList<>();
                 long align = 0;
-                for (StructFieldType field : fields) {
-                    MemoryLayout l = field.layout();
-                    long padding = offset % l.bitAlignment();
+                for (var element : elements) {
+                    MemoryLayout l = element.layout();
+                    long padding = computePadding(offset, l.bitAlignment());
                     if (padding != 0) {
-                        layouts.add(MemoryLayout.paddingLayout(padding));
+                        layouts.add(MemoryLayout.paddingLayout(padding).withName("padding"));
                         offset += padding;
                     }
-                    layouts.add(l.withName("field" + offset));
+                    layouts.add(l);
                     align = Math.max(align, l.bitAlignment());
                     offset += l.bitSize();
                 }
-                long padding = offset % align;
+                long padding = computePadding(offset, align);
                 if (padding != 0) {
                     layouts.add(MemoryLayout.paddingLayout(padding));
                 }
-                return MemoryLayout.structLayout(layouts.toArray(new MemoryLayout[0]));
+                return MemoryLayout.structLayout(layouts.toArray(MemoryLayout[]::new));
             } else {
                 return layout;
             }
         }
+
+        private static long computePadding(long offset, long align) {
+            boolean isAligned = offset == 0 || offset % align == 0;
+            if (isAligned) {
+                return 0;
+            } else {
+                long gap = offset % align;
+                return align - gap;
+            }
+        }
+
 
         @SuppressWarnings("unchecked")
         static List<List<ParamType>>[] perms = new List[10];

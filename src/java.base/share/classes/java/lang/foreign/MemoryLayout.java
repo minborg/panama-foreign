@@ -34,6 +34,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
 import jdk.internal.foreign.LayoutPath;
@@ -42,6 +43,7 @@ import jdk.internal.foreign.Utils;
 import jdk.internal.foreign.layout.MemoryLayoutUtil;
 import jdk.internal.foreign.layout.PaddingLayoutImpl;
 import jdk.internal.foreign.layout.SequenceLayoutImpl;
+import jdk.internal.foreign.layout.StandardTransformer;
 import jdk.internal.foreign.layout.StructLayoutImpl;
 import jdk.internal.foreign.layout.UnionLayoutImpl;
 import jdk.internal.javac.PreviewFeature;
@@ -759,6 +761,84 @@ public sealed interface MemoryLayout permits SequenceLayout, GroupLayout, Paddin
         return UnionLayoutImpl.of(Stream.of(elements)
                 .map(Objects::requireNonNull)
                 .toList());
+    }
+
+    /**
+     * A Transformer allows MemoryLayouts to be transformed from one
+     * form to another.
+     * <p>
+     * To change the ByteOrder for all value layouts in a MemoryLayout of
+     * arbitrary depth, the following code can be used:
+     * {@snippet lang = java:
+     *     MemoryLayout original = ...
+     *
+     *     var otherByteOrder = Transformer.create()
+     *      .withValues(v -> v.order(v.order() == ByteOrder.BIG_ENDIAN
+     *                 ? ByteOrder.LITTLE_ENDIAN
+     *                 : ByteOrder.BIG_ENDIAN))
+     *      .transform(original);
+     * }
+     *
+     */
+    sealed interface Transformer permits StandardTransformer {
+
+        /**
+         * {@return a Transformer that will apply the provided {@code valueTransformer} on
+         * all encountered ValueLayouts that are transformed}.
+         * @param valueTransformer to apply on ValueLayouts
+         */
+        Transformer withValues(UnaryOperator<ValueLayout> valueTransformer);
+
+        /**
+         * {@return a Transformer that will apply the provided {@code paddingTransformer} on
+         * all encountered PaddingLayouts that are transformed}.
+         * @param paddingTransformer to apply on PaddingLayouts
+         */
+        Transformer withPaddings(UnaryOperator<PaddingLayout> paddingTransformer);
+
+        /**
+         * {@return a Transformer that will apply the provided {@code sequenceTransformer} on
+         * all encountered SequenceLayouts that are transformed}.
+         * @param sequenceTransformer to apply on SequenceLayouts
+         */
+        Transformer withSequences(UnaryOperator<SequenceLayout> sequenceTransformer);
+
+        /**
+         * {@return a Transformer that will apply the provided {@code structTransformer} on
+         * all encountered StructLayouts that are transformed}.
+         * @param structTransformer to apply on StructLayouts
+         */
+        Transformer withStructs(UnaryOperator<StructLayout> structTransformer);
+
+        /**
+         * {@return a Transformer that will apply the provided {@code structTransformer} on
+         * all encountered StructLayouts that are transformed}.
+         * @param unionTransformer to apply on StructLayouts
+         */
+        Transformer withUnions(UnaryOperator<UnionLayout> unionTransformer);
+
+        /**
+         * {@return a transformation of the provided {@code original} memory layout}.
+         * @param original layout to transform
+         */
+        MemoryLayout transform(MemoryLayout original);
+
+        /**
+         * {@return a new Transformer with a default behavior}.
+         * <p>
+         * The default behavior is as follows:
+         * <ul>
+         *     <li>ValueLayout -> Identity</li>
+         *     <li>PaddingLayout -> Identity</li>
+         *     <li>SequenceLayout -> Copy of the sequence</li>
+         *     <li>StructLayout -> Copy of the struct layout</li>
+         *     <li>UnionLayout -> Copy of the union layout</li>
+         * </ul>
+         */
+        static Transformer create() {
+            return new StandardTransformer();
+        }
+
     }
 
     private static <L extends MemoryLayout> L wrapOverflow(Supplier<L> layoutSupplier) {

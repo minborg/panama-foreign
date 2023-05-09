@@ -27,8 +27,6 @@
 package java.lang.foreign;
 
 import java.io.UncheckedIOException;
-import java.lang.foreign.Linker.Option;
-import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
@@ -40,11 +38,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.Spliterator;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 import jdk.internal.foreign.AbstractMemorySegmentImpl;
 import jdk.internal.foreign.HeapMemorySegmentImpl;
+import jdk.internal.foreign.LayoutRecordMapper;
+import jdk.internal.foreign.MemorySegmentMappers;
 import jdk.internal.foreign.MemorySessionImpl;
 import jdk.internal.foreign.NativeMemorySegmentImpl;
 import jdk.internal.foreign.Utils;
@@ -2325,5 +2326,130 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
          */
         @Override
         int hashCode();
+    }
+
+    /**
+     * A Mapper can extract objects from a MemorySegment and also update
+     * a MemorySegment using objects.
+     * <p>
+     * Read and writes via a Mapper are guaranteed to be visible and ordered across threads.
+     *
+     * @param <T> the type of the objects
+     */
+    @PreviewFeature(feature=PreviewFeature.Feature.FOREIGN)
+    interface Mapper<T> {
+
+        // Consider splitting up into two separate interfaces get/set
+
+        /**
+         * {@return t}
+         *
+         * @param segment s
+         * @param offset o
+         */
+        T get(MemorySegment segment, long offset);
+
+        /**
+         * Sets ..
+         *
+         * @param segment s
+         * @param offset o
+         * @param value v
+         */
+        void set(MemorySegment segment, long offset, T value);
+
+
+        /**
+         * {@return t}
+         *
+         * @param segment s
+         */
+        default T get(MemorySegment segment) {
+            return get(segment, 0);
+        }
+
+        /**
+         * Sets ..
+         *
+         * @param segment s
+         * @param value v
+         */
+        default void set(MemorySegment segment, T value) {
+            set(segment, 0, value);
+        }
+
+        /**
+         * {@return t}
+         *
+         * @param segment s
+         * @param index i
+         */
+        default T getAtIndex(MemorySegment segment, long index) {
+            return get(segment, index * layout().byteSize());
+        }
+
+        /**
+         * Sets ..
+         *
+         * @param segment s
+         * @param index i
+         * @param value v
+         */
+        default void setAtIndex(MemorySegment segment, long index, T value) {
+            set(segment, index * layout().byteSize(), value);
+        }
+
+        /**
+         * {@return the GroupLayout used to map objects of type T}
+         */
+        GroupLayout layout();
+
+        /*
+        Stream<T> stream(MemorySegment segment);
+
+        void fill(MemorySegment segment, T value);
+    */
+
+        // Consider putting the factory at a GroupLayout
+        // What if it is an array? SequenceLayout
+
+        /**
+         * {@return RA}
+         * <p>
+         * The Record type must contain at least one component.
+         *
+         * @param recordType rt
+         * @param layout l
+         * @param <T> Record type
+         */
+        static <T extends Record> Mapper<T> of(Class<T> recordType,
+                                               GroupLayout layout) {
+            Objects.requireNonNull(recordType);
+            Objects.requireNonNull(layout);
+            return new LayoutRecordMapper<>(recordType, layout);
+        }
+
+        /**
+         * {@return A predefined Mapper }
+         *
+         * @param type rt
+         * @param <T> type
+         */
+        // Todo: PECS
+        static <T> Optional<Mapper<T>> of(Class<T> type) {
+            Objects.requireNonNull(type);
+            return MemorySegmentMappers.of(type);
+        }
+
+        /**
+         * {@return all types supported by the {@link Mapper#of(Class)} factory method}
+         * <p>
+         * The returned Set is unmodifiable.
+         */
+        static Set<Class<?>> types() {
+            return MemorySegmentMappers.types();
+        }
+
+
     }
 }

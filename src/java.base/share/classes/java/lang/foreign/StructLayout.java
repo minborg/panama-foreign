@@ -25,8 +25,12 @@
  */
 package java.lang.foreign;
 
+import jdk.internal.foreign.layout.CarrierStructLayoutImpl;
 import jdk.internal.foreign.layout.StructLayoutImpl;
 import jdk.internal.javac.PreviewFeature;
+
+import java.lang.invoke.MethodHandle;
+import java.util.function.ObjLongConsumer;
 
 /**
  * A group layout whose member layouts are laid out one after the other.
@@ -37,7 +41,9 @@ import jdk.internal.javac.PreviewFeature;
  * @since 20
  */
 @PreviewFeature(feature=PreviewFeature.Feature.FOREIGN)
-public sealed interface StructLayout extends GroupLayout permits StructLayoutImpl {
+public sealed interface StructLayout
+        extends GroupLayout
+        permits StructLayout.OfClass, UnionLayout.OfClass, StructLayoutImpl {
 
     /**
      * {@inheritDoc}
@@ -57,4 +63,37 @@ public sealed interface StructLayout extends GroupLayout permits StructLayoutImp
      */
     @Override
     StructLayout withByteAlignment(long byteAlignment);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    <R extends Record> OfClass<R> withRecord(Class<R> recordType);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    <I> OfClass<I> withInterface(Class<I> interfaceType);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    <T> OfClass<T> withCarrier(Class<T> type, MethodHandle unmarshaller, MethodHandle marshaller);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    <T> OfClass<T> withCarrier(Class<T> type, Unmarshaller<T> unmarshaller, Marshaller<T> marshaller);
+
+    /**
+     * {@inheritDoc}
+     */
+    sealed interface OfClass<T>
+            extends GroupLayout.OfClass<T> permits CarrierStructLayoutImpl {
+
+    }
+
 }

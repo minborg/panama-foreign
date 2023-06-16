@@ -27,23 +27,35 @@ package jdk.internal.foreign.layout;
 
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.StructLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.List;
 import java.util.Optional;
 
-public final class StructLayoutImpl
-        extends AbstractGroupLayout<StructLayoutImpl>
-        implements StructLayout {
+public final class CarrierStructLayoutImpl<T>
+        extends AbstractCarrierGroupLayout<T, CarrierStructLayoutImpl<T>>
+        implements StructLayout.OfClass<T> {
 
-    private StructLayoutImpl(List<MemoryLayout> elements, long byteSize, long byteAlignment, long minByteAlignment, Optional<String> name) {
-        super(Kind.STRUCT, elements, byteSize, byteAlignment, minByteAlignment, name);
+    private CarrierStructLayoutImpl(Class<T> carrier,
+                                    MethodHandle unmarshaller,
+                                    MethodHandle marshaller,
+                                    List<MemoryLayout> elements,
+                                    long byteSize,
+                                    long byteAlignment,
+                                    long minByteAlignment,
+                                    Optional<String> name) {
+        super(carrier, unmarshaller, marshaller, Kind.STRUCT, elements, byteSize, byteAlignment, minByteAlignment, name);
     }
 
     @Override
-    StructLayoutImpl dup(long byteAlignment, Optional<String> name) {
-        return new StructLayoutImpl(memberLayouts(), byteSize(), byteAlignment, minByteAlignment, name);
+    CarrierStructLayoutImpl<T> dup(long byteAlignment, Optional<String> name) {
+        return new CarrierStructLayoutImpl<>(carrier(), unmarshaller(), marshaller(), memberLayouts(), byteSize(), byteAlignment, minByteAlignment, name);
     }
 
-    public static StructLayout of(List<MemoryLayout> elements) {
+    public static <T> StructLayout.OfClass<T> of(Class<T> carrier,
+                                                 MethodHandle unmarshaller,
+                                                 MethodHandle marshaller,
+                                                 List<MemoryLayout> elements) {
+        // Todo: Break out this logic in a separate method and share with StructLayoutImpl
         long size = 0;
         long align = 1;
         for (MemoryLayout elem : elements) {
@@ -53,7 +65,7 @@ public final class StructLayoutImpl
             size = Math.addExact(size, elem.byteSize());
             align = Math.max(align, elem.byteAlignment());
         }
-        return new StructLayoutImpl(elements, size, align, align, Optional.empty());
+        return new CarrierStructLayoutImpl<>(carrier, unmarshaller, marshaller, elements, size, align, align, Optional.empty());
     }
 
 }

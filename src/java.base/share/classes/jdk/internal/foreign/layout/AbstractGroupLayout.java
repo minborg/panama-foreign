@@ -44,7 +44,7 @@ import java.util.stream.Collectors;
  */
 public sealed abstract class AbstractGroupLayout<L extends AbstractGroupLayout<L> & MemoryLayout>
         extends AbstractLayout<L>
-        permits StructLayoutImpl, UnionLayoutImpl {
+        permits AbstractCarrierGroupLayout, StructLayoutImpl, UnionLayoutImpl {
 
     private final Kind kind;
     private final List<MemoryLayout> elements;
@@ -92,7 +92,7 @@ public sealed abstract class AbstractGroupLayout<L extends AbstractGroupLayout<L
      * {@inheritDoc}
      */
     @Override
-    public final boolean equals(Object other) {
+    public boolean equals(Object other) {
         return this == other ||
                 other instanceof AbstractGroupLayout<?> otherGroup &&
                         super.equals(other) &&
@@ -104,7 +104,7 @@ public sealed abstract class AbstractGroupLayout<L extends AbstractGroupLayout<L
      * {@inheritDoc}
      */
     @Override
-    public final int hashCode() {
+    public int hashCode() {
         return Objects.hash(super.hashCode(), kind, elements);
     }
 

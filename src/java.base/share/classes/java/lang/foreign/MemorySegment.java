@@ -49,6 +49,8 @@ import jdk.internal.foreign.MemorySessionImpl;
 import jdk.internal.foreign.NativeMemorySegmentImpl;
 import jdk.internal.foreign.Utils;
 import jdk.internal.foreign.abi.SharedUtils;
+import jdk.internal.foreign.layout.AbstractCarrierGroupLayout;
+import jdk.internal.foreign.layout.CarrierStructLayoutImpl;
 import jdk.internal.foreign.layout.ValueLayouts;
 import jdk.internal.javac.PreviewFeature;
 import jdk.internal.reflect.CallerSensitive;
@@ -1700,6 +1702,74 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
         ((ValueLayouts.OfAddressImpl) layout).accessHandle().set(this, offset, value);
     }
 
+
+    /**
+     * Reads an object of type {@code T} from this segment at the given offset, with the given layout.
+     *
+     * @param layout the layout of the region of memory to be read.
+     * @param offset offset in bytes (relative to this segment address) at which this access operation will occur.
+     * @param <T> object type
+     * @return an object of type T from this segment.
+     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with this segment is not
+     * {@linkplain Scope#isAlive() alive}.
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     * such that {@code isAccessibleBy(T) == false}.
+     * @throws IllegalArgumentException if the access operation is
+     * <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a> in the provided layout.
+     * @throws IllegalArgumentException if the underlying unmarshaller throws an unchecked exception.
+     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - layout.byteSize()}.
+     * @throws Error if the underlying unmarshaller throws an Error.
+     */
+    @SuppressWarnings("unchecked")
+    @ForceInline
+    default <T> T get(GroupLayout.OfClass<T> layout, long offset) {
+        try {
+            return (T) ((AbstractCarrierGroupLayout<T, ?>) layout).unmarshaller().invokeExact(this, offset);
+        } catch (IllegalStateException |
+                 WrongThreadException |
+                 IllegalArgumentException |
+                 IndexOutOfBoundsException |
+                 Error e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new IllegalArgumentException(t);
+        }
+    }
+
+    /**
+     * Writes an object of type {@code T} into this segment at the given offset, with the given layout.
+     *
+     * @param layout the layout of the region of memory to be written.
+     * @param offset offset in bytes (relative to this segment address) at which this access operation will occur.
+     * @param value the double value to be written.
+     * @param <T> object type
+     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with this segment is not
+     * {@linkplain Scope#isAlive() alive}.
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     * such that {@code isAccessibleBy(T) == false}.
+     * @throws IllegalArgumentException if the access operation is
+     * <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a> in the provided layout.
+     * @throws IllegalArgumentException if the underlying marshaller throws an unchecked exception.
+     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - layout.byteSize()}.
+     * @throws UnsupportedOperationException if this segment is {@linkplain #isReadOnly() read-only}.
+     * @throws Error if the underlying marshaller throws an Error.
+     */
+    @SuppressWarnings("unchecked")
+    @ForceInline
+    default <T> void set(GroupLayout.OfClass<T> layout, long offset, T value) {
+        try {
+            ((AbstractCarrierGroupLayout<T, ?>) layout).marshaller().invokeExact(this, offset, value);
+        } catch (IllegalStateException |
+                 WrongThreadException |
+                 IllegalArgumentException |
+                 IndexOutOfBoundsException |
+                 Error e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new IllegalArgumentException(t);
+        }
+    }
+
     /**
      * Reads a byte from this segment at the given index, scaled by the given layout size.
      *
@@ -2147,6 +2217,57 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
         Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
         // note: we know size is a small value (as it comes from ValueLayout::byteSize())
         ((ValueLayouts.OfAddressImpl) layout).accessHandle().set(this, index * layout.byteSize(), value);
+    }
+
+    /**
+     * Reads an Object of type {@code T} from this segment at the given index, scaled by the given layout size.
+     *
+     * @param layout the layout of the region of memory to be read.
+     * @param index  a logical index. The offset in bytes (relative to this segment address) at which the access operation
+     *               will occur can be expressed as {@code (index * layout.byteSize())}.
+     * @param <T>    object type
+     * @return an Object of type {@code T} read from this segment.
+     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with this segment is not
+     * {@linkplain Scope#isAlive() alive}.
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     * such that {@code isAccessibleBy(T) == false}.
+     * @throws IllegalArgumentException if the access operation is
+     * <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a> in the provided layout,
+     * or if the layout alignment is greater than its size.
+     * @throws IndexOutOfBoundsException if {@code index * byteSize()} overflows.
+     * @throws IndexOutOfBoundsException if {@code index * byteSize() > byteSize() - layout.byteSize()}.
+     */
+    @ForceInline
+    default <T> T getAtIndex(GroupLayout.OfClass<T> layout, long index) {
+        Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
+        // note: we know size is a small value (as it comes from ValueLayout::byteSize())
+        return get(layout, index * layout.byteSize());
+    }
+
+    /**
+     * Writes an Object of type {@code T} into this segment at the given index, scaled by the given layout size.
+     *
+     * @param layout the layout of the region of memory to be written.
+     * @param index  a logical index. The offset in bytes (relative to this segment address) at which the access operation
+     *               will occur can be expressed as {@code (index * layout.byteSize())}.
+     * @param value  the double value to be written.
+     * @param <T>    object type
+     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with this segment is not
+     * {@linkplain Scope#isAlive() alive}.
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     * such that {@code isAccessibleBy(T) == false}.
+     * @throws IllegalArgumentException if the access operation is
+     * <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a> in the provided layout,
+     * or if the layout alignment is greater than its size.
+     * @throws IndexOutOfBoundsException if {@code index * byteSize()} overflows.
+     * @throws IndexOutOfBoundsException if {@code index * byteSize() > byteSize() - layout.byteSize()}.
+     * @throws UnsupportedOperationException if this segment is {@linkplain #isReadOnly() read-only}.
+     */
+    @ForceInline
+    default <T> void setAtIndex(GroupLayout.OfClass<T> layout, long index, T value) {
+        Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
+        // note: we know size is a small value (as it comes from ValueLayout::byteSize())
+        set(layout, index * layout.byteSize(), value);
     }
 
     /**

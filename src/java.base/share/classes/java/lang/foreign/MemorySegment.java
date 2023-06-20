@@ -27,8 +27,6 @@
 package java.lang.foreign;
 
 import java.io.UncheckedIOException;
-import java.lang.foreign.Linker.Option;
-import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
@@ -51,7 +49,6 @@ import jdk.internal.foreign.MemorySessionImpl;
 import jdk.internal.foreign.NativeMemorySegmentImpl;
 import jdk.internal.foreign.StringSupport;
 import jdk.internal.foreign.Utils;
-import jdk.internal.foreign.abi.SharedUtils;
 import jdk.internal.foreign.layout.ValueLayouts;
 import jdk.internal.javac.PreviewFeature;
 import jdk.internal.reflect.CallerSensitive;
@@ -2482,7 +2479,7 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
          * @param offset  at which to start marshalling
          * @param value   to marshall
          */
-        void apply(MemorySegment segment, long offset, T value);
+        void accept(MemorySegment segment, long offset, T value);
 
         /**
          * Marshals (serializes) the provided {@code value} into the provided
@@ -2491,8 +2488,8 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
          * @param segment to which a value should be marshalled
          * @param value   to marshall
          */
-        default void apply(MemorySegment segment, T value) {
-            apply(segment, 0L, value);
+        default void accept(MemorySegment segment, T value) {
+            accept(segment, 0L, value);
         }
 
         /**

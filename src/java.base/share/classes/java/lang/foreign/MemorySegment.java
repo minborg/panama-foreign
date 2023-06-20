@@ -43,6 +43,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Spliterator;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 import jdk.internal.foreign.AbstractMemorySegmentImpl;
 import jdk.internal.foreign.HeapMemorySegmentImpl;
@@ -2408,4 +2409,124 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
         @Override
         int hashCode();
     }
+
+    /**
+     * Represents a function that accepts a MemorySegment and an offset argument
+     * and produces a result of type T by whereby T is deserialized from the
+     * MemorySegment beginning at the offset.
+     *
+     * @param <T> type to produce
+     */
+    @FunctionalInterface
+    interface Unmarshaller<T> {
+
+        /**
+         * {@return a new instance of type T obtained by unmarshalling (deserializing)
+         * the object from the provided {@code segment} starting at the provided
+         * {@code offset}}
+         *
+         * @param segment from which to unmarshal an object
+         * @param offset at which to start unmarshalling
+         */
+        T apply(MemorySegment segment, long offset);
+
+        /**
+         * {@return a new instance of type T by obtained unmarshalling (deserializing)
+         * the object from the provided {@code segment} starting at position zero}
+         *
+         * @param segment from which to unmarshal an object
+         */
+        default T apply(MemorySegment segment) {
+            return apply(segment, 0L);
+        }
+
+        /**
+         * {@return to doc}
+         * @param recordType t
+         * @param layout l
+         * @param <R> r
+         */
+        static <R extends Record> Unmarshaller<R> ofRecord(Class<R> recordType, GroupLayout layout) {
+            checkInvariants(recordType, c -> !Record.class.equals(c), layout);
+            return null;
+        }
+
+        /**
+         * {@return to doc}
+         * @param interfaceType i
+         * @param layout l
+         * @param <I> i
+         */
+        static <I> Unmarshaller<I> ofInterface(Class<I> interfaceType, GroupLayout layout) {
+            checkInvariants(interfaceType, Class::isInterface, layout);
+            return null;
+        }
+
+    }
+
+    /**
+     * Represents a consumer that accepts a MemorySegment, an offset argument
+     * and a value of type T and returns no result whereby the T value is serialized
+     * into the MemorySegment at the offset.
+     *
+     * @param <T> type to marshal
+     */
+    @FunctionalInterface
+    interface Marshaller<T> {
+
+        /**
+         * Marshals (serializes) the provided {@code value} into the provided
+         * {@code segment} starting at the provided {@code offset}.
+         *
+         * @param segment to which a value should be marshalled
+         * @param offset  at which to start marshalling
+         * @param value   to marshall
+         */
+        void apply(MemorySegment segment, long offset, T value);
+
+        /**
+         * Marshals (serializes) the provided {@code value} into the provided
+         * {@code segment} starting at position zero.
+         *
+         * @param segment to which a value should be marshalled
+         * @param value   to marshall
+         */
+        default void apply(MemorySegment segment, T value) {
+            apply(segment, 0L, value);
+        }
+
+        /**
+         * {@return to doc}
+         * @param recordType t
+         * @param layout l
+         * @param <R> r
+         */
+        static <R extends Record> Marshaller<R> ofRecord(Class<R> recordType, GroupLayout layout) {
+            checkInvariants(recordType, c -> !Record.class.equals(c), layout);
+            return null;
+        }
+
+        /**
+         * {@return to doc}
+         * @param interfaceType i
+         * @param layout l
+         * @param <I> i
+         */
+        static <I> Marshaller<I> ofInterface(Class<I> interfaceType, GroupLayout layout) {
+            checkInvariants(interfaceType, Class::isInterface, layout);
+            return null;
+        }
+
+    }
+
+    private static <C> void checkInvariants(Class<C> type,
+                                            Predicate<Class<C>> checker,
+                                            GroupLayout layout) {
+        Objects.requireNonNull(type);
+        if (!checker.test(type)) {
+            throw new IllegalArgumentException();
+        }
+        Objects.requireNonNull(layout);
+    }
+
 }

@@ -25,9 +25,8 @@
  */
 package java.lang.foreign;
 
+import java.lang.invoke.MethodHandle;
 import java.util.List;
-import java.util.Objects;
-import java.util.function.Predicate;
 
 import jdk.internal.javac.PreviewFeature;
 
@@ -85,6 +84,20 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
     interface Mapper<T> {
 
         /**
+         * {@return a {@link MethodHandle} representing the "get" operation for this mapper.  The MethodHandle
+         * has the coordinates {@code (MemorySegment, long)T} where the long coordinate represents an offset
+         * into the MemorySegment}
+         */
+        MethodHandle getterHandle();
+
+        /**
+         * {@return a {@link MethodHandle} representing the "set" operation for this mapper.  The MethodHandle
+         * has the coordinates {@code (MemorySegment, long, T)void} where the long coordinate represents an offset
+         * into the MemorySegment}
+         */
+        MethodHandle setterHandle();
+
+        /**
          * {@return a new instance of type T obtained by unmarshalling (deserializing)
          * the object from the provided {@code segment} starting at the provided
          * {@code offset}}
@@ -92,7 +105,14 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
          * @param segment from which to get an object
          * @param offset at which to start unmarshalling
          */
-        T get(MemorySegment segment, long offset);
+        @SuppressWarnings("unchecked")
+        default T get(MemorySegment segment, long offset) {
+            try {
+                return (T) getterHandle().invokeExact(segment, offset);
+            } catch (Throwable t) {
+                throw new IllegalArgumentException(t);
+            }
+        }
 
         /**
          * {@return a new instance of type T by obtained unmarshalling (deserializing)
@@ -112,7 +132,13 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
          * @param offset  at which to start marshalling
          * @param value   to marshall
          */
-        void set(MemorySegment segment, long offset, T value);
+        default void set(MemorySegment segment, long offset, T value) {
+            try {
+                setterHandle().invokeExact(segment, offset, value);
+            } catch (Throwable e) {
+                throw new IllegalArgumentException(e);
+            }
+        }
 
         /**
          * Sets (marshals/serializes) the provided {@code value} into the provided
@@ -132,7 +158,7 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
      * @param recordType t
      * @param <R> r
      */
-    static <R extends Record> Mapper<R> ofRecord(Class<R> recordType) {
+    static <R extends Record> Mapper<R> recordMapper(Class<R> recordType) {
         // Implicit null check
         if (recordType.equals(Record.class)) {
             throw new IllegalArgumentException();
@@ -145,7 +171,7 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
      * @param interfaceType i
      * @param <I> i
      */
-    static <I> Mapper<I> ofInterface(Class<I> interfaceType) {
+    static <I> Mapper<I> interfaceMapper(Class<I> interfaceType) {
         // Implicit null check
         if (!interfaceType.isInterface()) {
             throw new IllegalArgumentException();

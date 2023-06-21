@@ -26,6 +26,9 @@
 package java.lang.foreign;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Predicate;
+
 import jdk.internal.javac.PreviewFeature;
 
 /**
@@ -71,4 +74,83 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
      */
     @Override
     GroupLayout withByteAlignment(long byteAlignment);
+
+    /**
+     * Represents {@code get()} (unmarshall/deserialize) and {@code set()} (marshall/serialize)
+     * operations for certain Java classes (such as records and interfaces) where instances of these
+     * types can be read and written from/to a MemorySegment at certain offsets.
+     *
+     * @param <T> type to map
+     */
+    interface Mapper<T> {
+
+        /**
+         * {@return a new instance of type T obtained by unmarshalling (deserializing)
+         * the object from the provided {@code segment} starting at the provided
+         * {@code offset}}
+         *
+         * @param segment from which to get an object
+         * @param offset at which to start unmarshalling
+         */
+        T get(MemorySegment segment, long offset);
+
+        /**
+         * {@return a new instance of type T by obtained unmarshalling (deserializing)
+         * the object from the provided {@code segment} starting at position zero}
+         *
+         * @param segment from which to get an object
+         */
+        default T get(MemorySegment segment) {
+            return get(segment, 0L);
+        }
+
+        /**
+         * Sets (marshals/serializes) the provided {@code value} into the provided
+         * {@code segment} starting at the provided {@code offset}.
+         *
+         * @param segment to which a value should be marshalled
+         * @param offset  at which to start marshalling
+         * @param value   to marshall
+         */
+        void set(MemorySegment segment, long offset, T value);
+
+        /**
+         * Sets (marshals/serializes) the provided {@code value} into the provided
+         * {@code segment} starting at position zero.
+         *
+         * @param segment to which a value should be marshalled
+         * @param value   to marshall
+         */
+        default void set(MemorySegment segment, T value) {
+            set(segment, 0L, value);
+        }
+
+    }
+
+    /**
+     * {@return to doc}
+     * @param recordType t
+     * @param <R> r
+     */
+    static <R extends Record> Mapper<R> ofRecord(Class<R> recordType) {
+        // Implicit null check
+        if (recordType.equals(Record.class)) {
+            throw new IllegalArgumentException();
+        }
+        return null;
+    }
+
+    /**
+     * {@return to doc}
+     * @param interfaceType i
+     * @param <I> i
+     */
+    static <I> Mapper<I> ofInterface(Class<I> interfaceType) {
+        // Implicit null check
+        if (!interfaceType.isInterface()) {
+            throw new IllegalArgumentException();
+        }
+        return null;
+    }
+
 }

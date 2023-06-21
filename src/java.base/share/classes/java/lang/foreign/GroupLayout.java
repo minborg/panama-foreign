@@ -26,6 +26,7 @@
 package java.lang.foreign;
 
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.util.List;
 
 import jdk.internal.javac.PreviewFeature;
@@ -84,18 +85,71 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
     interface Mapper<T> {
 
         /**
-         * {@return a {@link MethodHandle} representing the "get" operation for this mapper.  The MethodHandle
+         * {@return a {@link MethodHandle} representing a "get" operation for this mapper.  The MethodHandle
          * has the coordinates {@code (MemorySegment, long)T} where the long coordinate represents an offset
          * into the MemorySegment}
          */
         MethodHandle getterHandle();
 
         /**
-         * {@return a {@link MethodHandle} representing the "set" operation for this mapper.  The MethodHandle
+         * {@return a {@link MethodHandle} representing a "set" operation for this mapper.  The MethodHandle
          * has the coordinates {@code (MemorySegment, long, T)void} where the long coordinate represents an offset
          * into the MemorySegment}
          */
         MethodHandle setterHandle();
+
+        /**
+         * {@return the {@link GroupLayout} from which this mapper was derived}
+         */
+        GroupLayout layout();
+
+        /**
+         * {@return the type for which this mapper was constructed}
+         */
+        Class<T> type();
+
+        // Convenience methods
+
+        /**
+         * {@return a {@link MethodHandle} representing a "get" operation for this mapper at the provided
+         * {@code offset}.  The MethodHandle has the coordinates {@code (MemorySegment)T}}
+         *
+         * @param offset in the segment
+         */
+        default MethodHandle getterHandle(long offset) {
+            return insertOffset(getterHandle(), offset);
+        }
+
+        /**
+         * {@return a {@link MethodHandle} representing a "get" operation for this mapper at the provided
+         * {@code index} taking the {@link GroupLayout#byteSize()} into consideration.  The MethodHandle
+         * has the coordinates {@code (MemorySegment)T}}
+         *
+         * @param index in the segment
+         */
+        default MethodHandle getterHandleAtIndex(long index) {
+            return insertOffset(getterHandle(), index * layout().byteSize());
+        }
+
+        /**
+         * {@return a {@link MethodHandle} representing a "set" operation for this mapper at the provided
+         * {@code offset}.  The MethodHandle has the coordinates {@code (MemorySegment, T)void}}
+         *
+         * @param offset in the segment
+         */
+        default MethodHandle setterHandle(long offset) {
+            return insertOffset(setterHandle(), offset);
+        }
+
+        /**
+         * {@return a {@link MethodHandle} representing a "set" operation for this mapper at the provided
+         * {@code offset}.  The MethodHandle has the coordinates {@code (MemorySegment, T)void}}
+         *
+         * @param index in the segment
+         */
+        default MethodHandle setterHandleAtIndex(long index) {
+            return insertOffset(setterHandle(), index * layout().byteSize());
+        }
 
         /**
          * {@return a new instance of type T obtained by unmarshalling (deserializing)
@@ -125,6 +179,17 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
         }
 
         /**
+         * {@return a new instance of type T by obtained unmarshalling (deserializing)
+         * the object from the provided {@code segment} starting at the provided {@code index})}
+         *
+         * @param segment from which to get an object
+         * @param index at which to start
+         */
+        default T getAtIndex(MemorySegment segment, long index) {
+            return get(segment, index * layout().byteSize());
+        }
+
+        /**
          * Sets (marshals/serializes) the provided {@code value} into the provided
          * {@code segment} starting at the provided {@code offset}.
          *
@@ -149,6 +214,23 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
          */
         default void set(MemorySegment segment, T value) {
             set(segment, 0L, value);
+        }
+
+        /**
+         * Sets (marshals/serializes) the provided {@code value} into the provided
+         * {@code segment} starting at the provided {@code index}.
+         *
+         * @param segment to which a value should be marshalled
+         * @param index   in the segment
+         * @param value   to marshall
+         *
+         */
+        default void setAtIndex(MemorySegment segment, long index, T value) {
+            set(segment, index * layout().byteSize(), value);
+        }
+
+        private static MethodHandle insertOffset(MethodHandle mh, long offset) {
+            return MethodHandles.insertArguments(mh, 1, offset);
         }
 
     }

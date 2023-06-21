@@ -31,6 +31,9 @@ import java.util.List;
 
 import jdk.internal.javac.PreviewFeature;
 
+import static java.lang.foreign.ValueLayout.JAVA_DOUBLE;
+import static java.lang.foreign.ValueLayout.JAVA_INT;
+
 /**
  * A compound layout that is an aggregation of multiple, heterogeneous <em>member layouts</em>. There are two ways in which member layouts
  * can be combined: if member layouts are laid out one after the other, the resulting group layout is a
@@ -240,7 +243,7 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
      * @param recordType t
      * @param <R> r
      */
-    static <R extends Record> Mapper<R> recordMapper(Class<R> recordType) {
+    default <R extends Record> Mapper<R> recordMapper(Class<R> recordType) {
         // Implicit null check
         if (recordType.equals(Record.class)) {
             throw new IllegalArgumentException();
@@ -253,7 +256,7 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
      * @param interfaceType i
      * @param <I> i
      */
-    static <I> Mapper<I> interfaceMapper(Class<I> interfaceType) {
+    default <I> Mapper<I> interfaceMapper(Class<I> interfaceType) {
         // Implicit null check
         if (!interfaceType.isInterface()) {
             throw new IllegalArgumentException();

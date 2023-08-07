@@ -1,9 +1,11 @@
-package jdk.internal.foreign;
+package jdk.internal.foreign.arena;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
-sealed class AbstractDelegatingArena implements Arena permits StandardRecordingArena {
+sealed class AbstractDelegatingArena
+        implements Arena
+        permits ChunkedArenaImpl, MappingArenaImpl, PooledArenaImpl, RecordingArenaImpl {
 
     final Arena delegate;
 

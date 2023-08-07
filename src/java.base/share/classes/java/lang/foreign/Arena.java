@@ -26,17 +26,22 @@
 package java.lang.foreign;
 
 import jdk.internal.foreign.MemorySessionImpl;
-import jdk.internal.foreign.StandardRecordingArena;
+import jdk.internal.foreign.arena.ChunkedArenaImpl;
+import jdk.internal.foreign.arena.MappingArenaImpl;
+import jdk.internal.foreign.arena.PooledArenaImpl;
+import jdk.internal.foreign.arena.RecordingArenaImpl;
 import jdk.internal.ref.CleanerFactory;
 
 import java.lang.foreign.MemorySegment.Scope;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.LongSummaryStatistics;
+import java.nio.file.Paths;
 import java.util.Objects;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
+import java.util.Set;
 import java.util.stream.Stream;
+
+import static java.nio.file.StandardOpenOption.*;
+import static java.nio.file.StandardOpenOption.WRITE;
 
 /**
  * An arena controls the lifecycle of native memory segments, providing both flexible allocation and timely deallocation.
@@ -202,6 +207,7 @@ import java.util.stream.Stream;
  *
  * @see MemorySegment
  *
+ * @sealedGraph
  * @since 22
  */
 public interface Arena extends SegmentAllocator, AutoCloseable {
@@ -309,32 +315,86 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
     @Override
     void close();
 
-    static RecordingArena ofMapped(Arena inner, Path path) {
-        Objects.requireNonNull(inner);
-        Objects.requireNonNull(path);
-        return null;
+    /**
+     * {@return a new Arena that will per-allocate memory with the given {@code chunkSize}}
+     * @param parent    arena to associate with the returned arena
+     * @param chunkSize per-allocation size (in bytes)
+     */
+    static Arena ofChunked(Arena parent, long chunkSize) {
+        Objects.requireNonNull(parent);
+        if (chunkSize < 0) {
+            throw new IllegalArgumentException();
+        }
+        return new ChunkedArenaImpl(parent, chunkSize);
     }
 
-    sealed interface RecordingArena extends Arena permits StandardRecordingArena {
+    /**
+     * {@return a new Arena that will return segments that are mapped to the file indicated by the given {@code path}
+     * and given open {@code options}}
+     * @param parent  arena to associate with the returned arena
+     * @param path    indicating the file to map segments from
+     * @param options when opening the mapped file
+     */
+    static Arena ofMapped(Arena parent, Path path, Set<OpenOption> options) {
+        Objects.requireNonNull(parent);
+        Objects.requireNonNull(path);
+        return new MappingArenaImpl(parent, path, options);
+    }
 
-        record Event(long size, long alignment){}
+    /**
+     * An Arena that allows recycling of allocated segments to a pool.
+     */
+    sealed interface PooledArena extends Arena permits PooledArenaImpl {
 
+        /**
+         * Recycle the provided {@code segment}
+         * @param segment to recycle
+         */
+        // Maybe name `release` instead?
+        void recycle(MemorySegment segment);
+
+    }
+
+    /**
+     * {@return a new Arena that allows recycling of allocated segment to a pool}
+     * @param parent  arena to associate with the returned arena
+     */
+    static PooledArena ofPooled(Arena parent) {
+        Objects.requireNonNull(parent);
+        return new PooledArenaImpl(parent);
+    }
+
+
+    /**
+     * An Arena that allows inspection of statistics pertaining to the allocation of segments.
+     */
+    sealed interface RecordingArena extends Arena permits RecordingArenaImpl {
+
+        /**
+         * Record to hold an Arena event.
+         *
+         * @param timeNs        the current value of the running Java Virtual Machine's high-resolution time source, in nanoseconds
+         *                      as the time allocation of a segment started
+         * @param durationNs    the time in nanoseconds it took to allocate a segment
+         * @param byteSize      the requested byteSize of a segment
+         * @param byteAlignment the requested byteAlignment of a segment
+         */
+        record Event(long timeNs, long durationNs, long byteSize, long byteAlignment){}
+
+        /**
+         * {@return a new Stream of Event elements recorded}
+         */
         Stream<Event> events();
 
     }
 
-    static RecordingArena ofRecording(Arena inner) {
-        Objects.requireNonNull(inner);
-        return new StandardRecordingArena(inner);
-    }
-
-    static void main(String[] args) {
-        try (var arena = ofRecording(Arena.ofConfined())){
-            var stat = arena.events()
-                    .mapToLong(RecordingArena.Event::size)
-                    .summaryStatistics();
-            System.out.println("stat = " + stat);
-        }
+    /**
+     * {@return a new Arena that allows inspection of statistics pertaining to the allocation of segments}
+     * @param parent  arena to associate with the returned arena
+     */
+    static RecordingArena ofRecording(Arena parent) {
+        Objects.requireNonNull(parent);
+        return new RecordingArenaImpl(parent);
     }
 
 }

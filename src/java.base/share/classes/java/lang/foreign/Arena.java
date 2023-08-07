@@ -26,9 +26,17 @@
 package java.lang.foreign;
 
 import jdk.internal.foreign.MemorySessionImpl;
+import jdk.internal.foreign.StandardRecordingArena;
 import jdk.internal.ref.CleanerFactory;
 
 import java.lang.foreign.MemorySegment.Scope;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.LongSummaryStatistics;
+import java.util.Objects;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 /**
  * An arena controls the lifecycle of native memory segments, providing both flexible allocation and timely deallocation.
@@ -300,5 +308,33 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
      */
     @Override
     void close();
+
+    static RecordingArena ofMapped(Arena inner, Path path) {
+        Objects.requireNonNull(inner);
+        Objects.requireNonNull(path);
+        return null;
+    }
+
+    sealed interface RecordingArena extends Arena permits StandardRecordingArena {
+
+        record Event(long size, long alignment){}
+
+        Stream<Event> events();
+
+    }
+
+    static RecordingArena ofRecording(Arena inner) {
+        Objects.requireNonNull(inner);
+        return new StandardRecordingArena(inner);
+    }
+
+    static void main(String[] args) {
+        try (var arena = ofRecording(Arena.ofConfined())){
+            var stat = arena.events()
+                    .mapToLong(RecordingArena.Event::size)
+                    .summaryStatistics();
+            System.out.println("stat = " + stat);
+        }
+    }
 
 }

@@ -39,8 +39,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class TestRecordingArena {
 
-    //         Set<OpenOption> sparse = Set.of(CREATE_NEW, SPARSE, READ, WRITE);
-
     private RecordingArena arena;
 
     @BeforeEach
@@ -55,7 +53,8 @@ public class TestRecordingArena {
 
     @Test
     void one() {
-        arena.allocate(32, 16);
+        var segment = arena.allocate(32, 16);
+        assertEquals(32, segment.byteSize());
         List<RecordingArena.Event> events = arena.events().toList();
         assertEquals(1, events.size());
         RecordingArena.Event event = events.getFirst();

@@ -35,6 +35,7 @@ public final class ChunkedArenaImpl
             if (byteSize > remaining) {
                 // Throw away what is remaining. Todo: We should be able to store these shards for later use
                 current = delegate.allocate(chunkSize);
+                cursor = 0;
             }
             var seg = current.asSlice(cursor, byteSize);
             cursor += seg.byteSize();

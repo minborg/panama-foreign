@@ -392,6 +392,8 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
      * {@return a new Arena that allows inspection of statistics pertaining to the allocation of segments}
      * @param parent  arena to associate with the returned arena
      */
+    // It is probably better to use JFR: https://github.com/openjdk/jdk/pull/6591/files
+    // @Deprecated(forRemoval = true)
     static RecordingArena ofRecording(Arena parent) {
         Objects.requireNonNull(parent);
         return new RecordingArenaImpl(parent);

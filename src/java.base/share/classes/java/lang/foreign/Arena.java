@@ -27,6 +27,7 @@ package java.lang.foreign;
 
 import jdk.internal.foreign.MemorySessionImpl;
 import jdk.internal.foreign.arena.ChunkedArenaImpl;
+import jdk.internal.foreign.arena.MallocArenaImpl;
 import jdk.internal.foreign.arena.MappedArenaImpl;
 import jdk.internal.foreign.arena.PooledArenaImpl;
 import jdk.internal.foreign.arena.RecordingArenaImpl;
@@ -394,5 +395,15 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
         Objects.requireNonNull(parent);
         return new RecordingArenaImpl(parent);
     }
+
+    /**
+     * {@return a new Arena that does not initialize allocated segments to zero before being returned}
+     * @param parent  arena to associate with the returned arena
+     */
+    static Arena ofUninitialized(Arena parent) {
+        Objects.requireNonNull(parent);
+        return new MallocArenaImpl(parent);
+    }
+
 
 }

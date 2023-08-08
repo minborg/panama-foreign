@@ -33,7 +33,8 @@ public final class ChunkedArenaImpl
             // Todo: Fix alignment
             long remaining = current.byteSize() - cursor;
             if (byteSize > remaining) {
-                // Throw away what is remaining. Todo: We should be able to store these shards for later use
+                // Throw away what is remaining.
+                // Todo: We should be able to store these shards for later use
                 current = delegate.allocate(chunkSize);
                 cursor = 0;
             }

@@ -27,7 +27,7 @@ package java.lang.foreign;
 
 import jdk.internal.foreign.MemorySessionImpl;
 import jdk.internal.foreign.arena.ChunkedArenaImpl;
-import jdk.internal.foreign.arena.MappingArenaImpl;
+import jdk.internal.foreign.arena.MappedArenaImpl;
 import jdk.internal.foreign.arena.PooledArenaImpl;
 import jdk.internal.foreign.arena.RecordingArenaImpl;
 import jdk.internal.ref.CleanerFactory;
@@ -35,13 +35,9 @@ import jdk.internal.ref.CleanerFactory;
 import java.lang.foreign.MemorySegment.Scope;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
-
-import static java.nio.file.StandardOpenOption.*;
-import static java.nio.file.StandardOpenOption.WRITE;
 
 /**
  * An arena controls the lifecycle of native memory segments, providing both flexible allocation and timely deallocation.
@@ -338,7 +334,7 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
     static Arena ofMapped(Arena parent, Path path, Set<OpenOption> options) {
         Objects.requireNonNull(parent);
         Objects.requireNonNull(path);
-        return new MappingArenaImpl(parent, path, options);
+        return new MappedArenaImpl(parent, path, options);
     }
 
     /**

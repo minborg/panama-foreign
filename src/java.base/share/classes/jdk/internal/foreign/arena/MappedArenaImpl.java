@@ -6,24 +6,19 @@ import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
-import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Stream;
 
 import static java.nio.channels.FileChannel.MapMode.READ_WRITE;
-import static java.nio.file.StandardOpenOption.*;
-import static java.nio.file.StandardOpenOption.WRITE;
 
-public final class MappingArenaImpl
+public final class MappedArenaImpl
     extends AbstractDelegatingArena
     implements Arena {
 
     private final FileChannel fc;
     private final AtomicLong offset = new AtomicLong();
 
-    public MappingArenaImpl(Arena delegate, Path path, Set<OpenOption> options) {
+    public MappedArenaImpl(Arena delegate, Path path, Set<OpenOption> options) {
         super(delegate);
         try {
            fc = FileChannel.open(path, options);

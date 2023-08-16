@@ -5,7 +5,7 @@ import java.lang.foreign.MemorySegment;
 
 sealed class AbstractDelegatingArena
         implements Arena
-        permits ChunkedArenaImpl, MallocArenaImpl, MappedArenaImpl, PooledArenaImpl, RecordingArenaImpl {
+        permits ChunkedArenaImpl, MallocArenaImpl, MappedArenaImpl, PooledArenaImpl, RecordingArenaImpl, SlicingArenaImpl {
 
     final Arena delegate;
 

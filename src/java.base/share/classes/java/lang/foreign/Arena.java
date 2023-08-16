@@ -31,6 +31,7 @@ import jdk.internal.foreign.arena.MallocArenaImpl;
 import jdk.internal.foreign.arena.MappedArenaImpl;
 import jdk.internal.foreign.arena.PooledArenaImpl;
 import jdk.internal.foreign.arena.RecordingArenaImpl;
+import jdk.internal.foreign.arena.SlicingArenaImpl;
 import jdk.internal.ref.CleanerFactory;
 
 import java.lang.foreign.MemorySegment.Scope;
@@ -404,6 +405,45 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
         Objects.requireNonNull(parent);
         return new MallocArenaImpl(parent);
     }
+
+    /**
+     * A reusable single-threaded Arena that is slicing new segments out of a pre-allocated segment
+     */
+    sealed interface SlicingArena extends Arena permits SlicingArenaImpl {
+
+        /**
+         * Acquires the ownership of this slicing arena and resets the use of the backing segment
+         *
+         * @throws IllegalStateException if the slicing arena is already acquired
+         */
+        void acquire();
+
+        /**
+         * Releases the ownership of this slicing arena.
+         *
+         * @throws IllegalStateException if the slicing arena is not previously acquired
+         */
+        void release();
+
+    }
+
+    /**
+     * {@return a new single-threaded Arena that is slicing new segments out of a pre-allocated segment}
+     * <p>
+     * The returned slicing arena will throw IllegalStateException when any of the allocate methods is
+     * called if the slicing arena is not acquired.
+     *
+     * @param parent  arena to associate with the returned arena
+     * @param size    the size of the pre-allocated segment from which to slice new segments
+     */
+    static SlicingArena ofSlicing(Arena parent, long size) {
+        Objects.requireNonNull(parent);
+        if (size < 0) {
+            throw new IllegalArgumentException();
+        }
+        return new SlicingArenaImpl(parent, size);
+    }
+
 
 
 }

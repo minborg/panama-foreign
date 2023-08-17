@@ -37,7 +37,7 @@ public class TestSlicingArena {
     private static final long PRE_ALLOC_SIZE = 1L << 14;
     private static final long ALLOC_SIZE = 32;
 
-    private Arena.SlicingArena arena;
+    private Arena.OfSlicing arena;
 
     @BeforeEach
     void setup() {

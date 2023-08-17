@@ -6,13 +6,13 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Stream;
 
-public final class RecordingArenaImpl
+public final class OfRecordingImpl
     extends AbstractDelegatingArena
-    implements Arena.RecordingArena {
+    implements Arena.OfRecording {
 
     private final Queue<Event> queue = new ConcurrentLinkedQueue<>();
 
-    public RecordingArenaImpl(Arena delegate) {
+    public OfRecordingImpl(Arena delegate) {
         super(delegate);
     }
 

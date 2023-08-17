@@ -29,7 +29,7 @@
 import org.junit.jupiter.api.*;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.Arena.RecordingArena;
+import java.lang.foreign.Arena.OfRecording;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -38,13 +38,13 @@ public class TestPooledArena {
 
     private static final long ALLOC_SIZE = 32;
 
-    private RecordingArena recordingArena;
-    private Arena.PooledArena arena;
+    private OfRecording ofRecording;
+    private Arena.OfPooled arena;
 
     @BeforeEach
     void setup() {
-        recordingArena = Arena.ofRecording(Arena.ofConfined());
-        arena = Arena.ofPooled(recordingArena);
+        ofRecording = Arena.ofRecording(Arena.ofConfined());
+        arena = Arena.ofPooled(ofRecording);
     }
 
     @Test
@@ -81,7 +81,7 @@ public class TestPooledArena {
                 assertEquals(i, seg.byteSize());
                 arena.recycle(seg);
             }
-            var allocations = recordingArena.events().count();
+            var allocations = ofRecording.events().count();
             assertTrue(allocations <= 10);
         }
     }
@@ -97,12 +97,12 @@ public class TestPooledArena {
             assertEquals(size, seg.byteSize(), "Failed for " + size);
             arena.recycle(seg);
         }
-        var allocations = recordingArena.events().count();
+        var allocations = ofRecording.events().count();
         assertTrue(allocations < 18);
     }
 
     private long totalAlloc() {
-        return recordingArena.events().mapToLong(RecordingArena.Event::byteSize).sum();
+        return ofRecording.events().mapToLong(OfRecording.Event::byteSize).sum();
     }
 
 }

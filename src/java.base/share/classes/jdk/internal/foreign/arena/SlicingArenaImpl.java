@@ -7,7 +7,7 @@ import java.lang.foreign.SegmentAllocator;
 // Not thread safe
 public final class SlicingArenaImpl
         extends AbstractDelegatingArena
-        implements Arena.SlicingArena {
+        implements Arena.OfSlicing {
 
     private final MemorySegment segment;
     private SegmentAllocator allocator;

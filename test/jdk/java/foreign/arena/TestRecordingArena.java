@@ -27,19 +27,17 @@
  */
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.Arena.RecordingArena;
+import java.lang.foreign.Arena.OfRecording;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.stream.Stream;
 
-import static java.lang.foreign.ValueLayout.*;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class TestRecordingArena {
 
-    private RecordingArena arena;
+    private OfRecording arena;
 
     @BeforeEach
     void setup() {
@@ -55,9 +53,9 @@ public class TestRecordingArena {
     void one() {
         var segment = arena.allocate(32, 16);
         assertEquals(32, segment.byteSize());
-        List<RecordingArena.Event> events = arena.events().toList();
+        List<OfRecording.Event> events = arena.events().toList();
         assertEquals(1, events.size());
-        RecordingArena.Event event = events.getFirst();
+        OfRecording.Event event = events.getFirst();
         assertEquals(32, event.byteSize());
         assertEquals(16, event.byteAlignment());
     }
@@ -65,15 +63,15 @@ public class TestRecordingArena {
     @Test
     void many() {
         Random random = new Random(42);
-        List<RecordingArena.Event> events = new ArrayList<>();
+        List<OfRecording.Event> events = new ArrayList<>();
         for (int i = 0; i < 200; i++) {
             long byteSize = random.nextLong(1024);
             long byteAlignment = 1L << random.nextInt(6);
-            events.add(new RecordingArena.Event(0, 0, byteSize, byteAlignment));
+            events.add(new OfRecording.Event(0, 0, byteSize, byteAlignment));
             var segment = arena.allocate(byteSize, byteAlignment);
             assertEquals(byteSize, segment.byteSize());
         }
-        List<RecordingArena.Event> arenaEvents = arena.events().toList();
+        List<OfRecording.Event> arenaEvents = arena.events().toList();
         assertEquals(events.size(), arenaEvents.size());
         long lastTime = 0;
         for (int i = 0; i < events.size(); i++) {

@@ -29,7 +29,7 @@
 import org.junit.jupiter.api.*;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.Arena.RecordingArena;
+import java.lang.foreign.Arena.OfRecording;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,13 +38,13 @@ public class TestChunkedArena {
     private static final long CHUNK_SIZE = 1024;
     private static final long ALLOC_SIZE = 32;
 
-    private RecordingArena recordingArena;
+    private OfRecording ofRecording;
     private Arena arena;
 
     @BeforeEach
     void setup() {
-        recordingArena = Arena.ofRecording(Arena.ofConfined());
-        arena = Arena.ofChunked(recordingArena, CHUNK_SIZE);
+        ofRecording = Arena.ofRecording(Arena.ofConfined());
+        arena = Arena.ofChunked(ofRecording, CHUNK_SIZE);
     }
 
     @Test
@@ -73,7 +73,7 @@ public class TestChunkedArena {
     }
 
     private long totalAlloc() {
-        return recordingArena.events().mapToLong(RecordingArena.Event::byteSize).sum();
+        return ofRecording.events().mapToLong(OfRecording.Event::byteSize).sum();
     }
 
 }

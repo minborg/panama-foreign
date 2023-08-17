@@ -8,14 +8,14 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.IntStream;
 
-public final class PooledArenaImpl
+public final class OfPooledImpl
     extends AbstractDelegatingArena
-    implements Arena.PooledArena {
+    implements Arena.OfPooled {
 
     private final List<ConcurrentLinkedQueue<MemorySegment>> queues;
     private final ConcurrentMap<Long, MemorySegment> outstandingSegments;
 
-    public PooledArenaImpl(Arena delegate) {
+    public OfPooledImpl(Arena delegate) {
         super(delegate);
         queues = IntStream.range(0, 63 - 3)
                 .mapToObj(__ -> new ConcurrentLinkedQueue<MemorySegment>())
@@ -32,7 +32,7 @@ public final class PooledArenaImpl
             original = delegate.allocate(sizeFor(bucket), byteAlignment);
         }
         var slice = original.asSlice(0L, byteSize);
-        outstandingSegments.merge(slice.address(), original, PooledArenaImpl::throwingMerger);
+        outstandingSegments.merge(slice.address(), original, OfPooledImpl::throwingMerger);
         return slice;
     }
 

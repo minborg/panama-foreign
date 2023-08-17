@@ -29,8 +29,9 @@ import jdk.internal.foreign.MemorySessionImpl;
 import jdk.internal.foreign.arena.ChunkedArenaImpl;
 import jdk.internal.foreign.arena.MallocArenaImpl;
 import jdk.internal.foreign.arena.MappedArenaImpl;
-import jdk.internal.foreign.arena.PooledArenaImpl;
-import jdk.internal.foreign.arena.RecordingArenaImpl;
+import jdk.internal.foreign.arena.OfPooledImpl;
+import jdk.internal.foreign.arena.OfRecordingImpl;
+import jdk.internal.foreign.arena.OfResizingImpl;
 import jdk.internal.foreign.arena.SlicingArenaImpl;
 import jdk.internal.ref.CleanerFactory;
 
@@ -192,13 +193,13 @@ import java.util.stream.Stream;
  * the timely deallocation guarantee provided by the underlying confined arena:
  *
  * {@snippet lang = java:
- * try (Arena slicingArena = new SlicingArena(1000)) {
+ * try (Arena slicingArena = new OfSlicing(1000)) {
  *     for (int i = 0; i < 10; i++) {
  *         MemorySegment s = slicingArena.allocateFrom(JAVA_INT, 1, 2, 3, 4, 5);
  *         ...
  *     }
  * } // all memory allocated is released here
- * }
+ *}
  *
  * @implSpec
  * Implementations of this interface are thread-safe.
@@ -342,7 +343,7 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
     /**
      * An Arena that allows recycling of allocated segments to a pool.
      */
-    sealed interface PooledArena extends Arena permits PooledArenaImpl {
+    sealed interface OfPooled extends Arena permits OfPooledImpl {
 
         /**
          * Recycle the provided {@code segment}
@@ -357,16 +358,15 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
      * {@return a new Arena that allows recycling of allocated segment to a pool}
      * @param parent  arena to associate with the returned arena
      */
-    static PooledArena ofPooled(Arena parent) {
+    static OfPooled ofPooled(Arena parent) {
         Objects.requireNonNull(parent);
-        return new PooledArenaImpl(parent);
+        return new OfPooledImpl(parent);
     }
-
 
     /**
      * An Arena that allows inspection of statistics pertaining to the allocation of segments.
      */
-    sealed interface RecordingArena extends Arena permits RecordingArenaImpl {
+    sealed interface OfRecording extends Arena permits OfRecordingImpl {
 
         /**
          * Record to hold an Arena event.
@@ -392,9 +392,9 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
      */
     // It is probably better to use JFR: https://github.com/openjdk/jdk/pull/6591/files
     // @Deprecated(forRemoval = true)
-    static RecordingArena ofRecording(Arena parent) {
+    static OfRecording ofRecording(Arena parent) {
         Objects.requireNonNull(parent);
-        return new RecordingArenaImpl(parent);
+        return new OfRecordingImpl(parent);
     }
 
     /**
@@ -409,7 +409,7 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
     /**
      * A reusable single-threaded Arena that is slicing new segments out of a pre-allocated segment
      */
-    sealed interface SlicingArena extends Arena permits SlicingArenaImpl {
+    sealed interface OfSlicing extends Arena permits SlicingArenaImpl {
 
         /**
          * Acquires the ownership of this slicing arena and resets the use of the backing segment
@@ -436,7 +436,7 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
      * @param parent  arena to associate with the returned arena
      * @param size    the size of the pre-allocated segment from which to slice new segments
      */
-    static SlicingArena ofSlicing(Arena parent, long size) {
+    static OfSlicing ofSlicing(Arena parent, long size) {
         Objects.requireNonNull(parent);
         if (size < 0) {
             throw new IllegalArgumentException();
@@ -444,6 +444,38 @@ public interface Arena extends SegmentAllocator, AutoCloseable {
         return new SlicingArenaImpl(parent, size);
     }
 
+    /**
+     * An Arena that allows allocated memory segments to share the same backing memory.
+     */
+    sealed interface OfResizing extends Arena permits OfResizingImpl {
 
+        /**
+         * {@return a new mirrored memory segment that is backed by the same region of memory as the
+         * {@code originalSegment} but with the provided {@code newByteSize}}
+         * <p>
+         * The method is guaranteed to be copy free. The properties of the provided {@code originalSegment}
+         * is retained.
+         * <p>
+         * Mirrors can be both larger and smaller than the provided {@code originalSegment}
+         *
+         * @param originalSegment for which the new memory segment share the backing memory region
+         * @param newByteSize     specifying the byte size of the new mirrored segment
+         */
+        MemorySegment mirror(MemorySegment originalSegment, long newByteSize);
+
+    }
+
+    /**
+     * {@return a new Arena.OfResizing that allows new memory segments to share the backing memory
+     * region}
+     *
+     * @param parent  arena to associate with the returned arena
+     * @param path    indicating the directory to map segments in
+     */
+    static OfResizing ofResizing(Arena parent, Path path) {
+        Objects.requireNonNull(parent);
+        Objects.requireNonNull(path);
+        return new OfResizingImpl(parent, path);
+    }
 
 }

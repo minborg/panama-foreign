@@ -86,10 +86,9 @@ EXPORT char* to_string_point(Point point) {
 }
 
 // Provide a string. Null-> return size
-EXPORT int to_string_point(Point point, char* str, int len) {
+EXPORT int to_string_point2(Point point, char* str, int len) {
     // Fix
-    sprintf(str, "Point[x=%d, y=%d]", point.x, point.y);
-    return str;
+    return sprintf(str, "Point[x=%d, y=%d]", point.x, point.y);
 }
 
 // Questions: polymorphism in libraries?

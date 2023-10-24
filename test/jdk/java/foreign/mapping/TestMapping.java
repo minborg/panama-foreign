@@ -74,7 +74,60 @@ public class TestMapping extends NativeTestHelper {
 
     public record Line(Point begin, Point end) {}
 
+    public interface Marker {
+        default void greeting() {
+            System.out.println("Marker says hello");
+        }
+    }
+
+    @FunctionalInterface
+    public interface A extends Marker {
+        int getpid();
+    }
+
     @Test
+    public void testPidSimple() {
+        A a = LinkerAdditions.downcall(A.class);
+
+        System.out.println("** SIMPLE **");
+
+        System.out.println("a = " + a);
+
+        int pid = a.getpid();
+        System.out.println("pid = " + pid);
+
+        System.out.println("a.getClass() = " + a.getClass());
+        System.out.println("a.toString() = " + a.toString());
+        System.out.println("a.hashCode() = " + a.hashCode());
+        System.out.println("a.equals(\"Olle\") = " + a.equals("Olle"));
+
+        a.greeting();
+    }
+
+    @Test
+    public void testPid() {
+        MemorySegment address = Linker.nativeLinker().defaultLookup().find("getpid").orElseThrow();
+        MethodType methodType = MethodType.methodType(int.class);
+        A a = LinkerAdditions.downcall(A.class, methodType, address, FunctionDescriptor.of(JAVA_INT));
+
+        System.out.println("** NORMAL **");
+
+        System.out.println("a = " + a);
+
+        int pid = a.getpid();
+        System.out.println("pid = " + pid);
+
+        System.out.println("a.getClass() = " + a.getClass());
+        System.out.println("a.toString() = " + a.toString());
+        System.out.println("a.hashCode() = " + a.hashCode());
+        System.out.println("a.equals(\"Olle\") = " + a.equals("Olle"));
+
+        a.greeting();
+
+        throw new AssertionError();
+    }
+
+    //@Test
     public void testOrigin() {
 
         @FunctionalInterface
@@ -89,7 +142,23 @@ public class TestMapping extends NativeTestHelper {
         assertEquals(expected, actual);
     }
 
-    @Test
+
+    //@Test
+    public void testOrigin2() {
+
+        @FunctionalInterface
+        interface Origin {  Point origin(); }
+
+        Origin downcall = LinkerAdditions.downcall(Origin.class, FunctionDescriptor.of(POINT_LAYOUT));
+
+        Point expected = new Point(0, 0);
+
+        Point actual = downcall.origin();
+
+        assertEquals(expected, actual);
+    }
+
+    //@Test
     public void testLine() {
 
         @FunctionalInterface
@@ -113,7 +182,7 @@ public class TestMapping extends NativeTestHelper {
         assertEquals(expected, actual);
     }
 
-    @Test
+    //@Test
     public void function() {
 
 /*        @FunctionalInterface

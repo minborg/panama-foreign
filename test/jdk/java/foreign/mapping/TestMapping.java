@@ -30,6 +30,7 @@
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,9 @@ import java.lang.foreign.GroupLayout;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodType;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -78,6 +81,70 @@ public class TestMapping extends NativeTestHelper {
         default void greeting() {
             System.out.println("Marker says hello");
         }
+    }
+
+    public interface StdLib {
+        int getpid();
+        long malloc(long size);
+        void free(long address);
+        int abs(int value);
+        int rand();
+    }
+
+    @Test
+    public void testStdLib() {
+        StdLib stdLib = NativeSupport.link(StdLib.class, SymbolLookup.loaderLookup(), s -> switch(s) {
+           case "getpid" -> NativeSupport.LinkInfo.of(FunctionDescriptor.of(JAVA_INT));
+           case "malloc" -> NativeSupport.LinkInfo.of(FunctionDescriptor.of(JAVA_LONG, JAVA_LONG));
+           case "free" -> NativeSupport.LinkInfo.of(FunctionDescriptor.ofVoid(JAVA_LONG));
+           case "abs" -> NativeSupport.LinkInfo.of(FunctionDescriptor.ofVoid(JAVA_INT, JAVA_INT), Linker.Option.critical());
+           case "rand" -> NativeSupport.LinkInfo.of(FunctionDescriptor.ofVoid(JAVA_INT));
+           default -> throw new NoSuchElementException();
+        });
+    }
+
+    // Better build time feedback?
+
+    @Test
+    public void testStdLibBuilderBuilder() {
+        NativeSupport.Builder builder = NativeSupport.builder(StdLib.class, SymbolLookup.loaderLookup())
+                .withDescription("getpid", JAVA_INT)
+                .withDescription("malloc", JAVA_LONG, JAVA_LONG)
+                .withVoidDescription("free", JAVA_LONG)
+                .withDescription("abs", JAVA_INT, JAVA_INT)
+                .withOptions("abs", Linker.Option.critical())
+                .withVoidDescription("rand", JAVA_INT);
+
+        System.out.println(builder);
+    }
+
+    @Test
+    public void testStdLibBuilderBuilderA() {
+        StdLib stdLib = NativeSupport.builder(StdLib.class, SymbolLookup.loaderLookup())
+                .withDescription("getpid", JAVA_INT)
+                .withDescription("malloc", JAVA_LONG, JAVA_LONG)
+                .withVoidDescription("free", JAVA_LONG)
+                .withDescription("abs", JAVA_INT, JAVA_INT)
+                .withOptions("abs", Linker.Option.critical())
+                .withVoidDescription("rand", JAVA_INT)
+                .build();
+
+        System.out.println("stdLib.rand() = " + stdLib.rand()); // 28561514
+    }
+
+    public void testStdLibBuilderBuilder2() {
+        StdLib stdLib = NativeSupport.builder2(StdLib.class, SymbolLookup.loaderLookup())
+                .with("getpid")
+                    .description(JAVA_INT).options(Linker.Option.critical()).and()
+                .with("malloc")
+                    .description(JAVA_LONG, JAVA_LONG).and()
+                .with("free")
+                    .descriptionVoid(JAVA_LONG).and()
+                .with("abs")
+                    .description(JAVA_INT, JAVA_INT).options(Linker.Option.critical()).and()
+                .with("rand")
+                    .description(JAVA_INT).and()
+                .build();
     }
 
     @FunctionalInterface

@@ -1,5 +1,6 @@
 package java.lang.foreign;
 
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
 
@@ -13,6 +14,8 @@ public interface SegmentMapper<T> {
 
     interface OfInterface<T> extends SegmentMapper<T> {
 
+        // Convenience methods
+
         default T ofSegment(MemorySegment segment) {
             return ofSegment(segment, 0);
         }
@@ -21,11 +24,23 @@ public interface SegmentMapper<T> {
             return ofSegment(segment, layout().byteSize() * index);
         }
 
-        T ofSegment(MemorySegment segment, long offset);
+        @SuppressWarnings("unchecked")
+        default T ofSegment(MemorySegment segment, long offset) {
+            try {
+                return (T) createHandle().invokeExact(segment, offset);
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
+        }
 
+        // Basic method
+
+        MethodHandle createHandle(); // (MemorySegment, long)T
     }
 
     interface OfRecord<T extends Record> extends SegmentMapper<T> {
+
+        // Convenience methods
 
         default T get(MemorySegment segment) {
             return get(segment, 0);
@@ -35,7 +50,14 @@ public interface SegmentMapper<T> {
             return get(segment, layout().byteSize() * index);
         }
 
-        T get(MemorySegment segment, long offset);
+        @SuppressWarnings("unchecked")
+        default T get(MemorySegment segment, long offset) {
+            try {
+                return (T) getHandle().invokeExact(segment, offset);
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
+        }
 
         default void set(MemorySegment segment, T t) {
             set(segment, 0, t);
@@ -45,7 +67,19 @@ public interface SegmentMapper<T> {
             set(segment, layout().byteSize() * index, t);
         }
 
-        void set(MemorySegment segment, long offset, T t);
+        default void set(MemorySegment segment, long offset, T t) {
+            try {
+                getHandle().invokeExact(segment, offset, t);
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        // Basic methods
+
+        MethodHandle getHandle(); // (MemorySegment, long)T
+
+        MethodHandle setHandle(); //(MemorySegment, long, T)void
 
     }
 
@@ -85,6 +119,11 @@ public interface SegmentMapper<T> {
         throw new UnsupportedOperationException("To do");
     }
 
+
+
+
+    // Demonstration of the concepts
+
     GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
     record Point(int x, int y){}
 
@@ -107,7 +146,7 @@ public interface SegmentMapper<T> {
         pointAccessor.y(8); // segment: 3, 4, 6, 8
         System.out.println(pointAccessor); // PointAccessor[x=6, y=8]
 
-        // Private
+        // Private class
         record MyPoint(int x, int y) {}
 
         var myMapper = SegmentMapper.ofRecord(MethodHandles.lookup(), MyPoint.class, POINT); // OfRecord[type=...Foo$MyPoint, layout=...]

@@ -1,5 +1,6 @@
 package java.lang.foreign;
 
+import jdk.internal.foreign.SegmentMapperImpl;
 import jdk.internal.javac.PreviewFeature;
 
 import java.lang.invoke.MethodHandle;
@@ -10,7 +11,7 @@ import java.util.function.Function;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 
 /**
- * A segment mapper can project memory segment onto and from Java class instances.
+ * A segment mapper can project memory segment onto and from class instances.
  * <p>
  * More specifically, a segment mapper can project a backing {@linkplain MemorySegment MemorySegment} into new
  * {@link Record} instances or new instances that implements an interface by means of matching the
@@ -270,7 +271,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 public interface SegmentMapper<T> {
 
     /**
-     * Exposes the backing memory segment.
+     * Exposes the backing memory segment for segment mapped interfaces.
      * <p>
      * Interfaces types provided to factory methods of SegmentMapper which are implementing the
      * {@code SegmentBacked} interface will obtain an extra method {@code segment()} that will
@@ -570,7 +571,7 @@ public interface SegmentMapper<T> {
         }
         Objects.requireNonNull(layout);
 
-        throw new UnsupportedOperationException("To do");
+        return new SegmentMapperImpl<>(lookup, type, layout);
     }
 
     /**
@@ -623,7 +624,7 @@ public interface SegmentMapper<T> {
         }
         Objects.requireNonNull(layout);
 
-        throw new UnsupportedOperationException("To do");
+        return new SegmentMapperImpl<>(lookup, type, layout);
     }
 
     private static IllegalArgumentException newIae(Class<?> type, String trailingInfo) {

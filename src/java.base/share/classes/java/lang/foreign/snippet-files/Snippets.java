@@ -28,10 +28,12 @@ package java.lang.foreign.snippets;
 import java.lang.foreign.AddressLayout;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.GroupLayout;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
+import java.lang.foreign.SegmentMapper;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.SymbolLookup;
@@ -665,6 +667,198 @@ class Snippets {
             JAVA_LONG.withByteAlignment(1);
             JAVA_FLOAT.withByteAlignment(1);
             JAVA_DOUBLE.withByteAlignment(1);
+        }
+
+    }
+
+    static class SegmentMapperSnippets {
+
+        static class RecordDemo {
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            public record Point(int x, int y) {
+            }
+
+            public static void main(String[] args) {
+                MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
+
+                SegmentMapper<Point> recordMapper = SegmentMapper.ofRecord(Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+
+                // Extracts a new Point record from the provided MemorySegment
+                Point point = recordMapper.get(segment); // Point[x=3, y=4]
+
+                // Writes the Point record to another MemorySegment
+                MemorySegment otherSegment = Arena.ofAuto().allocate(MemoryLayout.sequenceLayout(2, POINT));
+                recordMapper.setAtIndex(otherSegment, 1, point); // segment: 0, 0, 3, 4
+
+            }
+        }
+
+        static class NarrowedDemo {
+
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            public record Point(int x, int y) {
+            }
+
+            public record NarrowedPoint(byte x, byte y) {
+
+                static NarrowedPoint fromPoint(Point p) {
+                    return new NarrowedPoint((byte) p.x, (byte) p.y);
+                }
+
+                static Point toPoint(NarrowedPoint p) {
+                    return new Point(p.x, p.y);
+                }
+
+            }
+
+            public static void main(String[] args) {
+                MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
+
+                SegmentMapper<NarrowedPoint> narrowedPointMapper =
+                        SegmentMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
+                        .map(NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
+
+                // Extracts a new NarrowedPoint from the provided MemorySegment
+                NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
+            }
+        }
+
+        static class InternalDemo {
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            public interface PointAccessor {
+                int x();
+                void x(int x);
+                int y();
+                void y(int x);
+            }
+
+
+            public static void main(String[] args) {
+                SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+
+                try (
+                        var arena = Arena.ofConfined()) {
+                    // Creates a new Point interface instance with an internal segment
+                    PointAccessor point = mapper.get(arena); // Point[x=0, y=0] (uninitialized)
+                    point.x(3); // Point[x=3, y=0]
+                    point.y(4); // Point[x=3, y=4]
+
+                    MemorySegment otherSegment = arena.allocate(MemoryLayout.sequenceLayout(2, POINT)); // otherSegment: 0, 0, 0, 0
+                    mapper.setAtIndex(otherSegment, 1, point); // otherSegment: 0, 0, 3, 4
+                }
+            }
+        }
+
+        static class ExternalDemo {
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            public interface Point {
+                int x();
+                void x(int x);
+                int y();
+                void y(int x);
+            }
+
+            public static void main(String[] args) {
+
+                MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
+
+                SegmentMapper<Point> mapper = SegmentMapper.ofInterface(Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+
+                // Creates a new Point interface instance with an external segment
+                Point point = mapper.get(segment); // Point[x=3, y=4]
+                point.x(6); // Point[x=6, y=4]
+                point.y(8); // Point[x=6, y=8]
+
+                MemorySegment otherSegment = Arena.ofAuto().allocate(MemoryLayout.sequenceLayout(2, POINT)); // otherSegment: 0, 0, 0, 0
+                mapper.setAtIndex(otherSegment, 1, point); // segment: 0, 0, 6, 8
+            }
+        }
+
+        static class NarrowedPointAccessorDemo {
+
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            public interface PointAccessor {
+                int x();
+                void x(int x);
+                int y();
+                void y(int x);
+            }
+
+
+            interface NarrowedPointAccessor {
+                byte x();
+                void x(byte x);
+                byte y();
+                void y(byte y);
+
+                static NarrowedPointAccessor fromPointAccessor(PointAccessor pa) {
+                    return new NarrowedPointAccessor() {
+                        @Override public byte x() { return (byte) pa.x(); }
+                        @Override  public void x(byte x) { pa.x(x); }
+                        @Override  public byte y() { return (byte) pa.y(); }
+                        @Override  public void y(byte y) { pa.y(y); }
+                    };
+                }
+
+            }
+
+            public static void main(String[] args) {
+
+                SegmentMapper<NarrowedPointAccessor> narrowedPointMapper =
+                        SegmentMapper.ofInterface(PointAccessor.class, POINT)
+                                .map(NarrowedPointAccessor::fromPointAccessor);
+
+                MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
+
+                // Creates a new NarrowedPointAccessor from the provided MemorySegment
+                NarrowedPointAccessor narrowedPointAccessor = narrowedPointMapper.get(segment); // NarrowedPointAccessor[x=3, y=4]
+
+                MemorySegment otherSegment = Arena.ofAuto().allocate(MemoryLayout.sequenceLayout(2, POINT));
+                narrowedPointMapper.setAtIndex(otherSegment, 1, narrowedPointAccessor); // otherSegment = 0, 0, 3, 4
+
+
+            }
+
+        }
+
+        static class SegmentBackedDemo {
+
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            public interface PointAccessor extends SegmentMapper.SegmentBacked {
+                int x();
+                void x(int x);
+                int y();
+                void y(int x);
+            }
+
+            static double nativeDistance(MemorySegment pointStruct) {
+                // Calls a native method
+                // ...
+                return 0;
+            }
+
+            public static void main(String[] args) {
+
+                SegmentMapper<PointAccessor> mapper =
+                        SegmentMapper.ofInterface(PointAccessor.class, POINT);
+
+                try (Arena arena = Arena.ofConfined()){
+                    // Creates an interface mapper backed by an internal segment
+                    PointAccessor point = mapper.get(arena);
+                    point.x(3);
+                    point.y(4);
+
+                    // Pass the backing internal segment to a native method
+                    double distance = nativeDistance(point.segment()); // 5
+                }
+
+            }
         }
 
     }

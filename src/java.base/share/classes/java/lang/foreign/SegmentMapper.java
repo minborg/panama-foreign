@@ -10,13 +10,18 @@ import java.util.function.Function;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 
 /**
- * A segment mapper can project a backing {@linkplain MemorySegment MemorySegment} into new
- * {@link Record} instances or new interface implementations instances by means of matching the
- * names of the record components or interface methods with the names of member layouts in a group layout.
- * A segment mapper can also be used in the other direction, where records and interface instances
- * can be used to update a target memory segment.
+ * A segment mapper can project memory segment onto and from Java class instances.
  * <p>
- * In short, the mapper finds, for each record component or interface method, a corresponding
+ * More specifically, a segment mapper can project a backing {@linkplain MemorySegment MemorySegment} into new
+ * {@link Record} instances or new instances that implements an interface by means of matching the
+ * names of the record components or interface methods with the names of member layouts in a group layout.
+ * A segment mapper can also be used in the other direction, where records and interface implementing instances
+ * can be used to update a target memory segment.  By using any of the {@linkplain #map(Function) map} operations,
+ * segment mappers can be used to map between memory segments and additional Java types other than
+ * record and interfaces (such as POJOs).
+ *
+ * <p>
+ * In short, a segment mapper finds, for each record component or interface method, a corresponding
  * member layout with the same name in the group layout.  There are some restrictions on the record
  * component type and the corresponding member layout type (e.g. a record component of type {@code int}
  * can only be matched with a member layout having a carrier type of {@code int.class}
@@ -25,7 +30,9 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  * Using the member layouts (e.g. observing offsets and {@link java.nio.ByteOrder byte ordering}), a
  * number of extraction methods are then identified for all the record components or interface methods and
  * these are stored internally in the segment mapper.
- * <p>
+ *
+ * <h2 id="mapping-kinds">Mapping kinds</h2>
+ *
  * Segment mappers can be of three fundamental kinds;
  * <ul>
  *     <li>Record</li>
@@ -76,7 +83,9 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  *  ...
  *  MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
  *
- *  SegmentMapper<Point> recordMapper = SegmentMapper.ofRecord(Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+ *  // Obtain a SegmentMapper for the Point record type
+ *  SegmentMapper<Point> recordMapper = SegmentMapper.ofRecord(Point.class, POINT);
+ *
  *  // Extracts a new Point record from the provided MemorySegment
  *  Point point = recordMapper.get(segment); // Point[x=3, y=4]
  *
@@ -126,7 +135,8 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  *
  *  ...
  *
- *  SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+ *  SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT);
+ *
  *  try (var arena = Arena.ofConfined()) {
  *      // Creates a new Point interface instance with an internal segment
  *      PointAccessor point = mapper.get(arena); // Point[x=0, y=0] (uninitialized)
@@ -156,7 +166,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  *
  *  MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
  *
- *  SegmentMapper<Point> mapper = SegmentMapper.ofInterface(Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+ *  SegmentMapper<Point> mapper = SegmentMapper.ofInterface(Point.class, POINT);
  *
  *  // Creates a new Point interface instance with an external segment
  *  Point point = mapper.get(segment); // Point[x=3, y=4]
@@ -213,6 +223,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  * {@snippet lang = java:
  * static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
  *
+ * // Automatically adds a segment() method that connects to the backing segment
  * public interface PointAccessor extends SegmentMapper.SegmentBacked {
  *     int x();
  *     void x(int x);
@@ -259,10 +270,16 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 public interface SegmentMapper<T> {
 
     /**
+     * Exposes the backing memory segment.
+     * <p>
      * Interfaces types provided to factory methods of SegmentMapper which are implementing the
      * {@code SegmentBacked} interface will obtain an extra method {@code segment()} that will
      * return the backing segment for the interface (either internal or external).
+     * <p>
+     * It is an error to let a record implement this interface and then provide such a record
+     * type to any of the record factory methods of SegmentMapper.
      */
+    @PreviewFeature(feature=PreviewFeature.Feature.SEGMENT_MAPPERS)
     interface SegmentBacked {
         /**
          * {@return the segment that backs this interface (internal or external)}
@@ -280,7 +297,7 @@ public interface SegmentMapper<T> {
     Class<T> type();
 
     /**
-     * {@return the original {@link GroupLayout} that this mapper is using to map components or interface methods}
+     * {@return the original {@link GroupLayout} that this mapper is using to map record components or interface methods}
      * <p>
      * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Function)} or the
      * {@link SegmentMapper#map(Function, Function)} will still return the group layout from the <em>original</em>
@@ -292,9 +309,11 @@ public interface SegmentMapper<T> {
 
     /**
      * {@return a new instance of type T backed by an internal segment allocated from the provided {@code allocator}}
+     * <p>
+     * If an exceptions is thrown by the allocator (specifically when calling
+     * {@linkplain SegmentAllocator#allocate(MemoryLayout)}), that exception is relayed to the caller.
+     *
      * @param allocator to be used for allocating the internal segment
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     * such that {@code isAccessibleBy(T) == false}.
      */
     default T get(SegmentAllocator allocator) {
         return get(allocator.allocate(layout()));
@@ -363,8 +382,8 @@ public interface SegmentMapper<T> {
     }
 
     /**
-     * Writes the provided {@code t} instance of type T into the provided {@code segment}
-     * at offset zero, using the {@code layout()}).
+     * Writes the provided instance {@code t} of type T into the provided {@code segment}
+     * at offset zero.
      *
      * @param segment in which to write the provided {@code t}
      * @param t instance to write into the provided segment
@@ -384,8 +403,8 @@ public interface SegmentMapper<T> {
     }
 
     /**
-     * Writes the provided {@code t} instance of type T into the provided {@code segment}
-     * at the provided {@code offset}, using the {@code layout()}).
+     * Writes the provided instance {@code t} of type T into the provided {@code segment}
+     * at the provided {@code offset}.
      *
      * @param segment in which to write the provided {@code t}
      * @param offset offset in bytes (relative to the provided segment address) at which this access operation will occur.
@@ -411,7 +430,7 @@ public interface SegmentMapper<T> {
 
     /**
      * Writes the provided {@code t} instance of type T into the provided {@code segment}
-     * at the provided {@code index} scaled by the {@code layout().byteSize()}}, using the {@code layout()}).
+     * at the provided {@code index} scaled by the {@code layout().byteSize()}}.
      *
      * @param segment in which to write the provided {@code t}
      * @param index a logical index. The offset in bytes (relative to the provided segment address) at which
@@ -451,7 +470,7 @@ public interface SegmentMapper<T> {
 
     /**
      * {@return a method handle that writes a provided instance of type T into a provided {@code MemorySegment}
-     * at a provided {@code long} offset, using the {@code layout()})}
+     * at a provided {@code long} offset}
      * <p>
      * The returned method handle has the following characteristics:
      * <ul>
@@ -541,13 +560,13 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         Objects.requireNonNull(type);
         if (!type.isInterface()) {
-            throw new IllegalArgumentException(type.getName() + " is not an interface");
+            throw newIae(type, "not an interface");
         }
         if (type.isHidden()) {
-            throw new IllegalArgumentException(type.getName() + " is a hidden interface");
+            throw newIae(type, "a hidden interface");
         }
         if (type.isSealed()) {
-            throw new IllegalArgumentException(type.getName() + " is a sealed interface");
+            throw newIae(type, "a sealed interface");
         }
         Objects.requireNonNull(layout);
 
@@ -600,11 +619,15 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         Objects.requireNonNull(type);
         if (type.equals(Record.class)) {
-            throw new IllegalArgumentException(type.getName() + " is not a real Record");
+            throw newIae(type, "not a real Record");
         }
         Objects.requireNonNull(layout);
 
         throw new UnsupportedOperationException("To do");
+    }
+
+    private static IllegalArgumentException newIae(Class<?> type, String trailingInfo) {
+        return new IllegalArgumentException(type.getName() + " is " + trailingInfo);
     }
 
 }

@@ -23,18 +23,40 @@
 
 /*
  * @test
- * @run junit TestSegmentMapper
+ * @run junit/othervm --enable-preview TestSegmentMapper
  */
+// options: --enable-preview -source ${jdk.version} -Xlint:preview
 
 import org.junit.jupiter.api.Test;
 
+import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
+// import java.lang.foreign.SegmentMapper;
+
+import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class TestSegmentMapper {
+final class TestSegmentMapper {
+
+    static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+    record Point(int x, int y){}
+
+    public interface PointAccessor {
+        int x();
+        void x(int x);
+        int y();
+        void y(int x);
+    }
 
     @Test
-    void a() {
-        fail();
+    void recordApi() {
+        //SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT);
+    }
+
+    @Test
+    void InterfaceApi() {
+        //SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT);
     }
 
 }

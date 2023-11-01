@@ -5,6 +5,7 @@ import jdk.internal.javac.PreviewFeature;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -19,7 +20,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  * A segment mapper can also be used in the other direction, where records and interface implementing instances
  * can be used to update a target memory segment.  By using any of the {@linkplain #map(Function) map} operations,
  * segment mappers can be used to map between memory segments and additional Java types other than
- * record and interfaces (such as POJOs).
+ * record and interfaces (such as JavaBeans).
  *
  * <p>
  * In short, a segment mapper finds, for each record component or interface method, a corresponding

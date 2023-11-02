@@ -264,6 +264,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  *
  * @since 23
  */
+// Todo: Interfaces with internal segments should be directly available via separate factory methods
 // Todo: Map components to MemorySegment (escape hatch)
 // Todo: Discuss non-exact mapping (e.g. int -> String), invokeExact vs. invoke
 // Todo: map() can be dropped in favour of "manual mapping"

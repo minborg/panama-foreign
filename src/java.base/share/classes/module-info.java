@@ -81,6 +81,7 @@ module java.base {
     exports java.lang.annotation;
     exports java.lang.constant;
     exports java.lang.foreign;
+    exports java.lang.foreign.mapper;
     exports java.lang.invoke;
     exports java.lang.module;
     exports java.lang.ref;

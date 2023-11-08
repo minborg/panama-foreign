@@ -31,7 +31,8 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
-// import java.lang.foreign.SegmentMapper;
+import java.lang.foreign.mapper.SegmentMapper;
+// import java.lang.foreign.mapper.SegmentMapper;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static org.junit.jupiter.api.Assertions.*;
@@ -51,12 +52,12 @@ final class TestSegmentMapper {
 
     @Test
     void recordApi() {
-        //SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT);
+        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT);
     }
 
     @Test
     void InterfaceApi() {
-        //SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT);
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT);
     }
 
 }

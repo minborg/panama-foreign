@@ -1,7 +1,7 @@
-package jdk.internal.foreign;
+package jdk.internal.foreign.mapper;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.SegmentMapper;
+import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.function.Function;
@@ -11,6 +11,7 @@ public class SegmentMapperImpl<T> implements SegmentMapper<T> {
     private final MethodHandles.Lookup lookup;
     private final Class<T> type;
     private final GroupLayout layout;
+    private final boolean exhaustive;
 
     private final MethodHandle getHandle;
     private final MethodHandle setHandle;
@@ -21,8 +22,9 @@ public class SegmentMapperImpl<T> implements SegmentMapper<T> {
         this.lookup = lookup;
         this.type = type;
         this.layout = layout;
-        this.getHandle = null; // Todo: Fix me
-        this.setHandle = null; // Todo: Fix me
+        this.getHandle = null;  // Todo: Fix me
+        this.setHandle = null;  // Todo: Fix me
+        this.exhaustive = true; // Todo: Fix me
     }
 
     @Override
@@ -43,6 +45,11 @@ public class SegmentMapperImpl<T> implements SegmentMapper<T> {
     @Override
     public MethodHandle setHandle() {
         return setHandle;
+    }
+
+    @Override
+    public boolean isExhaustive() {
+        return exhaustive;
     }
 
     @Override

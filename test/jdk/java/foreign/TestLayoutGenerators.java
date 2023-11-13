@@ -89,6 +89,15 @@ final class TestLayoutGenerators {
         }
     }
 
+    void nulls() {
+        assertThrows(NullPointerException.class, () ->
+                LayoutGenerators.ofRecord(null)
+        );
+        assertThrows(NullPointerException.class, () ->
+                LayoutGenerators.ofInterface(null)
+        );
+    }
+
     // Records
 
     @Test
@@ -124,18 +133,16 @@ final class TestLayoutGenerators {
         assertEquals(LINE.withName(LineAccessor.class.getName()), layout);
     }
 
-    // Arrays
+
+    // Arrays components
+
+    public record Foo(int[] nums) {}
 
     @Test
-    void fromIntArray() {
-        SequenceLayout layout = LayoutGenerators.ofArray(int[].class, "ints");
-        assertEquals(INT_ARRAY.withName("ints"), layout);
-    }
-
-    @Test
-    void fromPointArray() {
-        SequenceLayout layout = LayoutGenerators.ofArray(Point[].class, "points");
-        assertEquals(POINT_ARRAY.withName("points"), layout);
+    void fromFoo() {
+        assertThrows(IllegalArgumentException.class, () ->
+                    LayoutGenerators.ofRecord(Foo.class)
+                );
     }
 
 }

@@ -3,13 +3,14 @@ package java.lang.foreign.mapper;
 import jdk.internal.foreign.mapper.MapperUtil;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.SequenceLayout;
 import java.lang.invoke.MethodHandles;
-import java.util.Objects;
 
 /**
  * A layout generator that can extract a "natural-layout" from certain
  * class type's components.
+ * <p>
+ * Arrays do not have a natural layout as the length of arrays is not known.
+ *
  */
 public final class LayoutGenerators {
 
@@ -66,36 +67,6 @@ public final class LayoutGenerators {
     public static <T extends Record> GroupLayout ofRecord(Class<T> type) {
         MapperUtil.requireRecordType(type);
         return MapperUtil.groupLayoutOf(type);
-    }
-
-    /**
-     * {@return a {@linkplain GroupLayout} that reflects a "natural-layout" of
-     *          the components in the provided array {@code type}}
-     * <p>
-     * The {@linkplain GroupLayout#name() name} of the returned group layout will be
-     * the same as the provided {@code type}'s {@linkplain Class#getName() name}.
-     * <p>
-     * Reflective analysis on the provided {@code type} will be made using the
-     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
-     *
-     * @param type to derive a group layout from
-     * @param name to set in the returned sequence layout
-     * @param <T> the type to analyse
-     * @throws IllegalArgumentException if the provided {@code type} is
-     *         not an array
-     * @throws IllegalArgumentException if the provided {@code type} cannot be
-     *         reflectively analysed
-     * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         components for which there are no exact mapping (of names and types) in
-     *         the provided {@code layout} or if the provided {@code type} is not public
-     *         or if the method is otherwise unable to create a group layout as specified
-     *         above
-     */
-    public static <T> SequenceLayout ofArray(Class<T> type,
-                                             String name) {
-        MapperUtil.requireArrayType(type);
-        Objects.requireNonNull(name);
-        return MapperUtil.sequenceLayoutOf(type, name);
     }
 
 }

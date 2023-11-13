@@ -63,22 +63,11 @@ public final class MapperUtil {
         return (GroupLayout) layoutOf(type, type.getName());
     }
 
-    public static SequenceLayout sequenceLayoutOf(Class<?> type,
-                                                  String name) {
-        return (SequenceLayout) layoutOf(type, null).withName(name);
-    }
-
     private static MemoryLayout layoutOf(Class<?> type,
                                          String name) {
         // Sequence layout
         if (type.isArray()) {
-            UnifiedHolder holder = holderForArrayComponent(name, type.componentType());
-            MemoryLayout elementLayout = resolve(type, holder);
-            SequenceLayout layout = MemoryLayout.sequenceLayout(0, elementLayout);
-            return name != null
-                    ? layout.withName(name)
-                    : layout;
-
+            throw newIae(type, "an array. Arrays do not have a natural layout.");
         }
 
         // Struct layout
@@ -97,10 +86,21 @@ public final class MapperUtil {
             throw noSuchNaturalLayout(type, name);
         }
 
-        return MemoryLayout.structLayout(source
-                .map(h -> resolve(type, h))
-                .toArray(MemoryLayout[]::new))
-                .withName(name);
+        return setNameIfNonNull(
+                MemoryLayout.structLayout(source
+                        .map(h -> resolve(type, h))
+                        .toArray(MemoryLayout[]::new)),
+                name);
+    }
+
+    // Support methods and classes
+
+    @SuppressWarnings("unchecked")
+    private static <T extends MemoryLayout> T setNameIfNonNull(T layout,
+                                                               String name) {
+        return name != null
+                ? (T) layout.withName(name)
+                : layout;
     }
 
     private static IllegalArgumentException noSuchNaturalLayout(Class<?> type, String name) {
@@ -138,7 +138,7 @@ public final class MapperUtil {
                                  Optional<ValueLayout> valueLayout) {
 
         public UnifiedHolder(String name, Class<?> type) {
-            this(name, type, valueLayoutFor(type).map(l -> l.withName(name)));
+            this(name, type, valueLayoutFor(type).map(l -> setNameIfNonNull(l, name)));
         }
 
     }

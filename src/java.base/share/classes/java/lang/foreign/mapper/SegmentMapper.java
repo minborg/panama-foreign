@@ -40,15 +40,13 @@ import java.util.function.Function;
  *
  * <h2 id="mapping-kinds">Mapping kinds</h2>
  *
- * Segment mappers can be of three fundamental kinds;
+ * Segment mappers can be of two fundamental kinds;
  * <ul>
  *     <li>Record</li>
- *     <li>Interface implementation backed by an internal segment</li>
- *     <li>Interface implementation backed by an external segment</li>
+ *     <li>Interface</li>
  * </ul>
  * <p>
- * The characteristics of the various mapper kinds are summarized in
- * the following table:
+ * The characteristics of the mapper kinds are summarized in the following table:
  *
  * <blockquote><table class="plain">
  * <caption style="display:none">Mapper characteristics</caption>
@@ -67,12 +65,7 @@ import java.util.function.Function;
  *     <td style="text-align:center;">Extract all component values from the source segment, build the record</td>
  *     <td style="text-align:center;">Write all component values to the target segment</td>
  *     <td style="text-align:center;">N/A</td></tr>
- * <tr><th scope="row" style="font-weight:normal">Interface implementation backed by an internal segment</th>
- *     <td style="text-align:center;">Eager</td>
- *     <td style="text-align:center;">Copy the relevant values from the source segment into the internal backing segment, then wrap the latter into a new interface instance</td>
- *     <td style="text-align:center;">Copy the relevant values from the internal backing segment into the target segment</td>
- *     <td style="text-align:center;">If instance of <code>SegmentBacked</code></td></tr>
- * <tr><th scope="row" style="font-weight:normal">Interface implementation backed by an external segment</th>
+ * <tr><th scope="row" style="font-weight:normal">Interface</th>
  *     <td style="text-align:center;">Lazy</td>
  *     <td style="text-align:center;">Wrap the source segment into a new interface instance</td>
  *     <td style="text-align:center;">Copy the relevant values from the initial source segment into the target segment</td>
@@ -128,37 +121,7 @@ import java.util.function.Function;
  * NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
  * }
  *
- * <h2 id="mapping-interfaces-internal">Mapping interfaces backed by an internal segment</h2>
- *
- * The example below shows how to extract an instance of a public
- * <em>interface backed by an internal segment</em>:
- * {@snippet lang = java:
- *
- *  static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
- *
- *  public interface PointAccessor {
- *       int x();
- *       void x(int x);
- *       int y();
- *       void y(int x);
- *  }
- *
- *  ...
- *
- *  SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT);
- *
- *  try (var arena = Arena.ofConfined()) {
- *      // Creates a new Point interface instance with an internal segment
- *      PointAccessor point = mapper.get(arena); // Point[x=0, y=0] (uninitialized)
- *      point.x(3); // Point[x=3, y=0]
- *      point.y(4); // Point[x=3, y=4]
- *
- *      MemorySegment otherSegment = arena.allocate(MemoryLayout.sequenceLayout(2, POINT)); // otherSegment: 0, 0, 0, 0
- *      mapper.setAtIndex(otherSegment, 1, point); // otherSegment: 0, 0, 3, 4
- *  }
- *}
- *
- * <h2 id="mapping-interfaces-external">Mapping interfaces backed by an external segment</h2>
+ * <h2 id="mapping-interfaces">Mapping Interfaces</h2>
  *
  * Here is another example showing how to extract an instance of a public
  * <em>interface with an external segment</em>:
@@ -231,8 +194,8 @@ import java.util.function.Function;
  * Interfaces that are used in conjunction with segment mappers can elect to implement
  * the {@linkplain SegmentBacked} interface. Mappers reflecting such interfaces will
  * automatically connect the {@linkplain SegmentBacked#segment() segment()} method to
- * the backing segment (be it internal or external). This is useful when modelling structs
- * that are passed and/or received by native calls:
+ * the backing segment. This is useful when modelling structs that are passed and/or
+ * received by native calls:
  * <p>
  * {@snippet lang = java:
  * static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
@@ -281,7 +244,6 @@ import java.util.function.Function;
 // Todo: Discuss non-exact mapping (e.g. int -> String), invokeExact vs. invoke
 // Todo: map() can be dropped in favour of "manual mapping"
 // Todo: segment() and type() return values for composed mappers
-// @PreviewFeature(feature=PreviewFeature.Feature.SEGMENT_MAPPERS)
 public interface SegmentMapper<T> {
 
     /**
@@ -295,7 +257,6 @@ public interface SegmentMapper<T> {
      * It is an error to let a record implement this interface and then provide such
      * a record type to any of the record factory methods of SegmentMapper.
      */
-    //@PreviewFeature(feature=PreviewFeature.Feature.SEGMENT_MAPPERS)
     interface SegmentBacked {
         /**
          * {@return the segment that backs this interface (internal or external)}

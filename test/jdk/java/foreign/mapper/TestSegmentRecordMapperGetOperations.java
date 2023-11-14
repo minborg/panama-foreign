@@ -23,7 +23,7 @@
 
 /*
  * @test
- * @run junit/othervm --enable-preview TestSegmentMapper
+ * @run junit/othervm --enable-native-access=ALL-UNNAMED TestSegmentRecordMapperGetOperations
  */
 // options: --enable-preview -source ${jdk.version} -Xlint:preview
 
@@ -51,7 +51,7 @@ import java.util.stream.LongStream;
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-final class TestSegmentMapper {
+final class TestSegmentRecordMapperGetOperations {
 
     private static final GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
             JAVA_INT.withName("x"),

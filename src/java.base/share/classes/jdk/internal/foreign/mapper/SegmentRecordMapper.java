@@ -27,7 +27,6 @@ package jdk.internal.foreign.mapper;
 
 import jdk.internal.ValueBased;
 import jdk.internal.util.ArraysSupport;
-import jdk.internal.vm.annotation.Stable;
 
 import java.lang.foreign.AddressLayout;
 import java.lang.foreign.GroupLayout;
@@ -57,9 +56,18 @@ import java.util.stream.Stream;
  *
  * @param <T> the Record type
  */
+// Records have trusted instance fields.
 @ValueBased
-public final class SegmentRecordMapper<T>
-        implements SegmentMapper<T>, HasLookup {
+public record SegmentRecordMapper<T>(
+            @Override MethodHandles.Lookup lookup,
+            @Override Class<T> type,
+            @Override GroupLayout layout,
+            long offset,
+            int depth,
+            @Override boolean isExhaustive,
+            // (MemorySegment, long)T
+            @Override MethodHandle getHandle,
+            @Override MethodHandle setHandle) implements SegmentMapper<T>, HasLookup {
 
     private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
     private static final MethodHandles.Lookup PUBLIC_LOOKUP = MethodHandles.publicLookup();
@@ -73,63 +81,70 @@ public final class SegmentRecordMapper<T>
         }
     }
 
-    private final MethodHandles.Lookup lookup;
-    @Stable
-    private final Class<T> type;
-    @Stable
-    private final GroupLayout layout;
-    private final long offset;
-    private final int depth;
-    @Stable
-    private final boolean isExhaustive;
-    // (MemorySegment, long)T
-    @Stable
-    private final MethodHandle getHandle;
-    @Stable
-    private final MethodHandle setHandle;
-
     public static <T> SegmentRecordMapper<T> create(MethodHandles.Lookup lookup,
                                                     Class<T> type,
                                                     GroupLayout layout) {
-        return new SegmentRecordMapper<>(type, layout, 0, 0, lookup);
+        return new SegmentRecordMapper<>(lookup, type, layout, 0, 0);
     }
 
     private SegmentRecordMapper(Class<T> type,
                                 GroupLayout layout) {
-        this(type, layout, 0L, 0, PUBLIC_LOOKUP);
+        this(PUBLIC_LOOKUP, type, layout, 0L, 0);
     }
 
-    private SegmentRecordMapper(Class<T> type,
-                                GroupLayout layout,
-                                long offset,
-                                int depth,
-                                MethodHandles.Lookup lookup) {
+    public SegmentRecordMapper(MethodHandles.Lookup lookup,
+                               Class<T> type,
+                               GroupLayout layout,
+                               long offset,
+                               int depth) {
+        this(lookup, type, layout, offset, depth, false, null, null);
+    }
+
+    public SegmentRecordMapper(MethodHandles.Lookup lookup,
+                               Class<T> type,
+                               GroupLayout layout,
+                               long offset,
+                               int depth,
+                               boolean isExhaustive,
+                               MethodHandle getHandle,
+                               MethodHandle setHandle) {
+        this.lookup = lookup;
         this.type = type;
         this.layout = layout;
         this.offset = offset;
         this.depth = depth;
-        this.lookup = lookup;
+        Handles handles = handles(this);
+        this.isExhaustive = handles.isExhaustive();
+        this.getHandle = handles.getHandle();
+        this.setHandle = handles.setHandle();
+    }
 
-        assertMappingsCorrect();
+    private record Handles(boolean isExhaustive,
+                           MethodHandle getHandle,
+                           MethodHandle setHandle) {}
+
+    // This method is using a partially initialized mapper
+    private static Handles handles(SegmentRecordMapper<?> mapper) {
+        assertMappingsCorrect(mapper.type(), mapper.layout());
 
         // For each component, find an f(a) = MethodHandle(MemorySegment, long) that returns the component type
-        var handles = Arrays.stream(type.getRecordComponents())
-                .map(this::methodHandle)
+        var handles = Arrays.stream(mapper.type().getRecordComponents())
+                .map(mapper::methodHandle)
                 .toList();
 
-        Class<?>[] ctorParameterTypes = Arrays.stream(type.getRecordComponents())
+        Class<?>[] ctorParameterTypes = Arrays.stream(mapper.type().getRecordComponents())
                 .map(RecordComponent::getType)
                 .toArray(Class<?>[]::new);
 
         // There is exactly one member layout for each record component
-        this.isExhaustive = layout.memberLayouts().size() == handles.size();
+        boolean isExhaustive = mapper.layout().memberLayouts().size() == handles.size();
 
         MethodHandle ctor;
         try {
-            ctor = lookup.findConstructor(type, MethodType.methodType(void.class, ctorParameterTypes));
+            ctor = mapper.lookup().findConstructor(mapper.type(), MethodType.methodType(void.class, ctorParameterTypes));
         } catch (IllegalAccessException | NoSuchMethodException e) {
-            throw new IllegalArgumentException("There is no constructor in '" + type.getName() +
-                    "' for " + Arrays.toString(ctorParameterTypes) + " using lookup " + lookup, e);
+            throw new IllegalArgumentException("There is no constructor in '" + mapper.type().getName() +
+                    "' for " + Arrays.toString(ctorParameterTypes) + " using lookup " + mapper.lookup(), e);
         }
 
         // (x,y,...)T -> ((MS, long)x, (MS, long)y, ...)T
@@ -137,7 +152,7 @@ public final class SegmentRecordMapper<T>
             ctor = MethodHandles.collectArguments(ctor, i, handles.get(i));
         }
 
-        var mt = MethodType.methodType(type, MemorySegment.class, long.class);
+        var mt = MethodType.methodType(mapper.type(), MemorySegment.class, long.class);
 
         // 0, 1, 0, 1, ...
         int[] reorder = IntStream.range(0, handles.size())
@@ -146,15 +161,14 @@ public final class SegmentRecordMapper<T>
 
         // Fold the many identical (MemorySegment, long) arguments into a single argument
         ctor = MethodHandles.permuteArguments(ctor, mt, reorder);
-        if (depth == 0) {
+        if (mapper.depth() == 0) {
             // This is the base level mh so, we need to cast to Object as the final
             // apply() method will do the final cast
             ctor = ctor.asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
         }
         // The constructor MethodHandle is now of type (MemorySegment, long)T unless it is
         // the one of depth zero when it is (MemorySegment, long)Object
-        this.getHandle = ctor;
-        this.setHandle = null;
+        return new Handles(isExhaustive, ctor, null);
     }
 
     private MethodHandle methodHandle(RecordComponent component) {
@@ -442,7 +456,7 @@ public final class SegmentRecordMapper<T>
         }
     }
 
-    void assertMappingsCorrect() {
+    static void assertMappingsCorrect(Class<?> type, GroupLayout layout) {
         var nameMappingCounts = layout.memberLayouts().stream()
                 .map(MemoryLayout::name)
                 .flatMap(Optional::stream)
@@ -467,7 +481,7 @@ public final class SegmentRecordMapper<T>
                                                     GroupLayout gl,
                                                     long byteOffset) {
 
-        return new SegmentRecordMapper<>(componentType, gl, byteOffset, depth + 1, lookup);
+        return new SegmentRecordMapper<>(lookup, componentType, gl, byteOffset, depth + 1);
     }
 
     record MultidimensionalSequenceLayoutInfo(List<SequenceLayout> sequences,

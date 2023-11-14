@@ -29,59 +29,11 @@
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
-import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.mapper.LayoutGenerators;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static java.lang.foreign.ValueLayout.JAVA_INT;
 
-final class TestLayoutGenerators {
-
-    static final GroupLayout POINT = MemoryLayout.structLayout(
-            JAVA_INT.withName("x"),
-            JAVA_INT.withName("y"));
-
-    static final GroupLayout LINE = MemoryLayout.structLayout(
-            POINT.withName("begin"),
-            POINT.withName("end"));
-
-    public record Point(int x, int y){}
-
-    public record Line(Point begin, Point end){}
-
-    public interface PointAccessor {
-        int x();
-        void x(int x);
-        int y();
-        void y(int x);
-    }
-
-    public interface LineAccessor {
-        Point begin();
-        void begin(Point begin);
-        Point end();
-        void end(Point end);
-    }
-
-    public static class LineBean {
-
-        private int x;
-        private int y;
-
-        public LineBean(int x, int y) {
-            this.x = x;
-            this.y = y;
-        }
-
-        int x() {
-            return x;
-        }
-
-        int y() {
-            return y;
-        }
-    }
+final class TestLayoutGenerators extends BaseTest {
 
     void nulls() {
         assertThrows(NullPointerException.class, () ->
@@ -97,13 +49,13 @@ final class TestLayoutGenerators {
     @Test
     void fromPoint() {
         GroupLayout layout = LayoutGenerators.ofRecord(Point.class);
-        assertEquals(POINT.withName(Point.class.getName()), layout);
+        assertEquals(POINT_LAYOUT.withName(Point.class.getName()), layout);
     }
 
     @Test
     void fromLine() {
         GroupLayout layout = LayoutGenerators.ofRecord(Line.class);
-        assertEquals(LINE.withName(Line.class.getName()), layout);
+        assertEquals(LINE_LAYOUT.withName(Line.class.getName()), layout);
     }
 
     @Test
@@ -118,13 +70,13 @@ final class TestLayoutGenerators {
     @Test
     void fromPointAccessor() {
         GroupLayout layout = LayoutGenerators.ofInterface(PointAccessor.class);
-        assertEquals(POINT.withName(PointAccessor.class.getName()), layout);
+        assertEquals(POINT_LAYOUT.withName(PointAccessor.class.getName()), layout);
     }
 
     @Test
     void fromLineAccessor() {
         GroupLayout layout = LayoutGenerators.ofInterface(LineAccessor.class);
-        assertEquals(LINE.withName(LineAccessor.class.getName()), layout);
+        assertEquals(LINE_LAYOUT.withName(LineAccessor.class.getName()), layout);
     }
 
 

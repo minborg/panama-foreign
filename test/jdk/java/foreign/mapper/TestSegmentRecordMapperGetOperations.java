@@ -51,42 +51,11 @@ import java.util.stream.LongStream;
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-final class TestSegmentRecordMapperGetOperations {
-
-    private static final GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
-            JAVA_INT.withName("x"),
-            JAVA_INT.withName("y"));
-
-    private static final GroupLayout LINE_LAYOUT = MemoryLayout.structLayout(
-            POINT_LAYOUT.withName("begin"),
-            POINT_LAYOUT.withName("end"));
-
-    private static final MemorySegment POINT_SEGMENT = MemorySegment.ofArray(new int[]{
-                    3, 4,
-                    6, 0,
-                    0, 0})
-            .asReadOnly();
-
-    private static final SegmentMapper<Point> POINT_MAPPER = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
-
-    public record Point(int x, int y){}
-
-    public record TinyPoint(byte x, byte y){}
-
-    static final GroupLayout LINE = MemoryLayout.structLayout(POINT_LAYOUT.withName("begin"), POINT_LAYOUT.withName("end"));
-
-    public record Line(Point begin, Point end){}
-
-    public interface PointAccessor {
-        int x();
-        void x(int x);
-        int y();
-        void y(int x);
-    }
+final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
     @Test
     void point() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Point.class, POINT_LAYOUT);
+        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
         assertTrue(mapper.isExhaustive());
 
         Point point = mapper.get(POINT_SEGMENT);
@@ -99,7 +68,7 @@ final class TestSegmentRecordMapperGetOperations {
 
     @Test
     void mappedTinyPoint() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Point.class, POINT_LAYOUT);
+        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
         SegmentMapper<TinyPoint> tinyMapper =
                 mapper.map(TinyPoint.class,
                            p -> new TinyPoint((byte) p.x(), (byte) p.y()),
@@ -116,7 +85,7 @@ final class TestSegmentRecordMapperGetOperations {
 
     @Test
     void line() {
-        SegmentMapper<Line> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Line.class, LINE);
+        SegmentMapper<Line> mapper = SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
         assertTrue(mapper.isExhaustive());
 
         Line point = mapper.get(POINT_SEGMENT);
@@ -797,7 +766,7 @@ final class TestSegmentRecordMapperGetOperations {
     public void testNarrowingExplicit() {
 
         SegmentMapper<NarrowedPoint> narrowingMapper = POINT_MAPPER
-                                .map(NarrowedPoint.class, p -> new NarrowedPoint((byte) p.x, (byte) p.y));
+                                .map(NarrowedPoint.class, p -> new NarrowedPoint((byte) p.x(), (byte) p.y()));
 
         NarrowedPoint narrowedPoint = narrowingMapper.get(POINT_SEGMENT);
         assertEquals(new NarrowedPoint((byte) 3, (byte) 4), narrowedPoint);
@@ -1022,6 +991,15 @@ final class TestSegmentRecordMapperGetOperations {
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage().contains("same type"));
         }
+    }
+
+    private record PrivatePoint(int x, int y){}
+
+    @Test
+    public void privateClass() {
+        var mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), PrivatePoint.class, POINT_LAYOUT);
+        PrivatePoint point = mapper.get(POINT_SEGMENT);
+        assertEquals(new PrivatePoint(3, 4), point);
     }
 
     static public <R extends Record> void testPointType(R expected,

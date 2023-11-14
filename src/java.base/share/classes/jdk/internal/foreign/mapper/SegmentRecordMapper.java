@@ -112,7 +112,7 @@ public final class SegmentRecordMapper<T>
 
         assertMappingsCorrect();
 
-        // For each component, find an f(a) = MethodHandle(MemorySegment) that returns the component type
+        // For each component, find an f(a) = MethodHandle(MemorySegment, long) that returns the component type
         var handles = Arrays.stream(type.getRecordComponents())
                 .map(this::methodHandle)
                 .toList();
@@ -184,17 +184,11 @@ public final class SegmentRecordMapper<T>
         // (MemorySegment, OfX, long) -> (MemorySegment, long)
         mh = MethodHandles.insertArguments(mh, 1, vl);
 
-
         // (long, long)long -> (long)long
         MethodHandle sum = MethodHandles.insertArguments(SUM_LONG, 1, byteOffset);
 
         // (MemorySegment, long) -> (MemorySegment, long)
-
         return MethodHandles.filterArguments(mh, 1, sum);
-
-        //return MethodHandles.collectArguments(mh,1, sum);
-
-        //return MethodHandles.insertArguments(mh, 1, byteOffset);
     }
 
     private MethodHandle methodHandle(GroupLayout gl,
@@ -232,6 +226,9 @@ public final class SegmentRecordMapper<T>
                     " has a dimension of " + dimensionOf(componentType));
         }
 
+        // (long, long)long -> (long)long
+        MethodHandle sum = MethodHandles.insertArguments(SUM_LONG, 1, byteOffset);
+
         // Handle multi-dimensional arrays
         if (info.sequences().size() > 1) {
             var mh = LOOKUP.findStatic(SegmentRecordMapper.class, "toMultiArrayFunction",
@@ -239,15 +236,16 @@ public final class SegmentRecordMapper<T>
             // (MemorySegment, MultidimensionalSequenceLayoutInfo, long offset, Class leafType, Function mapper) ->
             // (MemorySegment, long offset, Class leafType, Function mapper)
             mh = MethodHandles.insertArguments(mh, 1, info);
+
             // (MemorySegment, long offset, Class leafType, Function mapper) ->
-            // (MemorySegment, Class leafType, Function mapper)
-            mh = MethodHandles.insertArguments(mh, 1, byteOffset);
+            // (MemorySegment, long, Class leafType, Function mapper)
+            mh = MethodHandles.filterArguments(mh, 1, sum);
 
             switch (info.elementLayout()) {
                 case ValueLayout vl -> {
-                    // (MemorySegment, Class leafType, Function mapper) ->
-                    // (MemorySegment, Function mapper)
-                    mh = MethodHandles.insertArguments(mh, 1, vl.carrier());
+                    // (MemorySegment, long offset, Class leafType, Function mapper) ->
+                    // (MemorySegment, long offset, Function mapper)
+                    mh = MethodHandles.insertArguments(mh, 2, vl.carrier());
                     Function<MemorySegment, Object> leafArrayMapper =
                             switch (vl) {
                                 case ValueLayout.OfByte ofByte -> ms -> ms.toArray(ofByte);
@@ -263,9 +261,9 @@ public final class SegmentRecordMapper<T>
                                         .map(s -> s.get(addressLayout, 0))
                                         .toArray(MemorySegment[]::new);
                             };
-                    // (MemorySegment, Function mapper) ->
-                    // (MemorySegment)
-                    mh = MethodHandles.insertArguments(mh, 1, leafArrayMapper);
+                    // (MemorySegment, long offset, Function mapper) ->
+                    // (MemorySegment, long offset)
+                    mh = MethodHandles.insertArguments(mh, 2, leafArrayMapper);
                     return castReturnType(mh, component.getType());
                 }
                 case GroupLayout gl -> {
@@ -274,17 +272,17 @@ public final class SegmentRecordMapper<T>
                     var componentMapper = recordMapper(arrayComponentType, gl, 0);
                     // Change the return type to Object so that we may use Array.set() below
                     var mapperCtor = componentMapper.getHandle()
-                            .asType(MethodType.methodType(Object.class, MemorySegment.class));
+                            .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
 
                     Function<MemorySegment, Object> leafArrayMapper = ms ->
                             toArray(ms, gl, arrayComponentType, mapperCtor);
 
-                    // (MemorySegment, Class leafType, Function mapper) ->
-                    // (MemorySegment, Function mapper)
-                    mh = MethodHandles.insertArguments(mh, 1, arrayComponentType);
-                    // (MemorySegment, Function mapper) ->
-                    // (MemorySegment)
-                    mh = MethodHandles.insertArguments(mh, 1, leafArrayMapper);
+                    // (MemorySegment, long offset, Class leafType, Function mapper) ->
+                    // (MemorySegment, long offset, Function mapper)
+                    mh = MethodHandles.insertArguments(mh, 2, arrayComponentType);
+                    // (MemorySegment, long offset, Function mapper) ->
+                    // (MemorySegment, long offset)
+                    mh = MethodHandles.insertArguments(mh, 2, leafArrayMapper);
                     return castReturnType(mh, component.getType());
                 }
                 case SequenceLayout __ -> {
@@ -305,8 +303,8 @@ public final class SegmentRecordMapper<T>
                 mh = MethodHandles.insertArguments(mh, 3, info.sequences().getFirst().elementCount());
                 // (MemorySegment, OfX, long offset) -> (MemorySegment, long offset)
                 mh = MethodHandles.insertArguments(mh, 1, vl);
-                // (MemorySegment, long offset) -> (MemorySegment)
-                return castReturnType(MethodHandles.insertArguments(mh, 1, byteOffset), component.getType());
+                // (MemorySegment, long offset) -> (MemorySegment, long offset)
+                return castReturnType(MethodHandles.filterArguments(mh, 1, sum), component.getType());
             }
             case GroupLayout gl -> {
                 // The "local" byteOffset for the record component mapper is zero
@@ -315,7 +313,7 @@ public final class SegmentRecordMapper<T>
                     var mt = MethodType.methodType(Object.class.arrayType(),
                             MemorySegment.class, GroupLayout.class, long.class, long.class, Class.class, MethodHandle.class);
                     var mh = LOOKUP.findStatic(SegmentRecordMapper.class, "toArray", mt);
-                    var mapper = componentMapper.getHandle().asType(MethodType.methodType(Object.class, MemorySegment.class));
+                    var mapper = componentMapper.getHandle().asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
                     // (MemorySegment, GroupLayout, long offset, long count, Class, MethodHandle) ->
                     // (MemorySegment, GroupLayout, long offset, long count, Class)
                     mh = MethodHandles.insertArguments(mh, 5, mapper);
@@ -328,10 +326,10 @@ public final class SegmentRecordMapper<T>
                     // (MemorySegment, GroupLayout, long offset) ->
                     // (MemorySegment, long offset)
                     mh = MethodHandles.insertArguments(mh, 1, gl);
-                    // (MemorySegment, long offset) -> (MemorySegment)Record[]
-                    mh = MethodHandles.insertArguments(mh, 1, byteOffset);
-                    // (MemorySegment, long offset)Record[] -> (MemorySegment)componentType
-                    return MethodHandles.explicitCastArguments(mh, MethodType.methodType(component.getType(), MemorySegment.class));
+                    // (MemorySegment, long offset) -> (MemorySegment, long offset)Record[]
+                    mh = MethodHandles.filterArguments(mh, 1, sum);
+                    // (MemorySegment, long offset)Record[] -> (MemorySegment, long)componentType
+                    return MethodHandles.explicitCastArguments(mh, MethodType.methodType(component.getType(), MemorySegment.class, long.class));
                 } catch (NoSuchMethodException | IllegalAccessException e) {
                     throw new RuntimeException(e);
                 }
@@ -413,7 +411,7 @@ public final class SegmentRecordMapper<T>
                 "offset=" + offset + "}";
     }
 
-    @Override
+/*    @Override
     public boolean equals(Object o) {
         return o instanceof SegmentRecordMapper<?> that &&
                 offset == that.offset &&
@@ -425,7 +423,7 @@ public final class SegmentRecordMapper<T>
     @Override
     public int hashCode() {
         return Objects.hash(type, layout, offset, depth);
-    }
+    }*/
 
     static Class<? extends ValueLayout> topValueLayoutType(ValueLayout vl) {
         // All the permitted implementations OfXImpl of the ValueLayout interfaces declare
@@ -545,7 +543,7 @@ public final class SegmentRecordMapper<T>
             throw new IllegalArgumentException("Cannot convert '" + from + "' to '" + to.getName());
         }
 
-        return MethodHandles.explicitCastArguments(mh, MethodType.methodType(to, MemorySegment.class));
+        return MethodHandles.explicitCastArguments(mh, MethodType.methodType(to, MemorySegment.class, long.class));
     }
 
     static int dimensionOf(Class<?> arrayClass) {
@@ -575,7 +573,7 @@ public final class SegmentRecordMapper<T>
         return segment.elements(elementLayout)
                 .map(s -> {
                     try {
-                        return (R) mapper.invokeExact(s);
+                        return (R) mapper.invokeExact(s, 0L);
                     } catch (Throwable t) {
                         throw new IllegalArgumentException(t);
                     }
@@ -697,10 +695,12 @@ public final class SegmentRecordMapper<T>
     }
 
     // Records have trusted instance fields.
+    @ValueBased
     record Mapped<T, R> (
             @Override MethodHandles.Lookup lookup,
             @Override Class<R> type,
             @Override GroupLayout layout,
+            @Override boolean isExhaustive,
             @Override MethodHandle getHandle,
             @Override MethodHandle setHandle,
             Function<? super T, ? extends R> toMapper,
@@ -710,6 +710,7 @@ public final class SegmentRecordMapper<T>
         Mapped(MethodHandles.Lookup lookup,
                Class<R> type,
                GroupLayout layout,
+               boolean isExhaustive,
                MethodHandle getHandle,
                MethodHandle setHandle,
                Function<? super T, ? extends R> toMapper,
@@ -718,6 +719,7 @@ public final class SegmentRecordMapper<T>
             this.lookup = lookup;
             this.type = type;
             this.layout = layout;
+            this.isExhaustive = isExhaustive;
             this.toMapper = toMapper;
             this.fromMapper = fromMapper;
             MethodHandle toMh = findVirtual("mapTo").bindTo(this);
@@ -728,12 +730,6 @@ public final class SegmentRecordMapper<T>
             } else {
                 this.setHandle = null;
             }
-        }
-
-        @Override
-        public boolean isExhaustive() {
-            // There is no way to evaluate exhaustiveness
-            return false;
         }
 
         @Override
@@ -758,9 +754,16 @@ public final class SegmentRecordMapper<T>
                 Class<R> newType,
                 Function<? super T, ? extends R> toMapper,
                 Function<? super R, ? extends T> fromMapper) {
-                return new Mapped<>(original.lookup(),
+
+            Objects.requireNonNull(original);
+            Objects.requireNonNull(newType);
+            Objects.requireNonNull(toMapper);
+            Objects.requireNonNull(fromMapper);
+
+            return new Mapped<>(original.lookup(),
                         newType,
                         original.layout(),
+                        false, // There is no way to evaluate exhaustiveness
                         original.getHandle(),
                         original.setHandle(),
                         toMapper,

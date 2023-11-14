@@ -10,6 +10,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 /**
  * A segment mapper can project memory segment onto and from class instances.
@@ -335,6 +336,11 @@ public interface SegmentMapper<T> {
     default T get(MemorySegment segment, long offset) {
         try {
             return (T) getHandle().invokeExact(segment, offset);
+        } catch (IndexOutOfBoundsException |
+                 WrongThreadException |
+                 IllegalStateException |
+                 IllegalArgumentException rethrow) {
+            throw rethrow;
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
@@ -363,6 +369,28 @@ public interface SegmentMapper<T> {
      */
     default T getAtIndex(MemorySegment segment, long index) {
         return get(segment, layout().byteSize() * index);
+    }
+
+
+    /**
+     * {@return a new sequential {@code Stream} of elements of type T}
+     * <p>
+     * Calling this method is equivalent to the following code:
+     * {@snippet lang=java :
+     * segment.elements(layout())
+     *     .map(this::get);
+     * }
+     * @param segment to carve out instances from
+     * @throws IllegalArgumentException if {@code layout().byteSize() == 0}.
+     * @throws IllegalArgumentException if {@code segment.byteSize() % layout().byteSize() != 0}.
+     * @throws IllegalArgumentException if {@code layout().byteSize() % layout().byteAlignment() != 0}.
+     * @throws IllegalArgumentException if this segment is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the
+     *         alignment constraint</a> in the layout of this segment mapper.
+     */
+    default Stream<T> stream(MemorySegment segment) {
+        return segment.elements(layout())
+                .map(this::get);
     }
 
     /**
@@ -414,6 +442,12 @@ public interface SegmentMapper<T> {
     default void set(MemorySegment segment, long offset, T t) {
         try {
             setHandle().invokeExact(segment, offset, t);
+        } catch (IndexOutOfBoundsException |
+                 WrongThreadException |
+                 IllegalStateException |
+                 IllegalArgumentException |
+                 UnsupportedOperationException rethrow) {
+            throw rethrow;
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }

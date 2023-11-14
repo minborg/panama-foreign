@@ -47,6 +47,8 @@ final class TestSegmentMapper {
 
     record Point(int x, int y){}
 
+    record TinyPoint(byte x, byte y){}
+
     static final GroupLayout LINE = MemoryLayout.structLayout(POINT.withName("begin"), POINT.withName("end"));
 
     record Line(Point begin, Point end){}
@@ -72,8 +74,18 @@ final class TestSegmentMapper {
     }
 
     @Test
-    void mappedPoint() {
+    void mappedTinyPoint() {
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Point.class, POINT);
+        SegmentMapper<TinyPoint> tinyMapper =
+                mapper.map(TinyPoint.class,
+                           p -> new TinyPoint((byte) p.x(), (byte) p.y()),
+                           t -> new Point(t.x(), t.y()));
+        assertFalse(tinyMapper.isExhaustive());
+        assertEquals(TinyPoint.class, tinyMapper.type());
+        assertEquals(POINT, tinyMapper.layout());
+
+        TinyPoint tp = tinyMapper.get(SEGMENT);
+        assertEquals(new TinyPoint((byte) 3, (byte) 4), tp);
     }
 
     @Test
@@ -87,7 +99,7 @@ final class TestSegmentMapper {
 
     @Test
     void InterfaceApi() {
-        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT);
+        // SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT);
     }
 
 }

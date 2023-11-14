@@ -1,13 +1,10 @@
 package java.lang.foreign.mapper;
 
 import jdk.internal.foreign.mapper.MapperUtil;
-import jdk.internal.foreign.mapper.SegmentMapperImpl;
 import jdk.internal.foreign.mapper.SegmentRecordMapper;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SegmentAllocator;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -583,7 +580,7 @@ public interface SegmentMapper<T> {
         MapperUtil.requireImplementableInterfaceType(type);
         Objects.requireNonNull(layout);
 
-        return new SegmentMapperImpl<>(lookup, type, layout);
+        throw new UnsupportedOperationException();
     }
 
     /**

@@ -376,7 +376,8 @@ public final class SegmentRecordMapper<T>
     public <R> SegmentMapper<R> map(Class<R> newType,
                                     Function<? super T, ? extends R> toMapper,
                                     Function<? super R, ? extends T> fromMapper) {
-        return new Mapped<>(this, newType, toMapper, fromMapper);
+        // return new Mapped<>(this, newType, toMapper, fromMapper);
+        return Mapped.of(this, newType, toMapper, fromMapper);
     }
 
     @Override
@@ -695,46 +696,38 @@ public final class SegmentRecordMapper<T>
         return result;
     }
 
+    // Records have trusted instance fields.
+    record Mapped<T, R> (
+            @Override MethodHandles.Lookup lookup,
+            @Override Class<R> type,
+            @Override GroupLayout layout,
+            @Override MethodHandle getHandle,
+            @Override MethodHandle setHandle,
+            Function<? super T, ? extends R> toMapper,
+            Function<? super R, ? extends T> fromMapper
+    ) implements SegmentMapper<R>, HasLookup {
 
-    static final class Mapped<T, R, O extends SegmentMapper<T> & HasLookup>
-            implements SegmentMapper<R>, HasLookup {
-
-        @Stable
-        private final O original;
-        @Stable
-        private final Class<R> newType;
-        @Stable
-        private final Function<? super T, ? extends R> toMapper;
-        @Stable
-        private final Function<? super R, ? extends T> fromMapper;
-        @Stable
-        private final MethodHandle getHandle;
-        @Stable
-        private final MethodHandle setHandle;
-
-        Mapped(O original,
-               Class<R> newType,
+        Mapped(MethodHandles.Lookup lookup,
+               Class<R> type,
+               GroupLayout layout,
+               MethodHandle getHandle,
+               MethodHandle setHandle,
                Function<? super T, ? extends R> toMapper,
-               Function<? super R, ? extends T> fromMapper) {
-
-            this.newType = newType;
-            this.original = original;
+               Function<? super R, ? extends T> fromMapper
+        ) {
+            this.lookup = lookup;
+            this.type = type;
+            this.layout = layout;
             this.toMapper = toMapper;
             this.fromMapper = fromMapper;
-            MethodHandle toMh = findVirtual("mapTo", original.type(), newType);
-            getHandle = MethodHandles.filterReturnValue(original.getHandle(), toMh);
-            MethodHandle fromMh = findVirtual("mapFrom", newType, original.type());
-            setHandle = MethodHandles.filterReturnValue(original.setHandle(), fromMh);
-        }
-
-        @Override
-        public Class<R> type() {
-            return newType;
-        }
-
-        @Override
-        public GroupLayout layout() {
-            return original.layout();
+            MethodHandle toMh = findVirtual("mapTo").bindTo(this);
+            this.getHandle = MethodHandles.filterReturnValue(getHandle, toMh);
+            MethodHandle fromMh = findVirtual("mapFrom").bindTo(this);
+            if (setHandle!=null) {
+                this.setHandle = MethodHandles.filterArguments(setHandle, 2, fromMh);
+            } else {
+                this.setHandle = null;
+            }
         }
 
         @Override
@@ -744,25 +737,10 @@ public final class SegmentRecordMapper<T>
         }
 
         @Override
-        public MethodHandle getHandle() {
-            return getHandle;
-        }
-
-        @Override
-        public MethodHandle setHandle() {
-            return setHandle;
-        }
-
-        @Override
         public <R1> SegmentMapper<R1> map(Class<R1> newType,
                                           Function<? super R, ? extends R1> toMapper,
                                           Function<? super R1, ? extends R> fromMapper) {
-            return new Mapped<>(this, newType, toMapper, fromMapper);
-        }
-
-        @Override
-        public MethodHandles.Lookup lookup() {
-            return original.lookup();
+            return of(this, newType, toMapper, fromMapper);
         }
 
         // Used reflective when obtaining a MethodHandle
@@ -775,11 +753,24 @@ public final class SegmentRecordMapper<T>
             return fromMapper.apply(r);
         }
 
-        static MethodHandle findVirtual(String name,
-                                        Class<?> from,
-                                        Class<?> to) {
+        static <T, R, O extends SegmentMapper<T> & HasLookup> Mapped<T, R> of(
+                O original,
+                Class<R> newType,
+                Function<? super T, ? extends R> toMapper,
+                Function<? super R, ? extends T> fromMapper) {
+                return new Mapped<>(original.lookup(),
+                        newType,
+                        original.layout(),
+                        original.getHandle(),
+                        original.setHandle(),
+                        toMapper,
+                        fromMapper
+                );
+        }
+
+        static MethodHandle findVirtual(String name) {
             try {
-                return LOOKUP.findVirtual(Mapped.class, name, MethodType.methodType(to, from));
+                return LOOKUP.findVirtual(Mapped.class, name, MethodType.methodType(Object.class, Object.class));
             } catch (ReflectiveOperationException e) {
                 // Should not happen
                 throw new InternalError(e);

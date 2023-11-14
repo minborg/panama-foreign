@@ -46,12 +46,6 @@ final class TestLayoutGenerators {
             POINT.withName("begin"),
             POINT.withName("end"));
 
-    static final SequenceLayout INT_ARRAY = MemoryLayout.sequenceLayout(
-            0, JAVA_INT);
-
-    static final SequenceLayout POINT_ARRAY = MemoryLayout.sequenceLayout(
-            0, POINT);
-
     public record Point(int x, int y){}
 
     public record Line(Point begin, Point end){}

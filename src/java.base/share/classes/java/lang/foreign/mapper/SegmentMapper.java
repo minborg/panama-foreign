@@ -2,6 +2,7 @@ package java.lang.foreign.mapper;
 
 import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentMapperImpl;
+import jdk.internal.foreign.mapper.SegmentRecordMapper;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
@@ -22,9 +23,9 @@ import java.util.function.Function;
  * components or interface methods with the names of member layouts in a group layout.
  * A segment mapper can also be used in the other direction, where records and interface
  * implementing instances can be used to update a target memory segment. By using any of
- * the {@linkplain #map(Function) map} operations, segment mappers can be used to map
- * between memory segments and additional Java types other than record and interfaces
- * (such as JavaBeans).
+ * the {@linkplain #map(Class, Function, Function) map} operations, segment mappers can be
+ * used to map between memory segments and additional Java types other than record and
+ * interfaces (such as JavaBeans).
  *
  * <p>
  * In short, a segment mapper finds, for each record component or interface method,
@@ -115,7 +116,7 @@ import java.util.function.Function;
  *
  * SegmentMapper<NarrowedPoint> narrowedPointMapper =
  *         SegmentMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
- *         .map(NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
+ *         .map(NarrowedPoint.class, NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
  *
  * // Extracts a new NarrowedPoint from the provided MemorySegment
  * NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
@@ -178,7 +179,7 @@ import java.util.function.Function;
  *
  * SegmentMapper<NarrowedPointAccessor> narrowedPointMapper =
  *          SegmentMapper.ofInterface(PointAccessor.class, POINT)
- *                 .map(NarrowedPointAccessor::fromPointAccessor);
+ *                 .map(NarrowedPointAccessor.class, NarrowedPointAccessor::fromPointAccessor);
  *
  * MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
  *
@@ -244,6 +245,7 @@ import java.util.function.Function;
 // Todo: Discuss non-exact mapping (e.g. int -> String), invokeExact vs. invoke
 // Todo: map() can be dropped in favour of "manual mapping"
 // Todo: segment() and type() return values for composed mappers
+// Todo: How do we handle "extra" getters for interfaces? They should not appear
 public interface SegmentMapper<T> {
 
     /**
@@ -265,11 +267,7 @@ public interface SegmentMapper<T> {
     }
 
     /**
-     * {@return the original type that this mapper is mapping to and from}
-     * <p>
-     * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Function)}
-     * or the {@link SegmentMapper#map(Function, Function)} will still return the type from
-     * the <em>original</em> SegmentMapper.
+     * {@return the type that this mapper is mapping to and from}
      */
     Class<T> type();
 
@@ -277,8 +275,8 @@ public interface SegmentMapper<T> {
      * {@return the original {@link GroupLayout } that this mapper is using to map
      *          record components or interface methods}
      * <p>
-     * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Function)}
-     * or the {@link SegmentMapper#map(Function, Function)} will still return the
+     * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Class, Function)}
+     * or the {@link SegmentMapper#map(Class, Function, Function)} will still return the
      * group layout from the <em>original</em> SegmentMapper.
      */
     GroupLayout layout();
@@ -290,24 +288,14 @@ public interface SegmentMapper<T> {
      * More formally, if S is a segment with {@code S.byteSize() == layout().byteSize()}
      * then there exists exactly one distinct mapping for every permutation of S's
      * contents.
+     * <p>
+     * Segment mappers obtained via the {@linkplain #map(Class, Function)} or
+     * {@linkplain #map(Class, Function, Function)} have an isExhaustive method that
+     * always returns {@code false} as there is no way to determine exhaustiveness.
      */
     boolean isExhaustive();
 
     // Convenience methods
-
-    /**
-     * {@return a new instance of type T backed by an internal segment allocated from
-     *          the provided {@code allocator}}
-     * <p>
-     * If an exceptions is thrown by the allocator (specifically when calling
-     * {@linkplain SegmentAllocator#allocate(MemoryLayout)}), that exception is relayed
-     * to the caller.
-     *
-     * @param allocator to be used for allocating the internal segment
-     */
-    default T get(SegmentAllocator allocator) {
-        return get(allocator.allocate(layout()));
-    }
 
     /**
      * {@return a new instance of type T projected from the provided
@@ -508,11 +496,13 @@ public interface SegmentMapper<T> {
      * It should be noted that the type R can represent almost any class and is not
      * restricted to records and interfaces.
      *
+     * @param  newType the new type the returned mapper shall use
      * @param toMapper to apply after get operations on this segment mapper
      * @param fromMapper to apply before set operations on this segment mapper
      * @param <R> the type of the new segment mapper
      */
-    <R> SegmentMapper<R> map(Function<? super T, ? extends R> toMapper,
+    <R> SegmentMapper<R> map(Class<R> newType,
+                             Function<? super T, ? extends R> toMapper,
                              Function<? super R, ? extends T> fromMapper);
 
     /**
@@ -524,10 +514,19 @@ public interface SegmentMapper<T> {
      * It should be noted that the type R can represent almost any class and is not
      * restricted to records and interfaces.
      *
+     * @param  newType the new type the returned mapper shall use
      * @param toMapper to apply after get operations on this segment mapper
      * @param <R> the type of the new segment mapper
      */
-    <R> SegmentMapper<R> map(Function<? super T, ? extends R> toMapper);
+    default <R> SegmentMapper<R> map(Class<R> newType,
+                                     Function<? super T, ? extends R> toMapper) {
+        return map(newType,
+                toMapper,
+                o -> {
+                    throw new UnsupportedOperationException(
+                            "Cannot map from " + newType + " to " + type());
+                });
+    }
 
     /**
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
@@ -638,7 +637,7 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
-        return new SegmentMapperImpl<>(lookup, type, layout);
+        return SegmentRecordMapper.create(lookup, type, layout);
     }
 
 }

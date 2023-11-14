@@ -95,12 +95,8 @@
  * record or interface types. This includes boxing, unboxing, widening and narrowing.
  * Additionally, a {@linkplain java.lang.foreign.mapper.SegmentMapper} provides means
  * for composing such custom conversions using auxiliary projection types via the
- * {@linkplain java.lang.foreign.mapper.SegmentMapper#map(java.util.function.Function)}
+ * {@linkplain java.lang.foreign.mapper.SegmentMapper#map(Class, java.util.function.Function)}
  * functions.
- * <p>
- * *** TBI: How do we handle extra getters in an interface so that they won't be considered
- * a component? ***
- *
  *
  * @since 23
  */

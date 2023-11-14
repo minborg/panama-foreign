@@ -31,7 +31,9 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.invoke.MethodHandles;
 // import java.lang.foreign.mapper.SegmentMapper;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -39,9 +41,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class TestSegmentMapper {
 
+    static final MemorySegment SEGMENT = MemorySegment.ofArray(new int[]{3, 4, 6, 8}).asReadOnly();
+
     static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
 
     record Point(int x, int y){}
+
+    static final GroupLayout LINE = MemoryLayout.structLayout(POINT.withName("begin"), POINT.withName("end"));
+
+    record Line(Point begin, Point end){}
 
     public interface PointAccessor {
         int x();
@@ -51,8 +59,30 @@ final class TestSegmentMapper {
     }
 
     @Test
-    void recordApi() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT);
+    void point() {
+        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Point.class, POINT);
+        assertTrue(mapper.isExhaustive());
+
+        Point point = mapper.get(SEGMENT);
+        assertEquals(new Point(3,4), point);
+        point = mapper.get(SEGMENT, 8);
+        assertEquals(new Point(6,8), point);
+        point = mapper.getAtIndex(SEGMENT, 1);
+        assertEquals(new Point(6,8), point);
+    }
+
+    @Test
+    void mappedPoint() {
+        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Point.class, POINT);
+    }
+
+    @Test
+    void line() {
+        SegmentMapper<Line> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Line.class, LINE);
+        assertTrue(mapper.isExhaustive());
+
+        Line point = mapper.get(SEGMENT);
+        assertEquals(new Line(new Point(3,4), new Point(6, 8)), point);
     }
 
     @Test

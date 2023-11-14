@@ -718,37 +718,10 @@ class Snippets {
 
                 SegmentMapper<NarrowedPoint> narrowedPointMapper =
                         SegmentMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
-                        .map(NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
+                        .map(NarrowedPoint.class, NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
 
                 // Extracts a new NarrowedPoint from the provided MemorySegment
                 NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
-            }
-        }
-
-        static class InternalDemo {
-            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
-
-            public interface PointAccessor {
-                int x();
-                void x(int x);
-                int y();
-                void y(int x);
-            }
-
-
-            public static void main(String[] args) {
-                SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(PointAccessor.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
-
-                try (
-                        var arena = Arena.ofConfined()) {
-                    // Creates a new Point interface instance with an internal segment
-                    PointAccessor point = mapper.get(arena); // Point[x=0, y=0] (uninitialized)
-                    point.x(3); // Point[x=3, y=0]
-                    point.y(4); // Point[x=3, y=4]
-
-                    MemorySegment otherSegment = arena.allocate(MemoryLayout.sequenceLayout(2, POINT)); // otherSegment: 0, 0, 0, 0
-                    mapper.setAtIndex(otherSegment, 1, point); // otherSegment: 0, 0, 3, 4
-                }
             }
         }
 
@@ -811,7 +784,7 @@ class Snippets {
 
                 SegmentMapper<NarrowedPointAccessor> narrowedPointMapper =
                         SegmentMapper.ofInterface(PointAccessor.class, POINT)
-                                .map(NarrowedPointAccessor::fromPointAccessor);
+                                .map(NarrowedPointAccessor.class, NarrowedPointAccessor::fromPointAccessor);
 
                 MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
 
@@ -849,8 +822,8 @@ class Snippets {
                         SegmentMapper.ofInterface(PointAccessor.class, POINT);
 
                 try (Arena arena = Arena.ofConfined()){
-                    // Creates an interface mapper backed by an internal segment
-                    PointAccessor point = mapper.get(arena);
+                    // Creates an interface mapper
+                    PointAccessor point = mapper.get(arena.allocate(POINT));
                     point.x(3);
                     point.y(4);
 

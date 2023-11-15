@@ -151,12 +151,9 @@ public final class MapperUtil {
 
     private static MemoryLayout resolve(Class<?> type, UnifiedHolder h) {
         return switch (h) {
-            case UnifiedHolder(var n, var t, var l)
-                    when l.isPresent() -> l.get();
-            case UnifiedHolder(var n, var t, var l)
-                    when t.isRecord() -> layoutOf(t, n);
-            case UnifiedHolder(var n, var t, var l)
-                    when t.isInterface() -> layoutOf(t, n);
+            case UnifiedHolder(var _, var _, var l) when l.isPresent()   -> l.get();
+            case UnifiedHolder(var n, var t, var _) when t.isRecord()    -> layoutOf(t, n);
+            case UnifiedHolder(var n, var t, var _) when t.isInterface() -> layoutOf(t, n);
             default -> throw noSuchNaturalLayout(type, h.name());
         };
     }

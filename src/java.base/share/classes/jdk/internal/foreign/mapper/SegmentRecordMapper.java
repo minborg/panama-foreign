@@ -51,6 +51,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import static java.lang.foreign.ValueLayout.*;
+
 /**
  * A record mapper that is matching components of a record with elements in a GroupLayout.
  *
@@ -75,7 +77,8 @@ public record SegmentRecordMapper<T>(
 
     static {
         try {
-            SUM_LONG = PUBLIC_LOOKUP.findStatic(Long.class, "sum", MethodType.methodType(long.class, long.class, long.class));
+            var mt = MethodType.methodType(long.class, long.class, long.class);
+            SUM_LONG = PUBLIC_LOOKUP.findStatic(Long.class, "sum", mt);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -128,10 +131,11 @@ public record SegmentRecordMapper<T>(
         assertMappingsCorrect(mapper.type(), mapper.layout());
 
         // For each component, find an f(a) = MethodHandle(MemorySegment, long) that returns the component type
-        var handles = Arrays.stream(mapper.type().getRecordComponents())
+        List<MethodHandle> handles = Arrays.stream(mapper.type().getRecordComponents())
                 .map(mapper::methodHandle)
                 .toList();
 
+        // The types for the constructor/components
         Class<?>[] ctorParameterTypes = Arrays.stream(mapper.type().getRecordComponents())
                 .map(RecordComponent::getType)
                 .toArray(Class<?>[]::new);
@@ -139,6 +143,18 @@ public record SegmentRecordMapper<T>(
         // There is exactly one member layout for each record component
         boolean isExhaustive = mapper.layout().memberLayouts().size() == handles.size();
 
+        // (MemorySegment, long)Object
+        MethodHandle getHandle = computeGetHandle(mapper, handles, ctorParameterTypes);
+
+        // (MemorySegment, long, T)void
+        MethodHandle setHandle = computeSetHandle(mapper, handles, ctorParameterTypes);
+
+        return new Handles(isExhaustive, getHandle, setHandle);
+    }
+
+    static private MethodHandle computeGetHandle(SegmentRecordMapper<?> mapper,
+                                                 List<MethodHandle> handles,
+                                                 Class<?>[] ctorParameterTypes) {
         MethodHandle ctor;
         try {
             ctor = mapper.lookup().findConstructor(mapper.type(), MethodType.methodType(void.class, ctorParameterTypes));
@@ -168,8 +184,15 @@ public record SegmentRecordMapper<T>(
         }
         // The constructor MethodHandle is now of type (MemorySegment, long)T unless it is
         // the one of depth zero when it is (MemorySegment, long)Object
-        return new Handles(isExhaustive, ctor, null);
+        return ctor;
     }
+
+    static private MethodHandle computeSetHandle(SegmentRecordMapper<?> mapper,
+                                                 List<MethodHandle> handles,
+                                                 Class<?>[] ctorParameterTypes) {
+        return null;
+    }
+
 
     private MethodHandle methodHandle(RecordComponent component) {
 
@@ -178,10 +201,10 @@ public record SegmentRecordMapper<T>(
         var byteOffset = layout().byteOffset(pathElement) + offset;
         try {
             return switch (componentLayout) {
-                case ValueLayout vl -> methodHandle(vl, component, byteOffset);
-                case GroupLayout gl -> methodHandle(gl, component, byteOffset);
+                case ValueLayout vl    -> methodHandle(vl, component, byteOffset);
+                case GroupLayout gl    -> methodHandle(gl, component, byteOffset);
                 case SequenceLayout sl -> methodHandle(sl, component, byteOffset);
-                case PaddingLayout __ -> throw fail(component, componentLayout);
+                case PaddingLayout _   -> throw fail(component, componentLayout);
             };
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new InternalError(e);
@@ -229,7 +252,7 @@ public record SegmentRecordMapper<T>(
 
         MultidimensionalSequenceLayoutInfo info = MultidimensionalSequenceLayoutInfo.of(sl, componentType);
 
-        if (info.elementLayout() instanceof ValueLayout.OfBoolean) {
+        if (info.elementLayout() instanceof OfBoolean) {
             throw new IllegalArgumentException("Arrays of booleans (" + info.elementLayout() + ") are not supported");
         }
 
@@ -246,7 +269,12 @@ public record SegmentRecordMapper<T>(
         // Handle multi-dimensional arrays
         if (info.sequences().size() > 1) {
             var mh = LOOKUP.findStatic(SegmentRecordMapper.class, "toMultiArrayFunction",
-                    MethodType.methodType(Object.class, MemorySegment.class, MultidimensionalSequenceLayoutInfo.class, long.class, Class.class, Function.class));
+                    MethodType.methodType(Object.class,
+                            MemorySegment.class,
+                            MultidimensionalSequenceLayoutInfo.class,
+                            long.class,
+                            Class.class,
+                            Function.class));
             // (MemorySegment, MultidimensionalSequenceLayoutInfo, long offset, Class leafType, Function mapper) ->
             // (MemorySegment, long offset, Class leafType, Function mapper)
             mh = MethodHandles.insertArguments(mh, 1, info);
@@ -262,17 +290,16 @@ public record SegmentRecordMapper<T>(
                     mh = MethodHandles.insertArguments(mh, 2, vl.carrier());
                     Function<MemorySegment, Object> leafArrayMapper =
                             switch (vl) {
-                                case ValueLayout.OfByte ofByte -> ms -> ms.toArray(ofByte);
-                                case ValueLayout.OfBoolean ofBoolean ->
-                                        throw new UnsupportedOperationException("boolean arrays not supported: " + ofBoolean);
-                                case ValueLayout.OfShort ofShort -> ms -> ms.toArray(ofShort);
-                                case ValueLayout.OfChar ofChar -> ms -> ms.toArray(ofChar);
-                                case ValueLayout.OfInt ofInt -> ms -> ms.toArray(ofInt);
-                                case ValueLayout.OfLong ofLong -> ms -> ms.toArray(ofLong);
-                                case ValueLayout.OfFloat ofFloat -> ms -> ms.toArray(ofFloat);
-                                case ValueLayout.OfDouble ofDouble -> ms -> ms.toArray(ofDouble);
-                                case AddressLayout addressLayout -> ms -> ms.elements(addressLayout)
-                                        .map(s -> s.get(addressLayout, 0))
+                                case OfByte ofByte    -> ms -> ms.toArray(ofByte);
+                                case OfBoolean ofBool -> throw new UnsupportedOperationException("boolean arrays not supported: " + ofBool);
+                                case OfShort ofShort  -> ms -> ms.toArray(ofShort);
+                                case OfChar ofChar    -> ms -> ms.toArray(ofChar);
+                                case OfInt ofInt      -> ms -> ms.toArray(ofInt);
+                                case OfLong ofLong    -> ms -> ms.toArray(ofLong);
+                                case OfFloat ofFloat  -> ms -> ms.toArray(ofFloat);
+                                case OfDouble ofDbl   -> ms -> ms.toArray(ofDbl);
+                                case AddressLayout ad -> ms -> ms.elements(ad)
+                                        .map(s -> s.get(ad, 0))
                                         .toArray(MemorySegment[]::new);
                             };
                     // (MemorySegment, long offset, Function mapper) ->
@@ -348,8 +375,8 @@ public record SegmentRecordMapper<T>(
                     throw new RuntimeException(e);
                 }
             }
-            case SequenceLayout __ ->  throw new InternalError("Should not reach here");
-            case PaddingLayout __ -> throw fail(component, sl);
+            case SequenceLayout _ ->  throw new InternalError("Should not reach here");
+            case PaddingLayout  _ -> throw fail(component, sl);
         }
     }
 
@@ -600,7 +627,7 @@ public record SegmentRecordMapper<T>(
     // Begin: Reflectively used methods
 
     static byte[] toArray(MemorySegment segment,
-                          ValueLayout.OfByte elementLayout,
+                          OfByte elementLayout,
                           long offset,
                           long count) {
 
@@ -608,7 +635,7 @@ public record SegmentRecordMapper<T>(
     }
 
     static short[] toArray(MemorySegment segment,
-                           ValueLayout.OfShort elementLayout,
+                           OfShort elementLayout,
                            long offset,
                            long count) {
 
@@ -616,7 +643,7 @@ public record SegmentRecordMapper<T>(
     }
 
     static char[] toArray(MemorySegment segment,
-                          ValueLayout.OfChar elementLayout,
+                          OfChar elementLayout,
                           long offset,
                           long count) {
 
@@ -624,7 +651,7 @@ public record SegmentRecordMapper<T>(
     }
 
     static int[] toArray(MemorySegment segment,
-                         ValueLayout.OfInt elementLayout,
+                         OfInt elementLayout,
                          long offset,
                          long count) {
 
@@ -632,7 +659,7 @@ public record SegmentRecordMapper<T>(
     }
 
     static long[] toArray(MemorySegment segment,
-                          ValueLayout.OfLong elementLayout,
+                          OfLong elementLayout,
                           long offset,
                           long count) {
 
@@ -640,7 +667,7 @@ public record SegmentRecordMapper<T>(
     }
 
     static float[] toArray(MemorySegment segment,
-                           ValueLayout.OfFloat elementLayout,
+                           OfFloat elementLayout,
                            long offset,
                            long count) {
 
@@ -648,7 +675,7 @@ public record SegmentRecordMapper<T>(
     }
 
     static double[] toArray(MemorySegment segment,
-                            ValueLayout.OfDouble elementLayout,
+                            OfDouble elementLayout,
                             long offset,
                             long count) {
 
@@ -787,7 +814,8 @@ public record SegmentRecordMapper<T>(
 
         static MethodHandle findVirtual(String name) {
             try {
-                return LOOKUP.findVirtual(Mapped.class, name, MethodType.methodType(Object.class, Object.class));
+                var mt = MethodType.methodType(Object.class, Object.class);
+                return LOOKUP.findVirtual(Mapped.class, name, mt);
             } catch (ReflectiveOperationException e) {
                 // Should not happen
                 throw new InternalError(e);

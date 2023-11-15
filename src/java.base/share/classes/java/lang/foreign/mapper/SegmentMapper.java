@@ -243,7 +243,10 @@ import java.util.stream.Stream;
 // Todo: Discuss non-exact mapping (e.g. int -> String), invokeExact vs. invoke
 // Todo: map() can be dropped in favour of "manual mapping"
 // Todo: segment() and type() return values for composed mappers
-// Todo: How do we handle "extra" getters for interfaces? They should not appear
+// Todo: How do we handle "extra" getters for interfaces? They should not append
+// Todo: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
+// Todo: Python "Panda" (tables), Tabular access from array, Joins etc. <- TEST
+// Cerializer
 public interface SegmentMapper<T> {
 
     /**
@@ -441,7 +444,7 @@ public interface SegmentMapper<T> {
      */
     default void set(MemorySegment segment, long offset, T t) {
         try {
-            setHandle().invokeExact(segment, offset, t);
+            setHandle().invokeExact(segment, offset, (Object) t);
         } catch (IndexOutOfBoundsException |
                  WrongThreadException |
                  IllegalStateException |

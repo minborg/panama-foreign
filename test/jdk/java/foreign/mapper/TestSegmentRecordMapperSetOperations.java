@@ -30,9 +30,8 @@ import org.junit.jupiter.api.*;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.util.Arrays;
+import java.lang.foreign.mapper.SegmentMapper;
 import java.util.HexFormat;
-import java.util.List;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -55,12 +54,18 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
         arena.close();
     }
 
+    public record Empty(){}
+
+    @Test
+    void empty() {
+        var mapper = SegmentMapper.ofRecord(Empty.class, POINT_LAYOUT);
+        mapper.set(pointSegment, 0, new Empty());
+        assertContentEquals(of(0, 0), pointSegment);
+    }
+
     @Test
     void point() {
-        // POINT_MAPPER.set(pointSegment, POINT);
-
-        pointSegment.set(JAVA_INT, 0, 3);
-
+        POINT_MAPPER.set(pointSegment, POINT);
         assertContentEquals(of(3, 4), pointSegment);
     }
 

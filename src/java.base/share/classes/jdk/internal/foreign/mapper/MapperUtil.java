@@ -27,8 +27,12 @@ package jdk.internal.foreign.mapper;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -42,6 +46,32 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class MapperUtil {
+
+    static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+
+    public static final MethodType GET_TYPE = MethodType.methodType(Object.class,
+            MemorySegment.class, long.class);
+    public static final MethodType SET_TYPE = MethodType.methodType(void.class,
+            MemorySegment.class, long.class, Object.class);
+
+    // A MethodHandle of type (long, long)long that adds the two terms
+    public static final MethodHandle SUM_LONG;
+    // A MethodHandle of type (MemorySegment, long, Object)void that does nothing
+    public static final MethodHandle SET_NO_OP;
+
+    static {
+        try {
+            SUM_LONG = LOOKUP.findStatic(Long.class,
+                    "sum",
+                    MethodType.methodType(long.class, long.class, long.class));
+            SET_NO_OP = LOOKUP.findStatic(MapperUtil.class,
+                    "noop",
+                    SET_TYPE);
+        } catch (ReflectiveOperationException e) {
+            e.printStackTrace();
+            throw new ExceptionInInitializerError(e);
+        }
+    }
 
     private MapperUtil() {
     }
@@ -73,21 +103,13 @@ public final class MapperUtil {
         return result;
     }
 
-    public static <T> Class<T> requireArrayType(Class<T> type) {
-        Objects.requireNonNull(type);
-        if (!type.isArray()) {
-            throw newIae(type, "not an array");
-        }
-        return type;
-    }
-
     private static IllegalArgumentException newIae(Class<?> type, String trailingInfo) {
         return new IllegalArgumentException(type.getName() + " is " + trailingInfo);
     }
 
     // Type to layout methods
 
-    public static GroupLayout groupLayoutOf(Class<?> type) {
+   public static GroupLayout groupLayoutOf(Class<?> type) {
         return (GroupLayout) layoutOf(type, type.getName());
     }
 
@@ -206,5 +228,9 @@ public final class MapperUtil {
         }
     }
 
+    // Represents a no operation action for set operations (e.g. for Records with no components)
+    // Used via reflection
+    static void noop(MemorySegment segment, long offset, Object t) {
+    }
 
 }

@@ -72,13 +72,12 @@ public record SegmentRecordMapper<T>(
             @Override MethodHandle setHandle) implements SegmentMapper<T>, HasLookup {
 
     private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
-    private static final MethodHandles.Lookup PUBLIC_LOOKUP = MethodHandles.publicLookup();
     private static final MethodHandle SUM_LONG;
 
     static {
         try {
             var mt = MethodType.methodType(long.class, long.class, long.class);
-            SUM_LONG = PUBLIC_LOOKUP.findStatic(Long.class, "sum", mt);
+            SUM_LONG = MethodHandles.publicLookup().findStatic(Long.class, "sum", mt);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -88,11 +87,6 @@ public record SegmentRecordMapper<T>(
                                                     Class<T> type,
                                                     GroupLayout layout) {
         return new SegmentRecordMapper<>(lookup, type, layout, 0, 0);
-    }
-
-    private SegmentRecordMapper(Class<T> type,
-                                GroupLayout layout) {
-        this(PUBLIC_LOOKUP, type, layout, 0L, 0);
     }
 
     public SegmentRecordMapper(MethodHandles.Lookup lookup,
@@ -387,84 +381,12 @@ public record SegmentRecordMapper<T>(
     }
 
     @Override
-    public Class<T> type() {
-        return type;
-    }
-
-    @Override
-    public GroupLayout layout() {
-        return layout;
-    }
-
-    @Override
-    public boolean isExhaustive() {
-        return isExhaustive;
-    }
-
-    @Override
-    public MethodHandle getHandle() {
-        return getHandle;
-    }
-
-    @Override
-    public MethodHandle setHandle() {
-        return setHandle;
-    }
-
-    @Override
     public <R> SegmentMapper<R> map(Class<R> newType,
                                     Function<? super T, ? extends R> toMapper,
                                     Function<? super R, ? extends T> fromMapper) {
         // return new Mapped<>(this, newType, toMapper, fromMapper);
         return Mapped.of(this, newType, toMapper, fromMapper);
     }
-
-    @Override
-    public MethodHandles.Lookup lookup() {
-        return lookup;
-    }
-
-    /*
-    @SuppressWarnings("unchecked")
-    @Override
-    public T apply(MemorySegment segment) {
-        try {
-            return (T) ctor.invokeExact(segment);
-        } catch (Throwable e) {
-            throw new IllegalArgumentException(
-                    "Unable to invoke the canonical constructor of " + type.getName() +
-                            " using " + segment, e);
-        }
-    }
-
-    @Override
-    public T apply(MemorySegment segment, long offset) {
-        return offset == 0
-                ? apply(segment)
-                : apply(segment.asSlice(offset));
-    }*/
-
-    @Override
-    public String toString() {
-        return "LayoutRecordMapper{" +
-                "type=" + type.getName() + ", " +
-                "layout=" + layout + ", " +
-                "offset=" + offset + "}";
-    }
-
-/*    @Override
-    public boolean equals(Object o) {
-        return o instanceof SegmentRecordMapper<?> that &&
-                offset == that.offset &&
-                depth == that.depth &&
-                Objects.equals(type, that.type) &&
-                Objects.equals(layout, that.layout);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(type, layout, offset, depth);
-    }*/
 
     static Class<? extends ValueLayout> topValueLayoutType(ValueLayout vl) {
         // All the permitted implementations OfXImpl of the ValueLayout interfaces declare

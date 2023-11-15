@@ -338,7 +338,8 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     @Test
     public void testToString() {
         var toString = POINT_MAPPER.toString();
-        assertTrue(toString.contains("type=" + Point.class.getName()));
+        assertTrue(toString.contains("lookup=" + MethodHandles.publicLookup()));
+        assertTrue(toString.contains("type=" + Point.class));
         assertTrue(toString.contains("layout=" + POINT_LAYOUT));
     }
 

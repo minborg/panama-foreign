@@ -39,7 +39,7 @@ public sealed interface ComponentHandle<T>
         Objects.requireNonNull(type);
         Objects.requireNonNull(initialLayout);
         requireNonNegative(offset);
-        return null;
+        return new GetComponentHandle<>(lookup, type, initialLayout, offset, 0);
     }
 
     static <T> ComponentHandle<T> ofSet(MethodHandles.Lookup lookup,

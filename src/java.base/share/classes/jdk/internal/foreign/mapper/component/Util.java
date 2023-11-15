@@ -9,6 +9,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Array;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -40,6 +41,10 @@ final class Util {
     static int dimensionOf(Class<?> arrayClass) {
         return (int) Stream.<Class<?>>iterate(arrayClass, Class::isArray, Class::componentType)
                 .count();
+    }
+
+    static MethodHandle findStaticToArray(MethodType methodType) throws NoSuchMethodException, IllegalAccessException {
+        return LOOKUP.findStatic(Util.class, "toArray", methodType);
     }
 
     // Wrapper to create an array of Records

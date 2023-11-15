@@ -69,7 +69,15 @@ public abstract class BaseTest {
                     0, 0})
             .asReadOnly();
 
-    public static final SegmentMapper<Point> POINT_MAPPER = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+    public static final SegmentMapper<Point> POINT_MAPPER = pointMapper();
 
+    private static SegmentMapper<Point> pointMapper() {
+        try {
+            return SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+        } catch (Throwable th) {
+            th.printStackTrace();
+            throw th;
+        }
+    }
 
 }

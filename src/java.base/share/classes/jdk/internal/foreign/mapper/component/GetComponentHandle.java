@@ -32,12 +32,6 @@ final class GetComponentHandle<T>
     }
 
     @Override
-    public MethodHandle handle(RecordComponent component) {
-        return super.handle(component)
-                .asType(GET_TYPE);
-    }
-
-    @Override
     public MethodHandle handle(ValueLayout vl,
                                RecordComponent component,
                                long byteOffset) throws NoSuchMethodException, IllegalAccessException {
@@ -45,13 +39,13 @@ final class GetComponentHandle<T>
         assertTypesMatch(component, component.getType(), vl);
         var mt = MethodType.methodType(vl.carrier(), topValueLayoutType(vl), long.class);
         var mh = MethodHandles.publicLookup().findVirtual(MemorySegment.class, "get", mt);
-        // (MemorySegment, OfX, long) -> (MemorySegment, long)
+        // (MemorySegment, OfX, long)x -> (MemorySegment, long)x
         mh = MethodHandles.insertArguments(mh, 1, vl);
 
         // (long, long)long -> (long)long
         MethodHandle sum = MethodHandles.insertArguments(MapperUtil.SUM_LONG, 1, byteOffset);
 
-        // (MemorySegment, long) -> (MemorySegment, long)
+        // (MemorySegment, long)x -> (MemorySegment, long)x
         return MethodHandles.filterArguments(mh, 1, sum);
     }
 
@@ -70,8 +64,8 @@ final class GetComponentHandle<T>
 
     @Override
     public MethodHandle handle(SequenceLayout sl,
-                                            RecordComponent component,
-                                            long byteOffset) throws NoSuchMethodException, IllegalAccessException {
+                               RecordComponent component,
+                               long byteOffset) throws NoSuchMethodException, IllegalAccessException {
 
         String name = component.getName();
         var componentType = component.getType();
@@ -169,7 +163,7 @@ final class GetComponentHandle<T>
                 assertTypesMatch(component, info.type(), vl);
                 var mt = MethodType.methodType(vl.carrier().arrayType(),
                         MemorySegment.class, topValueLayoutType(vl), long.class, long.class);
-                var mh = Util.LOOKUP.findStatic(SegmentRecordMapper.class, "toArray", mt);
+                var mh = Util.findStaticToArray(mt);
                 // (MemorySegment, OfX, long offset, long count) -> (MemorySegment, OfX, long offset)
                 mh = MethodHandles.insertArguments(mh, 3, info.sequences().getFirst().elementCount());
                 // (MemorySegment, OfX, long offset) -> (MemorySegment, long offset)
@@ -183,7 +177,7 @@ final class GetComponentHandle<T>
                 try {
                     var mt = MethodType.methodType(Object.class.arrayType(),
                             MemorySegment.class, GroupLayout.class, long.class, long.class, Class.class, MethodHandle.class);
-                    var mh = Util.LOOKUP.findStatic(SegmentRecordMapper.class, "toArray", mt);
+                    var mh = Util.findStaticToArray(mt);
                     var mapper = componentMapper.getHandle().asType(GET_TYPE);
                     // (MemorySegment, GroupLayout, long offset, long count, Class, MethodHandle) ->
                     // (MemorySegment, GroupLayout, long offset, long count, Class)

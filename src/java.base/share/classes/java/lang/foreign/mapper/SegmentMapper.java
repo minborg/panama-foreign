@@ -236,6 +236,9 @@ import java.util.stream.Stream;
  *
  * @param <T> the type this mapper converts MemorySegments from and to.
  *
+ * @implSpec Implementations of this interface are immutable, thread-safe and
+ *           <a href="{@docRoot}/java.base/java/lang/doc-files/ValueBased.html">value-based</a>.
+ *
  * @since 23
  */
 // Todo: Interfaces with internal segments should be directly available via separate factory methods
@@ -245,8 +248,10 @@ import java.util.stream.Stream;
 // Todo: segment() and type() return values for composed mappers
 // Todo: How do we handle "extra" getters for interfaces? They should not append
 // Todo: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
-// Todo: Python "Panda" (tables), Tabular access from array, Joins etc. <- TEST
+// Todo: Python "Panda(s)" (tables), Tabular access from array, Joins etc. <- TEST
 // Cerializer
+// Todo: Check all exceptions in JavaDocs: See TestScopedOperations
+// Todo: Consider generating a graphics rendering.
 public interface SegmentMapper<T> {
 
     /**

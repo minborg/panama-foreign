@@ -27,6 +27,7 @@ package jdk.internal.foreign.mapper;
 
 import jdk.internal.ValueBased;
 import jdk.internal.foreign.mapper.component.ComponentHandle;
+import jdk.internal.foreign.mapper.component.Util;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
@@ -44,9 +45,6 @@ import java.util.SequencedCollection;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
-import static jdk.internal.foreign.mapper.MapperUtil.GET_TYPE;
-import static jdk.internal.foreign.mapper.MapperUtil.SET_TYPE;
 
 /**
  * A record mapper that is matching components of a record with elements in a GroupLayout.
@@ -159,11 +157,11 @@ public record SegmentRecordMapper<T>(
             ctor = MethodHandles.collectArguments(ctor, i, getHandles.get(i));
         }
 
-        var mt = GET_TYPE.changeReturnType(mapper.type());
+        var mt = Util.GET_TYPE.changeReturnType(mapper.type());
 
         // 0, 1, 0, 1, ...
         int[] reorder = IntStream.range(0, getHandles.size())
-                .flatMap(i -> IntStream.rangeClosed(0, 1))
+                .flatMap(_ -> IntStream.rangeClosed(0, 1))
                 .toArray();
 
         // Fold the many identical (MemorySegment, long) arguments into a single argument
@@ -171,7 +169,7 @@ public record SegmentRecordMapper<T>(
         if (mapper.depth() == 0) {
             // This is the base level mh so, we need to cast to Object as the final
             // apply() method will do the final cast
-            ctor = ctor.asType(GET_TYPE);
+            ctor = ctor.asType(Util.GET_TYPE);
         }
         // The constructor MethodHandle is now of type (MemorySegment, long)T unless it is
         // the one of depth zero when it is (MemorySegment, long)Object
@@ -184,14 +182,14 @@ public record SegmentRecordMapper<T>(
         // for each component, extracts its value and write to the correct location
 
         ComponentHandle<T> setComponentHandle =
-                ComponentHandle.ofSet(mapper.lookup(), mapper.type(), mapper.layout(), 0);
+                ComponentHandle.ofSet(mapper.lookup(), mapper.type(), mapper.layout(), mapper.offset());
 
         List<MethodHandle> setHandles = Arrays.stream(mapper.type().getRecordComponents())
                 .map(setComponentHandle::handle)
                 .toList();
 
         return switch (setHandles.size()) {
-            case 0 -> MapperUtil.SET_NO_OP;
+            case 0 -> Util.SET_NO_OP;
             case 1 -> setHandles.getFirst();
             case 2, 3, 4, 5, 6, 7 -> compose(setHandles);
             default -> iterate(setHandles);
@@ -213,7 +211,7 @@ public record SegmentRecordMapper<T>(
         // NB: collectArguments with void return types will compose
         MethodHandle result = MethodHandles.collectArguments(a, 0, b);
         // De-duplicate the arguments
-        return MethodHandles.permuteArguments(result, SET_TYPE, 0, 1, 2, 0, 1, 2);
+        return MethodHandles.permuteArguments(result, Util.SET_TYPE, 0, 1, 2, 0, 1, 2);
     }
 
     // Creates a new MH that will iterate over the sub-method handles
@@ -221,7 +219,7 @@ public record SegmentRecordMapper<T>(
         try {
             var mh = LOOKUP.findStatic(SegmentRecordMapper.class,
                     "doSetOperations",
-                    SET_TYPE.appendParameterTypes(SequencedCollection.class));
+                    Util.SET_TYPE.appendParameterTypes(SequencedCollection.class));
             return MethodHandles.insertArguments(mh, 3, setHandles);
         } catch (ReflectiveOperationException e) {
             throw new InternalError(e);
@@ -241,7 +239,6 @@ public record SegmentRecordMapper<T>(
                 throw new RuntimeException(throwable);
             }
         }
-
     }
 
     @Override

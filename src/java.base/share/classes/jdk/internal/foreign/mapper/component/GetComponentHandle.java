@@ -1,11 +1,7 @@
 package jdk.internal.foreign.mapper.component;
 
-import jdk.internal.foreign.mapper.MapperUtil;
-import jdk.internal.foreign.mapper.SegmentRecordMapper;
-
 import java.lang.foreign.AddressLayout;
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.PaddingLayout;
 import java.lang.foreign.SequenceLayout;
@@ -16,8 +12,7 @@ import java.lang.invoke.MethodType;
 import java.lang.reflect.RecordComponent;
 import java.util.function.Function;
 
-import static jdk.internal.foreign.mapper.MapperUtil.GET_TYPE;
-import static jdk.internal.foreign.mapper.MapperUtil.SET_TYPE;
+import static jdk.internal.foreign.mapper.component.Util.GET_TYPE;
 
 final class GetComponentHandle<T>
         extends AbstractComponentHandle<T>
@@ -42,17 +37,14 @@ final class GetComponentHandle<T>
         // (MemorySegment, OfX, long)x -> (MemorySegment, long)x
         mh = MethodHandles.insertArguments(mh, 1, vl);
 
-        // (long, long)long -> (long)long
-        MethodHandle sum = MethodHandles.insertArguments(MapperUtil.SUM_LONG, 1, byteOffset);
-
-        // (MemorySegment, long)x -> (MemorySegment, long)x
-        return MethodHandles.filterArguments(mh, 1, sum);
+        return Util.transposeOffset(mh, byteOffset);
     }
 
     @Override
     public MethodHandle handle(GroupLayout gl,
                                RecordComponent component,
                                long byteOffset) {
+        // Todo: There has to me a more general way of detecting circularity
         if (type.equals(component.getType())) {
             throw new IllegalArgumentException(
                     "A type may not use a component of the same type: " + type + " in " + gl);
@@ -87,9 +79,6 @@ final class GetComponentHandle<T>
                     " has a dimension of " + Util.dimensionOf(componentType));
         }
 
-        // (long, long)long -> (long)long
-        MethodHandle sum = MethodHandles.insertArguments(MapperUtil.SUM_LONG, 1, byteOffset);
-
         // Handle multi-dimensional arrays
         if (info.sequences().size() > 1) {
             var mh = Util.LOOKUP.findStatic(Util.class, "toMultiArrayFunction",
@@ -105,7 +94,7 @@ final class GetComponentHandle<T>
 
             // (MemorySegment, long offset, Class leafType, Function mapper) ->
             // (MemorySegment, long, Class leafType, Function mapper)
-            mh = MethodHandles.filterArguments(mh, 1, sum);
+            mh = Util.transposeOffset(mh, byteOffset);
 
             switch (info.elementLayout()) {
                 case ValueLayout vl -> {
@@ -169,7 +158,7 @@ final class GetComponentHandle<T>
                 // (MemorySegment, OfX, long offset) -> (MemorySegment, long offset)
                 mh = MethodHandles.insertArguments(mh, 1, vl);
                 // (MemorySegment, long offset) -> (MemorySegment, long offset)
-                return Util.castReturnType(MethodHandles.filterArguments(mh, 1, sum), component.getType());
+                return Util.castReturnType(Util.transposeOffset(mh, byteOffset), component.getType());
             }
             case GroupLayout gl -> {
                 // The "local" byteOffset for the record component mapper is zero
@@ -192,7 +181,7 @@ final class GetComponentHandle<T>
                     // (MemorySegment, long offset)
                     mh = MethodHandles.insertArguments(mh, 1, gl);
                     // (MemorySegment, long offset) -> (MemorySegment, long offset)Record[]
-                    mh = MethodHandles.filterArguments(mh, 1, sum);
+                    mh = Util.transposeOffset(mh, byteOffset);
                     // (MemorySegment, long offset)Record[] -> (MemorySegment, long)componentType
                     return MethodHandles.explicitCastArguments(mh, GET_TYPE.changeReturnType(component.getType()));
                 } catch (NoSuchMethodException | IllegalAccessException e) {

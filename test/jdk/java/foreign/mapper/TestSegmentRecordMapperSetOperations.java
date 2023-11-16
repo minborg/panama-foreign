@@ -60,16 +60,48 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
     void empty() {
         var mapper = SegmentMapper.ofRecord(Empty.class, POINT_LAYOUT);
         mapper.set(pointSegment, 0, new Empty());
-        assertContentEquals(of(0, 0), pointSegment);
+        assertContentEquals(segmentOf(0, 0), pointSegment);
     }
 
     @Test
     void point() {
         POINT_MAPPER.set(pointSegment, POINT);
-        assertContentEquals(of(3, 4), pointSegment);
+        assertContentEquals(segmentOf(3, 4), pointSegment);
+        var segment = arena.allocate(POINT_LAYOUT, 3);
+        POINT_MAPPER.set(segment, 2 * Integer.BYTES, POINT);
+        POINT_MAPPER.setAtIndex(segment, 2, new Point(1,1));
+        assertContentEquals(segmentOf(0, 0, 3 ,4, 1, 1), segment);
     }
 
-    private static int[] of(int... ints) {
+    @Test
+    void mappedTinyPoint() {
+        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+        SegmentMapper<TinyPoint> tinyMapper =
+                mapper.map(TinyPoint.class,
+                        p -> new TinyPoint((byte) p.x(), (byte) p.y()),
+                        t -> new Point(t.x(), t.y()));
+
+        tinyMapper.set(pointSegment, new TinyPoint((byte) 3, (byte) 4));
+        assertContentEquals(segmentOf(3, 4), pointSegment);
+    }
+
+    @Test
+    void line() {
+        SegmentMapper<Line> mapper = SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
+        var segment = arena.allocate(LINE_LAYOUT);
+        System.out.println("mapper = " + mapper);
+        System.out.println("mapper.setHandle() = " + mapper.setHandle());
+
+        mapper.set(segment, new Line(new Point(3, 4), new Point(6, 0)));
+        assertContentEquals(segmentOf(3, 4, 6, 0), segment);
+    }
+
+    @Test
+    void exceptions() {
+
+    }
+
+    private static int[] segmentOf(int... ints) {
         return ints;
     }
 

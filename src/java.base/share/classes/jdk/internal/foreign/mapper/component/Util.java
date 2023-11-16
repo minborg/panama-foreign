@@ -1,5 +1,6 @@
 package jdk.internal.foreign.mapper.component;
 
+import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentRecordMapper;
 
 import java.lang.foreign.AddressLayout;
@@ -11,14 +12,37 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Array;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-import static jdk.internal.foreign.mapper.MapperUtil.GET_TYPE;
-
-final class Util {
+public final class Util {
 
     static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+
+    public static final MethodType GET_TYPE = MethodType.methodType(Object.class,
+            MemorySegment.class, long.class);
+    public static final MethodType SET_TYPE = MethodType.methodType(void.class,
+            MemorySegment.class, long.class, Object.class);
+
+    // A MethodHandle of type (long, long)long that adds the two terms
+    private static final MethodHandle SUM_LONG;
+    // A MethodHandle of type (MemorySegment, long, Object)void that does nothing
+    public static final MethodHandle SET_NO_OP;
+
+    static {
+        try {
+            SUM_LONG = LOOKUP.findStatic(Long.class,
+                    "sum",
+                    MethodType.methodType(long.class, long.class, long.class));
+            SET_NO_OP = LOOKUP.findStatic(Util.class,
+                    "noop",
+                    SET_TYPE);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
 
     private Util() { }
 
@@ -188,6 +212,33 @@ final class Util {
             Array.set(result, i, part);
         }
         return result;
+    }
+
+    // Represents a no operation action for set operations (e.g. for Records with no components)
+    // Used via reflection
+    static void noop(MemorySegment segment, long offset, Object t) {
+    }
+
+    // Transposing offsets
+
+    private static final Map<Long, MethodHandle> TRANSPOSERS = new ConcurrentHashMap<>();
+
+    public static MethodHandle transposeOffset(MethodHandle mh,
+                                               long offset) {
+
+        // (MemorySegment, long)x -> (MemorySegment, long)x
+        return MethodHandles.filterArguments(mh, 1, transposer(offset));
+    }
+
+    private static MethodHandle transposer(long offset) {
+        return offset < 16
+                ? TRANSPOSERS.computeIfAbsent(offset, Util::transposer0)
+                : transposer0(offset);
+    }
+
+    private static MethodHandle transposer0(long offset) {
+        // (long, long)long -> (long)long
+        return MethodHandles.insertArguments(Util.SUM_LONG, 1, offset);
     }
 
 

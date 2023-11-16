@@ -25,7 +25,7 @@ public sealed interface ComponentHandle<T>
 
     MethodHandle handle(GroupLayout gl,
                         RecordComponent component,
-                        long byteOffset);
+                        long byteOffset) throws NoSuchMethodException, IllegalAccessException;
 
     MethodHandle handle(SequenceLayout sl,
                         RecordComponent component,

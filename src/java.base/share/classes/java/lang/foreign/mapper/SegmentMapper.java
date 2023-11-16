@@ -320,7 +320,7 @@ public interface SegmentMapper<T> {
      *         {@code layout().byteSize() > segment.byteSize()}
      */
     default T get(MemorySegment segment) {
-        return get(segment, 0);
+        return get(segment, 0L);
     }
 
     /**
@@ -343,7 +343,8 @@ public interface SegmentMapper<T> {
     @SuppressWarnings("unchecked")
     default T get(MemorySegment segment, long offset) {
         try {
-            return (T) getHandle().invokeExact(segment, offset);
+            return (T) getHandle()
+                    .invokeExact(segment, offset);
         } catch (IndexOutOfBoundsException |
                  WrongThreadException |
                  IllegalStateException |
@@ -378,7 +379,6 @@ public interface SegmentMapper<T> {
     default T getAtIndex(MemorySegment segment, long index) {
         return get(segment, layout().byteSize() * index);
     }
-
 
     /**
      * {@return a new sequential {@code Stream} of elements of type T}
@@ -422,7 +422,7 @@ public interface SegmentMapper<T> {
      *         {@linkplain MemorySegment#isNative() native} segment
      */
     default void set(MemorySegment segment, T t) {
-        set(segment, 0, t);
+        set(segment, 0L, t);
     }
 
     /**
@@ -561,9 +561,9 @@ public interface SegmentMapper<T> {
                                      Function<? super T, ? extends R> toMapper) {
         return map(newType,
                 toMapper,
-                o -> {
+                _ -> {
                     throw new UnsupportedOperationException(
-                            "Cannot map from " + newType + " to " + type());
+                            "This one-way mapper cannot map from " + newType + " to " + type());
                 });
     }
 

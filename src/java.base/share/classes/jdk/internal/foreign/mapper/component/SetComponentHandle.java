@@ -1,9 +1,6 @@
 package jdk.internal.foreign.mapper.component;
 
-import jdk.internal.foreign.mapper.MapperUtil;
-
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
@@ -12,7 +9,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.RecordComponent;
 
-import static jdk.internal.foreign.mapper.MapperUtil.SET_TYPE;
+import static jdk.internal.foreign.mapper.component.Util.SET_TYPE;
 
 final class SetComponentHandle<T>
         extends AbstractComponentHandle<T>
@@ -44,11 +41,8 @@ final class SetComponentHandle<T>
         // (MemorySegment, OfX, long, x)void -> (MemorySegment, long, x)void
         mh = MethodHandles.insertArguments(mh, 1, vl);
 
-        // (long, long)long -> (long)long
-        MethodHandle sum = MethodHandles.insertArguments(MapperUtil.SUM_LONG, 1, byteOffset);
-
         // (MemorySegment, long, x) -> (MemorySegment, long, x)
-        mh = MethodHandles.filterArguments(mh, 1, sum);
+        mh = Util.transposeOffset(mh, byteOffset);
 
         // (Object)x
         MethodHandle extractor = lookup.unreflect(component.getAccessor());
@@ -58,17 +52,28 @@ final class SetComponentHandle<T>
     }
 
     @Override
-    public MethodHandle handle(GroupLayout vl,
+    public MethodHandle handle(GroupLayout gl,
                                RecordComponent component,
-                               long byteOffset) {
-        return MapperUtil.SET_NO_OP;
+                               long byteOffset) throws IllegalAccessException {
+        // (T)x
+        MethodHandle extractor = lookup.unreflect(component.getAccessor());
+
+        // (T)Object
+        extractor = extractor.asType(extractor.type().changeReturnType(Object.class));
+
+        // (MemorySegment, long, T)
+        MethodHandle mh = recordMapper(component.getType(), gl, byteOffset)
+                .setHandle();
+
+        // (MemorySegment, long, T) -> (MemorySegment, long, x)
+        return MethodHandles.filterArguments(mh, 2, extractor);
     }
 
     @Override
-    public MethodHandle handle(SequenceLayout vl,
+    public MethodHandle handle(SequenceLayout sl,
                                RecordComponent component,
                                long byteOffset) throws NoSuchMethodException, IllegalAccessException {
-        return MapperUtil.SET_NO_OP;
+        return Util.SET_NO_OP;
     }
 
 }

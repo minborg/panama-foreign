@@ -44,7 +44,7 @@ final class GetComponentHandle<T>
     public MethodHandle handle(GroupLayout gl,
                                RecordComponent component,
                                long byteOffset) {
-        // Todo: There has to me a more general way of detecting circularity
+        // Todo: There has to be a more general way of detecting circularity
         if (type.equals(component.getType())) {
             throw new IllegalArgumentException(
                     "A type may not use a component of the same type: " + type + " in " + gl);
@@ -139,10 +139,8 @@ final class GetComponentHandle<T>
                     mh = MethodHandles.insertArguments(mh, 2, leafArrayMapper);
                     return Util.castReturnType(mh, component.getType());
                 }
-                case SequenceLayout __ -> {
-                    throw new InternalError("Should not reach here");
-                }
-                case PaddingLayout __ -> throw fail(component, sl);
+                case SequenceLayout _ -> throw new InternalError("Should not reach here");
+                case PaddingLayout  _ -> throw fail(component, sl);
             }
         }
 

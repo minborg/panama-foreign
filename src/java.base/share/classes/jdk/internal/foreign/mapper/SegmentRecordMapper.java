@@ -68,15 +68,10 @@ public record SegmentRecordMapper<T>(
             @Override boolean isExhaustive,
             // (MemorySegment, long)T
             @Override MethodHandle getHandle,
+            // (MemorySegment, long, T)void
             @Override MethodHandle setHandle) implements SegmentMapper<T>, HasLookup {
 
     private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
-
-    public static <T> SegmentRecordMapper<T> create(MethodHandles.Lookup lookup,
-                                                    Class<T> type,
-                                                    GroupLayout layout) {
-        return new SegmentRecordMapper<>(lookup, type, layout, 0, 0);
-    }
 
     public SegmentRecordMapper(MethodHandles.Lookup lookup,
                                Class<T> type,
@@ -107,6 +102,17 @@ public record SegmentRecordMapper<T>(
         this.setHandle = handles.setHandle();
     }
 
+    @Override
+    public <R> SegmentMapper<R> map(Class<R> newType,
+                                    Function<? super T, ? extends R> toMapper,
+                                    Function<? super R, ? extends T> fromMapper) {
+        // return new Mapped<>(this, newType, toMapper, fromMapper);
+        return Mapped.of(this, newType, toMapper, fromMapper);
+    }
+
+
+    // Private methods and classes
+
     private record Handles(boolean isExhaustive,
                            MethodHandle getHandle,
                            MethodHandle setHandle) {}
@@ -133,7 +139,7 @@ public record SegmentRecordMapper<T>(
     }
 
     // (MemorySegment, long)Object
-    static private <T> MethodHandle computeGetHandle(SegmentRecordMapper<T> mapper,
+    private static <T> MethodHandle computeGetHandle(SegmentRecordMapper<T> mapper,
                                                      Class<?>[] componentTypes) {
 
         ComponentHandle<T> getComponentHandle =
@@ -177,8 +183,8 @@ public record SegmentRecordMapper<T>(
     }
 
     // (MemorySegment, long, T)void
-    static private <T> MethodHandle computeSetHandle(SegmentRecordMapper<T> mapper,
-                                                 Class<?>[] componentTypes) {
+    private static <T> MethodHandle computeSetHandle(SegmentRecordMapper<T> mapper,
+                                                     Class<?>[] componentTypes) {
         // for each component, extracts its value and write to the correct location
 
         ComponentHandle<T> setComponentHandle =
@@ -229,10 +235,10 @@ public record SegmentRecordMapper<T>(
     // Helper method for the iterate() method
     // Used reflectively
     private static void doSetOperations(MemorySegment segment,
-                              long offset,
-                              Object t,
-                              SequencedCollection<MethodHandle> setHandles) {
-        for (var setHandle:setHandles) {
+                                        long offset,
+                                        Object t,
+                                        SequencedCollection<MethodHandle> setHandles) {
+        for (var setHandle : setHandles) {
             try {
                 setHandle.invokeExact(segment, offset, t);
             } catch (Throwable throwable) {
@@ -241,15 +247,7 @@ public record SegmentRecordMapper<T>(
         }
     }
 
-    @Override
-    public <R> SegmentMapper<R> map(Class<R> newType,
-                                    Function<? super T, ? extends R> toMapper,
-                                    Function<? super R, ? extends T> fromMapper) {
-        // return new Mapped<>(this, newType, toMapper, fromMapper);
-        return Mapped.of(this, newType, toMapper, fromMapper);
-    }
-
-    static void assertMappingsCorrect(Class<?> type, GroupLayout layout) {
+    private static void assertMappingsCorrect(Class<?> type, GroupLayout layout) {
         var nameMappingCounts = layout.memberLayouts().stream()
                 .map(MemoryLayout::name)
                 .flatMap(Optional::stream)
@@ -361,9 +359,7 @@ public record SegmentRecordMapper<T>(
                 );
         }
 
-        private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
-
-        static MethodHandle findVirtual(String name) {
+        private static MethodHandle findVirtual(String name) {
             try {
                 var mt = MethodType.methodType(Object.class, Object.class);
                 return LOOKUP.findVirtual(Mapped.class, name, mt);

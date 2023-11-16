@@ -676,7 +676,7 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
-        return SegmentRecordMapper.create(lookup, type, layout);
+        return new SegmentRecordMapper<>(lookup, type, layout, 0, 0);
     }
 
 }

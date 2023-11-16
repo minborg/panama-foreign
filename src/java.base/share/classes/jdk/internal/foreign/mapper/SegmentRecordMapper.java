@@ -193,7 +193,7 @@ public record SegmentRecordMapper<T>(
         return switch (setHandles.size()) {
             case 0 -> MapperUtil.SET_NO_OP;
             case 1 -> setHandles.getFirst();
-            //case 2, 3, 4, 5, 6, 7 -> compose(setHandles);
+            case 2, 3, 4, 5, 6, 7 -> compose(setHandles);
             default -> iterate(setHandles);
         };
     }

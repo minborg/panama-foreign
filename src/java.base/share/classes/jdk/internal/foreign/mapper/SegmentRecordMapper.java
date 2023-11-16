@@ -361,6 +361,8 @@ public record SegmentRecordMapper<T>(
                 );
         }
 
+        private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+
         static MethodHandle findVirtual(String name) {
             try {
                 var mt = MethodType.methodType(Object.class, Object.class);

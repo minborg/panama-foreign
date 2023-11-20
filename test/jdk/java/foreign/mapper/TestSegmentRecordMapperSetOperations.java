@@ -29,9 +29,16 @@
 import org.junit.jupiter.api.*;
 
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.stream.IntStream;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -89,12 +96,75 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
     void line() {
         SegmentMapper<Line> mapper = SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
         var segment = arena.allocate(LINE_LAYOUT);
-        System.out.println("mapper = " + mapper);
-        System.out.println("mapper.setHandle() = " + mapper.setHandle());
-
         mapper.set(segment, new Line(new Point(3, 4), new Point(6, 0)));
         assertContentEquals(segmentOf(3, 4, 6, 0), segment);
     }
+
+    public record SequenceBox(int before, int[] ints, int after) {
+
+        @Override
+        public boolean equals(Object obj) {
+            return obj instanceof SequenceBox other &&
+                    before == other.before &&
+                    Arrays.equals(ints, other.ints) &&
+                    after == other.after;
+        }
+
+        @Override
+        public String toString() {
+            return "SequenceBox[before=" + before +
+                    ", ints=" + Arrays.toString(ints) +
+                    ", after=" + after + "]";
+        }
+    }
+
+    @Test
+    public void testSequenceBox() {
+
+        var layout = MemoryLayout.structLayout(
+                JAVA_INT.withName("before"),
+                MemoryLayout.sequenceLayout(2, JAVA_INT).withName("ints"),
+                JAVA_INT.withName("after")
+        );
+
+        var mapper = SegmentMapper.ofRecord(SequenceBox.class, layout);
+        var segment = arena.allocate(layout);
+        mapper.set(segment, new SequenceBox(0, new int[]{1, 2}, 3));
+
+        assertContentEquals(segmentOf(0,1,2,3), segment);
+    }
+
+    public record SequenceListBox(int before, List<Integer> ints, int after) {}
+
+    @Test
+    public void testSequenceListBox() {
+
+        var layout = MemoryLayout.structLayout(
+                JAVA_INT.withName("before"),
+                MemoryLayout.sequenceLayout(2, JAVA_INT).withName("ints"),
+                JAVA_INT.withName("after")
+        );
+
+        var mapper = SegmentMapper.ofRecord(SequenceListBox.class, layout);
+        var segment = arena.allocate(layout);
+        mapper.set(segment, new SequenceListBox(0, List.of(1,2), 3));
+
+        assertContentEquals(segmentOf(0,1,2,3), segment);
+    }
+
+
+    @Test
+    void genericTypesRecord() {
+        record Foo(int i, List<String> list, int j) {}
+        Type gt = Foo.class.getRecordComponents()[1].getGenericType();
+
+        if (gt instanceof ParameterizedType pt) {
+            assertArrayEquals(new Type[]{String.class}, pt.getActualTypeArguments());
+        } else {
+            fail("No generic type");
+        }
+    }
+
 
     @Test
     void exceptions() {

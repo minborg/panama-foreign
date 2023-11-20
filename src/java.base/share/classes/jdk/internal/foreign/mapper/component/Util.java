@@ -12,6 +12,10 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Array;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Type;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -29,16 +33,13 @@ public final class Util {
     // A MethodHandle of type (long, long)long that adds the two terms
     private static final MethodHandle SUM_LONG;
     // A MethodHandle of type (MemorySegment, long, Object)void that does nothing
-    public static final MethodHandle SET_NO_OP;
+    public static final MethodHandle SET_NO_OP = MethodHandles.empty(SET_TYPE);
 
     static {
         try {
             SUM_LONG = LOOKUP.findStatic(Long.class,
                     "sum",
                     MethodType.methodType(long.class, long.class, long.class));
-            SET_NO_OP = LOOKUP.findStatic(Util.class,
-                    "noop",
-                    SET_TYPE);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -102,8 +103,15 @@ public final class Util {
                 .toArray(s -> (R[]) Array.newInstance(type, Math.toIntExact(s)));
     }
 
+
+    public static MethodHandle findStaticListToArray(MethodType methodType) throws NoSuchMethodException, IllegalAccessException {
+        return LOOKUP.findStatic(Util.class, "listToArray", methodType);
+    }
+
     // Below are `MemorySegment::toArray` wrapper methods that is also taking an offset
     // Begin: Reflectively used methods
+
+    // Get operations
 
     static byte[] toArray(MemorySegment segment,
                           ValueLayout.OfByte elementLayout,
@@ -172,6 +180,78 @@ public final class Util {
                 .toArray(MemorySegment[]::new);
     }
 
+    // Extract an array from a list.
+
+    private static byte[] listToArray(ValueLayout.OfByte layout,
+                                      List<Byte> list) {
+        int size = list.size();
+        byte[] result = new byte[size];
+        for (int i = 0; i < size; i++) {
+            result[i] = list.get(i);
+        }
+        return result;
+    }
+
+    private static short[] listToArray(ValueLayout.OfShort layout,
+                                       List<Short> list) {
+        int size = list.size();
+        short[] result = new short[size];
+        for (int i = 0; i < size; i++) {
+            result[i] = list.get(i);
+        }
+        return result;
+    }
+
+    private static char[] listToArray(ValueLayout.OfChar layout,
+                                      List<Character> list) {
+        int size = list.size();
+        char[] result = new char[size];
+        for (int i = 0; i < size; i++) {
+            result[i] = list.get(i);
+        }
+        return result;
+    }
+
+    private static int[] listToArray(ValueLayout.OfInt layout,
+                                     List<Integer> list) {
+        int size = list.size();
+        int[] result = new int[size];
+        for (int i = 0; i < size; i++) {
+            result[i] = list.get(i);
+        }
+        return result;
+    }
+
+    private static float[] listToArray(ValueLayout.OfFloat layout,
+                                       List<Float> list) {
+        int size = list.size();
+        float[] result = new float[size];
+        for (int i = 0; i < size; i++) {
+            result[i] = list.get(i);
+        }
+        return result;
+    }
+
+    private static long[] listToArray(ValueLayout.OfLong layout,
+                                      List<Long> list) {
+        int size = list.size();
+        long[] result = new long[size];
+        for (int i = 0; i < size; i++) {
+            result[i] = list.get(i);
+        }
+        return result;
+    }
+
+    private static double[] listToArray(ValueLayout.OfDouble layout,
+                                        List<Double> list) {
+        int size = list.size();
+        double[] result = new double[size];
+        for (int i = 0; i < size; i++) {
+            result[i] = list.get(i);
+        }
+        return result;
+    }
+
     // End: Reflectively used methods
 
     private static MemorySegment slice(MemorySegment segment,
@@ -214,11 +294,6 @@ public final class Util {
         return result;
     }
 
-    // Represents a no operation action for set operations (e.g. for Records with no components)
-    // Used via reflection
-    static void noop(MemorySegment segment, long offset, Object t) {
-    }
-
     // Transposing offsets
 
     private static final Map<Long, MethodHandle> TRANSPOSERS = new ConcurrentHashMap<>();
@@ -239,6 +314,18 @@ public final class Util {
     private static MethodHandle transposer0(long offset) {
         // (long, long)long -> (long)long
         return MethodHandles.insertArguments(Util.SUM_LONG, 1, offset);
+    }
+
+    public static Class<?> firstGenericType(RecordComponent rc) {
+        Type genericType = rc.getGenericType();
+        if (genericType instanceof ParameterizedType parameterizedType) {
+            Type firstGenericParameter = parameterizedType.getActualTypeArguments()[0];
+            if (firstGenericParameter instanceof Class<?> c) {
+                return c;
+            }
+            throw new IllegalArgumentException("Type is not a Class " + firstGenericParameter);
+        }
+        throw new IllegalArgumentException("Unable to determine the generic type of " + rc);
     }
 
 

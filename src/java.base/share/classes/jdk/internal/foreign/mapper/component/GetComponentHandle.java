@@ -12,6 +12,7 @@ import java.lang.invoke.MethodType;
 import java.lang.reflect.RecordComponent;
 import java.util.function.Function;
 
+import static jdk.internal.foreign.mapper.component.Util.*;
 import static jdk.internal.foreign.mapper.component.Util.GET_TYPE;
 
 final class GetComponentHandle<T>
@@ -37,7 +38,7 @@ final class GetComponentHandle<T>
         // (MemorySegment, OfX, long)x -> (MemorySegment, long)x
         mh = MethodHandles.insertArguments(mh, 1, vl);
 
-        return Util.transposeOffset(mh, byteOffset);
+        return transposeOffset(mh, byteOffset);
     }
 
     @Override
@@ -61,6 +62,14 @@ final class GetComponentHandle<T>
 
         String name = component.getName();
         var componentType = component.getType();
+
+        ContainerType containerType = ContainerType.of(componentType);
+
+        if (containerType == ContainerType.LIST) {
+            // Todo::fix this
+            return MethodHandles.empty(MethodType.methodType(componentType, MemorySegment.class, long.class));
+        }
+
         if (!componentType.isArray()) {
             throw new IllegalArgumentException("Unable to map '" + sl +
                     "' because the component '" + componentType.getName() + " " + name + "' is not an array");
@@ -72,16 +81,16 @@ final class GetComponentHandle<T>
             throw new IllegalArgumentException("Arrays of booleans (" + info.elementLayout() + ") are not supported");
         }
 
-        if (Util.dimensionOf(componentType) != info.sequences().size()) {
+        if (dimensionOf(componentType) != info.sequences().size()) {
             throw new IllegalArgumentException("Unable to map '" + sl + "'" +
                     " of dimension " + info.sequences().size() +
                     " because the component '" + componentType.getName() + " " + name + "'" +
-                    " has a dimension of " + Util.dimensionOf(componentType));
+                    " has a dimension of " + dimensionOf(componentType));
         }
 
         // Handle multi-dimensional arrays
         if (info.sequences().size() > 1) {
-            var mh = Util.LOOKUP.findStatic(Util.class, "toMultiArrayFunction",
+            var mh = LOOKUP.findStatic(Util.class, "toMultiArrayFunction",
                     MethodType.methodType(Object.class,
                             MemorySegment.class,
                             MultidimensionalSequenceLayoutInfo.class,
@@ -94,7 +103,7 @@ final class GetComponentHandle<T>
 
             // (MemorySegment, long offset, Class leafType, Function mapper) ->
             // (MemorySegment, long, Class leafType, Function mapper)
-            mh = Util.transposeOffset(mh, byteOffset);
+            mh = transposeOffset(mh, byteOffset);
 
             switch (info.elementLayout()) {
                 case ValueLayout vl -> {
@@ -118,7 +127,7 @@ final class GetComponentHandle<T>
                     // (MemorySegment, long offset, Function mapper) ->
                     // (MemorySegment, long offset)
                     mh = MethodHandles.insertArguments(mh, 2, leafArrayMapper);
-                    return Util.castReturnType(mh, component.getType());
+                    return castReturnType(mh, component.getType());
                 }
                 case GroupLayout gl -> {
                     var arrayComponentType = info.type();
@@ -129,7 +138,7 @@ final class GetComponentHandle<T>
                             .asType(GET_TYPE);
 
                     Function<MemorySegment, Object> leafArrayMapper = ms ->
-                            Util.toArray(ms, gl, arrayComponentType, mapperCtor);
+                            toArray(ms, gl, arrayComponentType, mapperCtor);
 
                     // (MemorySegment, long offset, Class leafType, Function mapper) ->
                     // (MemorySegment, long offset, Function mapper)
@@ -137,7 +146,7 @@ final class GetComponentHandle<T>
                     // (MemorySegment, long offset, Function mapper) ->
                     // (MemorySegment, long offset)
                     mh = MethodHandles.insertArguments(mh, 2, leafArrayMapper);
-                    return Util.castReturnType(mh, component.getType());
+                    return castReturnType(mh, component.getType());
                 }
                 case SequenceLayout _ -> throw new InternalError("Should not reach here");
                 case PaddingLayout  _ -> throw fail(component, sl);
@@ -150,13 +159,13 @@ final class GetComponentHandle<T>
                 assertTypesMatch(component, info.type(), vl);
                 var mt = MethodType.methodType(vl.carrier().arrayType(),
                         MemorySegment.class, topValueLayoutType(vl), long.class, long.class);
-                var mh = Util.findStaticToArray(mt);
+                var mh = findStaticToArray(mt);
                 // (MemorySegment, OfX, long offset, long count) -> (MemorySegment, OfX, long offset)
                 mh = MethodHandles.insertArguments(mh, 3, info.sequences().getFirst().elementCount());
                 // (MemorySegment, OfX, long offset) -> (MemorySegment, long offset)
                 mh = MethodHandles.insertArguments(mh, 1, vl);
                 // (MemorySegment, long offset) -> (MemorySegment, long offset)
-                return Util.castReturnType(Util.transposeOffset(mh, byteOffset), component.getType());
+                return castReturnType(transposeOffset(mh, byteOffset), component.getType());
             }
             case GroupLayout gl -> {
                 // The "local" byteOffset for the record component mapper is zero
@@ -164,7 +173,7 @@ final class GetComponentHandle<T>
                 try {
                     var mt = MethodType.methodType(Object.class.arrayType(),
                             MemorySegment.class, GroupLayout.class, long.class, long.class, Class.class, MethodHandle.class);
-                    var mh = Util.findStaticToArray(mt);
+                    var mh = findStaticToArray(mt);
                     var mapper = componentMapper.getHandle().asType(GET_TYPE);
                     // (MemorySegment, GroupLayout, long offset, long count, Class, MethodHandle) ->
                     // (MemorySegment, GroupLayout, long offset, long count, Class)
@@ -179,7 +188,7 @@ final class GetComponentHandle<T>
                     // (MemorySegment, long offset)
                     mh = MethodHandles.insertArguments(mh, 1, gl);
                     // (MemorySegment, long offset) -> (MemorySegment, long offset)Record[]
-                    mh = Util.transposeOffset(mh, byteOffset);
+                    mh = transposeOffset(mh, byteOffset);
                     // (MemorySegment, long offset)Record[] -> (MemorySegment, long)componentType
                     return MethodHandles.explicitCastArguments(mh, GET_TYPE.changeReturnType(component.getType()));
                 } catch (NoSuchMethodException | IllegalAccessException e) {

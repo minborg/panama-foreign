@@ -426,6 +426,26 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
         assertEquals(new SequenceBox(0, new int[]{1, 2}, 3), sequenceBox);
     }
+/*
+    public record SequenceListBox(int before, List<Integer> ints, int after) {}
+
+    @Test
+    public void testSequenceListBox() {
+
+        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 3).toArray());
+
+        var layout = MemoryLayout.structLayout(
+                JAVA_INT.withName("before"),
+                MemoryLayout.sequenceLayout(2, JAVA_INT).withName("ints"),
+                JAVA_INT.withName("after")
+        );
+
+        var mapper = SegmentMapper.ofRecord(SequenceListBox.class, layout);
+
+        SequenceListBox sequenceBox = mapper.get(segment);
+
+        assertEquals(new SequenceListBox(0, List.of(1, 2), 3), sequenceBox);
+    }*/
 
     public record SequenceBox2(int before, int[][] ints, int after) {
 

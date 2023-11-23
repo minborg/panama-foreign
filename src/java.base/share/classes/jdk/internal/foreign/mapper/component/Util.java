@@ -1,12 +1,12 @@
 package jdk.internal.foreign.mapper.component;
 
-import jdk.internal.foreign.mapper.MapperUtil;
-import jdk.internal.foreign.mapper.SegmentRecordMapper;
+import jdk.internal.util.ImmutableBitSetPredicate;
 
 import java.lang.foreign.AddressLayout;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -15,10 +15,15 @@ import java.lang.reflect.Array;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TransferQueue;
 import java.util.function.Function;
+import java.util.function.IntPredicate;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public final class Util {
@@ -106,6 +111,10 @@ public final class Util {
 
     public static MethodHandle findStaticListToArray(MethodType methodType) throws NoSuchMethodException, IllegalAccessException {
         return LOOKUP.findStatic(Util.class, "listToArray", methodType);
+    }
+
+    public static MethodHandle findStaticArrayToList(MethodType methodType) throws NoSuchMethodException, IllegalAccessException {
+        return LOOKUP.findStatic(Util.class, "arrayToList", methodType);
     }
 
     // Below are `MemorySegment::toArray` wrapper methods that is also taking an offset
@@ -252,6 +261,78 @@ public final class Util {
         return result;
     }
 
+    // Extract a List from an array.
+
+    private static List<Byte> arrayToList(ValueLayout.OfByte layout,
+                                          byte[] in) {
+        int size = in.length;
+        Byte[] arr = new Byte[size];
+        for (int i = 0; i < size; i++) {
+            arr[i] = in[i];
+        }
+        return List.of(arr);
+    }
+
+    private static List<Short> arrayToList(ValueLayout.OfShort layout,
+                                          short[] in) {
+        int size = in.length;
+        Short[] arr = new Short[size];
+        for (int i = 0; i < size; i++) {
+            arr[i] = in[i];
+        }
+        return List.of(arr);
+    }
+
+    private static List<Character> arrayToList(ValueLayout.OfChar layout,
+                                               char[] in) {
+        int size = in.length;
+        Character[] arr = new Character[size];
+        for (int i = 0; i < size; i++) {
+            arr[i] = in[i];
+        }
+        return List.of(arr);
+    }
+
+    private static List<Integer> arrayToList(ValueLayout.OfInt layout,
+                                             int[] in) {
+        int size = in.length;
+        Integer[] arr = new Integer[size];
+        for (int i = 0; i < size; i++) {
+            arr[i] = in[i];
+        }
+        return List.of(arr);
+    }
+
+    private static List<Float> arrayToList(ValueLayout.OfFloat layout,
+                                           float[] in) {
+        int size = in.length;
+        Float[] arr = new Float[size];
+        for (int i = 0; i < size; i++) {
+            arr[i] = in[i];
+        }
+        return List.of(arr);
+    }
+
+    private static List<Long> arrayToList(ValueLayout.OfLong layout,
+                                          long[] in) {
+        int size = in.length;
+        Long[] arr = new Long[size];
+        for (int i = 0; i < size; i++) {
+            arr[i] = in[i];
+        }
+        return List.of(arr);
+    }
+
+    private static List<Double> arrayToList(ValueLayout.OfDouble layout,
+                                            double[] in) {
+        int size = in.length;
+        Double[] arr = new Double[size];
+        for (int i = 0; i < size; i++) {
+            arr[i] = in[i];
+        }
+        return List.of(arr);
+    }
+
     // End: Reflectively used methods
 
     private static MemorySegment slice(MemorySegment segment,
@@ -297,23 +378,43 @@ public final class Util {
     // Transposing offsets
 
     private static final Map<Long, MethodHandle> TRANSPOSERS = new ConcurrentHashMap<>();
+    private static final IntPredicate CACHED;
+
+    static {
+        BitSet set = new BitSet();
+        // Likely common offsets
+        // {1, 2, 3, 4, 6, 8, 12, 16, 24, 32}
+        IntStream.rangeClosed(1, 4)
+                .flatMap(i -> IntStream.of(i,
+                        i * Short.BYTES,
+                        i * Integer.BYTES,
+                        i * Long.BYTES))
+                .forEach(set::set);
+        CACHED = ImmutableBitSetPredicate.of(set);
+    }
 
     public static MethodHandle transposeOffset(MethodHandle mh,
                                                long offset) {
-
-        // (MemorySegment, long)x -> (MemorySegment, long)x
-        return MethodHandles.filterArguments(mh, 1, transposer(offset));
+        return offset == 0
+                ? mh // Nothing to do
+                // (MemorySegment, long)x -> (MemorySegment, long)x
+                : MethodHandles.filterArguments(mh, 1, transposing(offset));
     }
 
-    private static MethodHandle transposer(long offset) {
-        return offset < 16
-                ? TRANSPOSERS.computeIfAbsent(offset, Util::transposer0)
-                : transposer0(offset);
+    private static MethodHandle transposing(long offset) {
+        return isCached(offset)
+                ? TRANSPOSERS.computeIfAbsent(offset, Util::transposing0)
+                : transposing0(offset);
     }
 
-    private static MethodHandle transposer0(long offset) {
+    private static MethodHandle transposing0(long offset) {
         // (long, long)long -> (long)long
         return MethodHandles.insertArguments(Util.SUM_LONG, 1, offset);
+    }
+
+    private static boolean isCached(long offset) {
+        return offset < Integer.MAX_VALUE - 1 &&
+                CACHED.test((int) offset);
     }
 
     public static Class<?> firstGenericType(RecordComponent rc) {
@@ -326,6 +427,23 @@ public final class Util {
             throw new IllegalArgumentException("Type is not a Class " + firstGenericParameter);
         }
         throw new IllegalArgumentException("Unable to determine the generic type of " + rc);
+    }
+
+    static void assertSequenceLayoutValid(SequenceLayout sl) {
+        if (sl.elementLayout() instanceof SequenceLayout) {
+            // We only support single dimension arrays
+            throw new IllegalArgumentException("A sequence layout can not have an element layout that is" +
+                    "also a sequence layout " + sl);
+        }
+
+        if (sl.elementCount() > Integer.MAX_VALUE - 8) {
+            throw new IllegalArgumentException("Unable to map'" + sl +
+                    "' because the element count is too big " + sl.elementCount());
+        }
+
+        if (sl.elementLayout() instanceof ValueLayout.OfBoolean) {
+            throw new IllegalArgumentException("Arrays of booleans (" + sl.elementLayout() + ") are not supported");
+        }
     }
 
 

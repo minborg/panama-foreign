@@ -253,6 +253,10 @@ public record SegmentRecordMapper<T>(
                 .flatMap(Optional::stream)
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
 
+        if (!type.isRecord()) {
+            throw new IllegalArgumentException("Not a record class: " + type);
+        }
+
         // Make sure we have all components distinctly mapped
         for (RecordComponent component : type.getRecordComponents()) {
             String name = component.getName();

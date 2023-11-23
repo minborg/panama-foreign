@@ -10,6 +10,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.RecordComponent;
+import java.util.List;
 import java.util.function.Function;
 
 import static jdk.internal.foreign.mapper.component.Util.*;
@@ -60,116 +61,40 @@ final class GetComponentHandle<T>
                                RecordComponent component,
                                long byteOffset) throws NoSuchMethodException, IllegalAccessException {
 
-        String name = component.getName();
+        assertSequenceLayoutValid(sl);
+
         var componentType = component.getType();
+        ContainerType containerType = ContainerType.of(componentType, sl);
 
-        ContainerType containerType = ContainerType.of(componentType);
-
-        if (containerType == ContainerType.LIST) {
-            // Todo::fix this
-            return MethodHandles.empty(MethodType.methodType(componentType, MemorySegment.class, long.class));
-        }
-
-        if (!componentType.isArray()) {
-            throw new IllegalArgumentException("Unable to map '" + sl +
-                    "' because the component '" + componentType.getName() + " " + name + "' is not an array");
-        }
-
-        MultidimensionalSequenceLayoutInfo info = MultidimensionalSequenceLayoutInfo.of(sl, componentType);
-
-        if (info.elementLayout() instanceof ValueLayout.OfBoolean) {
-            throw new IllegalArgumentException("Arrays of booleans (" + info.elementLayout() + ") are not supported");
-        }
-
-        if (dimensionOf(componentType) != info.sequences().size()) {
-            throw new IllegalArgumentException("Unable to map '" + sl + "'" +
-                    " of dimension " + info.sequences().size() +
-                    " because the component '" + componentType.getName() + " " + name + "'" +
-                    " has a dimension of " + dimensionOf(componentType));
-        }
-
-        // Handle multi-dimensional arrays
-        if (info.sequences().size() > 1) {
-            var mh = LOOKUP.findStatic(Util.class, "toMultiArrayFunction",
-                    MethodType.methodType(Object.class,
-                            MemorySegment.class,
-                            MultidimensionalSequenceLayoutInfo.class,
-                            long.class,
-                            Class.class,
-                            Function.class));
-            // (MemorySegment, MultidimensionalSequenceLayoutInfo, long offset, Class leafType, Function mapper) ->
-            // (MemorySegment, long offset, Class leafType, Function mapper)
-            mh = MethodHandles.insertArguments(mh, 1, info);
-
-            // (MemorySegment, long offset, Class leafType, Function mapper) ->
-            // (MemorySegment, long, Class leafType, Function mapper)
-            mh = transposeOffset(mh, byteOffset);
-
-            switch (info.elementLayout()) {
-                case ValueLayout vl -> {
-                    // (MemorySegment, long offset, Class leafType, Function mapper) ->
-                    // (MemorySegment, long offset, Function mapper)
-                    mh = MethodHandles.insertArguments(mh, 2, vl.carrier());
-                    Function<MemorySegment, Object> leafArrayMapper =
-                            switch (vl) {
-                                case ValueLayout.OfByte ofByte    -> ms -> ms.toArray(ofByte);
-                                case ValueLayout.OfBoolean ofBool -> throw new UnsupportedOperationException("boolean arrays not supported: " + ofBool);
-                                case ValueLayout.OfShort ofShort  -> ms -> ms.toArray(ofShort);
-                                case ValueLayout.OfChar ofChar    -> ms -> ms.toArray(ofChar);
-                                case ValueLayout.OfInt ofInt      -> ms -> ms.toArray(ofInt);
-                                case ValueLayout.OfLong ofLong    -> ms -> ms.toArray(ofLong);
-                                case ValueLayout.OfFloat ofFloat  -> ms -> ms.toArray(ofFloat);
-                                case ValueLayout.OfDouble ofDbl   -> ms -> ms.toArray(ofDbl);
-                                case AddressLayout ad -> ms -> ms.elements(ad)
-                                        .map(s -> s.get(ad, 0))
-                                        .toArray(MemorySegment[]::new);
-                            };
-                    // (MemorySegment, long offset, Function mapper) ->
-                    // (MemorySegment, long offset)
-                    mh = MethodHandles.insertArguments(mh, 2, leafArrayMapper);
-                    return castReturnType(mh, component.getType());
-                }
-                case GroupLayout gl -> {
-                    var arrayComponentType = info.type();
-                    // The "local" byteOffset for the record component mapper is zero
-                    var componentMapper = recordMapper(arrayComponentType, gl, 0);
-                    // Change the return type to Object so that we may use Array.set() below
-                    var mapperCtor = componentMapper.getHandle()
-                            .asType(GET_TYPE);
-
-                    Function<MemorySegment, Object> leafArrayMapper = ms ->
-                            toArray(ms, gl, arrayComponentType, mapperCtor);
-
-                    // (MemorySegment, long offset, Class leafType, Function mapper) ->
-                    // (MemorySegment, long offset, Function mapper)
-                    mh = MethodHandles.insertArguments(mh, 2, arrayComponentType);
-                    // (MemorySegment, long offset, Function mapper) ->
-                    // (MemorySegment, long offset)
-                    mh = MethodHandles.insertArguments(mh, 2, leafArrayMapper);
-                    return castReturnType(mh, component.getType());
-                }
-                case SequenceLayout _ -> throw new InternalError("Should not reach here");
-                case PaddingLayout  _ -> throw fail(component, sl);
-            }
-        }
+        Class<?> valueType = componentType.isArray()
+                ? componentType.getComponentType()
+                : firstGenericType(component);
 
         // Faster single-dimensional arrays
-        switch (info.elementLayout()) {
+        switch (sl.elementLayout()) {
             case ValueLayout vl -> {
-                assertTypesMatch(component, info.type(), vl);
                 var mt = MethodType.methodType(vl.carrier().arrayType(),
                         MemorySegment.class, topValueLayoutType(vl), long.class, long.class);
                 var mh = findStaticToArray(mt);
-                // (MemorySegment, OfX, long offset, long count) -> (MemorySegment, OfX, long offset)
-                mh = MethodHandles.insertArguments(mh, 3, info.sequences().getFirst().elementCount());
-                // (MemorySegment, OfX, long offset) -> (MemorySegment, long offset)
+                // (MemorySegment, OfX, long offset, long count)x[] -> (MemorySegment, OfX, long offset)x[]
+                mh = MethodHandles.insertArguments(mh, 3, sl.elementCount());
+                // (MemorySegment, OfX, long offset)x[] -> (MemorySegment, long offset)x[]
                 mh = MethodHandles.insertArguments(mh, 1, vl);
-                // (MemorySegment, long offset) -> (MemorySegment, long offset)
+                // (MemorySegment, long offset)x[] -> (MemorySegment, long offset)x[]
+
+                if (containerType == ContainerType.LIST) {
+                    // (OfX, [x])List<X>
+                    MethodHandle finisher = Util.findStaticArrayToList(MethodType.methodType(List.class, topValueLayoutType(vl), vl.carrier().arrayType()));
+                    // (OfX, [x])List<X> -> ([x])List<X>
+                    finisher = MethodHandles.insertArguments(finisher, 0, vl);
+                    mh = MethodHandles.filterReturnValue(mh, finisher);
+                }
+
                 return castReturnType(transposeOffset(mh, byteOffset), component.getType());
             }
             case GroupLayout gl -> {
                 // The "local" byteOffset for the record component mapper is zero
-                var componentMapper = recordMapper(info.type(), gl, 0);
+                var componentMapper = recordMapper(valueType, gl, 0);
                 try {
                     var mt = MethodType.methodType(Object.class.arrayType(),
                             MemorySegment.class, GroupLayout.class, long.class, long.class, Class.class, MethodHandle.class);
@@ -183,7 +108,7 @@ final class GetComponentHandle<T>
                     mh = MethodHandles.insertArguments(mh, 4, componentMapper.type());
                     // (MemorySegment, GroupLayout, long offset, long count) ->
                     // (MemorySegment, GroupLayout, long offset)
-                    mh = MethodHandles.insertArguments(mh, 3, info.sequences().getFirst().elementCount());
+                    mh = MethodHandles.insertArguments(mh, 3, sl.elementCount());
                     // (MemorySegment, GroupLayout, long offset) ->
                     // (MemorySegment, long offset)
                     mh = MethodHandles.insertArguments(mh, 1, gl);

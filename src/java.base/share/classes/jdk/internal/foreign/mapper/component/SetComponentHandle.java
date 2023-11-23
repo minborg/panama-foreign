@@ -76,26 +76,10 @@ final class SetComponentHandle<T>
                                RecordComponent component,
                                long byteOffset) throws NoSuchMethodException, IllegalAccessException {
 
-        if (sl.elementLayout() instanceof SequenceLayout) {
-            // We only support single dimension arrays
-            return Util.SET_NO_OP;
-        }
-
-        if (sl.elementCount() > Integer.MAX_VALUE - 8) {
-            throw new IllegalArgumentException("Unable to map'" + sl +
-                    "' because the element count is too big " + sl.elementCount());
-        }
-
-        if (sl.elementLayout() instanceof ValueLayout.OfBoolean) {
-            throw new IllegalArgumentException("Arrays of booleans (" + sl.elementLayout() + ") are not supported");
-        }
+        assertSequenceLayoutValid(sl);
 
         var componentType = component.getType();
-        ContainerType containerType = ContainerType.of(componentType);
-        if (containerType == ContainerType.UNKNOWN) {
-            throw new IllegalArgumentException("Unable to map '" + sl +
-                    "' because the component '" + componentType.getName() + " " + component.getName() + "' is not an array or a List.");
-        }
+        ContainerType containerType = ContainerType.of(componentType, sl);
 
         Class<?> valueType = componentType.isArray()
                 ? componentType.getComponentType()

@@ -426,7 +426,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
         assertEquals(new SequenceBox(0, new int[]{1, 2}, 3), sequenceBox);
     }
-/*
+
     public record SequenceListBox(int before, List<Integer> ints, int after) {}
 
     @Test
@@ -445,149 +445,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         SequenceListBox sequenceBox = mapper.get(segment);
 
         assertEquals(new SequenceListBox(0, List.of(1, 2), 3), sequenceBox);
-    }*/
-
-    public record SequenceBox2(int before, int[][] ints, int after) {
-
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof SequenceBox2 other &&
-                    before == other.before &&
-                    Arrays.deepEquals(ints, other.ints) &&
-                    after == other.after;
-        }
-
-        @Override
-        public String toString() {
-            return "SequenceBox2[before=" + before +
-                    ", ints=" + Arrays.deepToString(ints) +
-                    ", after=" + after + "]";
-        }
-    }
-
-    @Test
-    public void testSequenceBox2WrongDimension() {
-
-        var layout = MemoryLayout.structLayout(
-                JAVA_INT.withName("before"),
-                MemoryLayout.sequenceLayout(2,
-                                MemoryLayout.sequenceLayout(2, JAVA_INT).withName("whatever"))
-                        .withName("ints"),
-                JAVA_INT.withName("after")
-        );
-
-        assertThrows(IllegalArgumentException.class, () ->
-                // SequenceBox.ints is of dimension 1 whereas the layout is of dimension 2
-                SegmentMapper.ofRecord(SequenceBox.class, layout)
-        );
-    }
-
-    @Test
-    public void testSequenceBox2() {
-
-        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 7).toArray());
-
-        var layout = MemoryLayout.structLayout(
-                JAVA_INT.withName("before"),
-                MemoryLayout.sequenceLayout(2,
-                                MemoryLayout.sequenceLayout(3, JAVA_INT).withName("whatever"))
-                        .withName("ints"),
-                JAVA_INT.withName("after")
-        );
-
-        var mapper = SegmentMapper.ofRecord(SequenceBox2.class, layout);
-
-        SequenceBox2 sequenceBox2 = mapper.get(segment);
-
-        assertEquals(new SequenceBox2(0, new int[][]{{1, 2, 3}, {4, 5, 6}}, 7), sequenceBox2);
-    }
-
-    public record SequenceBox3(int before, int[][][] ints, int after) {
-
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof SequenceBox3 other &&
-                    before == other.before &&
-                    Arrays.deepEquals(ints, other.ints) &&
-                    after == other.after;
-        }
-
-        @Override
-        public String toString() {
-            return "SequenceBox3[before=" + before +
-                    ", ints=" + Arrays.deepToString(ints) +
-                    ", after=" + after + "]";
-        }
-    }
-
-    @Test
-    public void testSequenceBox3() {
-
-        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 2 + (2 * 3 * 4)).toArray());
-
-        var layout = MemoryLayout.structLayout(
-                JAVA_INT.withName("before"),
-                MemoryLayout.sequenceLayout(2,
-                                MemoryLayout.sequenceLayout(3,
-                                        MemoryLayout.sequenceLayout(4, JAVA_INT).withName("whatever2")
-                                ).withName("whatever")
-                        )
-                        .withName("ints"),
-                JAVA_INT.withName("after")
-        );
-
-        var mapper = SegmentMapper.ofRecord(SequenceBox3.class, layout);
-
-        SequenceBox3 sequenceBox3 = mapper.get(segment);
-
-        assertEquals(new SequenceBox3(0, new int[][][]{
-                {{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}},
-                {{13, 14, 15, 16}, {17, 18, 19, 20}, {21, 22, 23, 24}}
-        }, 25), sequenceBox3);
-    }
-
-    public record LongSequenceBox3(long before, long[][][] longs, long after) {
-
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof LongSequenceBox3 other &&
-                    before == other.before &&
-                    Arrays.deepEquals(longs, other.longs) &&
-                    after == other.after;
-        }
-
-        @Override
-        public String toString() {
-            return "LongSequenceBox3[before=" + before +
-                    ", longs=" + Arrays.deepToString(longs) +
-                    ", after=" + after+ "]";
-        }
-    }
-
-    @Test
-    public void testLongSequenceBox3() {
-
-        var segment = MemorySegment.ofArray(LongStream.rangeClosed(0, 2 + (2 * 3 * 4)).toArray());
-
-        var layout = MemoryLayout.structLayout(
-                JAVA_LONG.withName("before"),
-                MemoryLayout.sequenceLayout(2,
-                                MemoryLayout.sequenceLayout(3,
-                                        MemoryLayout.sequenceLayout(4, JAVA_LONG).withName("whatever2")
-                                ).withName("whatever")
-                        )
-                        .withName("longs"),
-                JAVA_LONG.withName("after")
-        );
-
-        var mapper = SegmentMapper.ofRecord(LongSequenceBox3.class, layout);
-
-            LongSequenceBox3 sequenceBox3 = mapper.get(segment);
-
-        assertEquals(new LongSequenceBox3(0, new long[][][]{
-                {{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}},
-                {{13, 14, 15, 16}, {17, 18, 19, 20}, {21, 22, 23, 24}}
-        }, 25), sequenceBox3);
     }
 
     public record PureArray(int[] ints) {
@@ -656,51 +513,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
         assertEquals(new SequenceOfPoints(0, new Point[]{new Point(1, 2), new Point(3,4)}, 5), sequenceOfPoints);
 
-    }
-
-    public record MultiSequenceOfPoints(int before, Point[][] points, int after) {
-
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof MultiSequenceOfPoints other &&
-                    before == other.before &&
-                    Arrays.deepEquals(points, other.points) &&
-                    after == other.after;
-        }
-
-        @Override
-        public String toString() {
-            return "MultiSequenceOfPoints[before=" + before +
-                    ", points=" + Arrays.deepToString(points) +
-                    ", after=" + after + "]";
-        }
-
-    }
-
-    @Test
-    public void testMultiSequenceOfPoints() {
-
-        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 13).toArray());
-
-        var layout = MemoryLayout.structLayout(
-                JAVA_INT.withName("before"),
-                MemoryLayout.sequenceLayout(2,
-                                MemoryLayout.sequenceLayout(3, POINT_LAYOUT))
-                        .withName("points"),
-                JAVA_INT.withName("after")
-        );
-
-        var mapper = SegmentMapper.ofRecord(MultiSequenceOfPoints.class, layout);
-
-        MultiSequenceOfPoints actual = mapper.get(segment);
-
-        var expected = new MultiSequenceOfPoints(0,
-                new Point[][]{
-                        {new Point(1, 2), new Point(3, 4), new Point(5, 6)},
-                        {new Point(7, 8), new Point(9, 10), new Point(11, 12)}},
-                13);
-
-        assertEquals(expected, actual);
     }
 
     @Test

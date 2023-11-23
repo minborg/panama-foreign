@@ -153,6 +153,8 @@ public record SegmentRecordMapper<T>(
         MethodHandle ctor;
         try {
             ctor = mapper.lookup().findConstructor(mapper.type(), MethodType.methodType(void.class, componentTypes));
+            System.out.println("ctor for " + mapper.type + " = " + ctor);
+            System.out.println("Arrays.toString(componentTypes) = " + Arrays.toString(componentTypes));
         } catch (IllegalAccessException | NoSuchMethodException e) {
             throw new IllegalArgumentException("There is no constructor in '" + mapper.type().getName() +
                     "' for " + Arrays.toString(componentTypes) + " using lookup " + mapper.lookup(), e);

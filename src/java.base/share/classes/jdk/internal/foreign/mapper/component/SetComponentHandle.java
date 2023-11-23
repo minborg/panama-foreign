@@ -125,9 +125,7 @@ final class SetComponentHandle<T>
                 yield Util.transposeOffset(mh, byteOffset);
             }
             case GroupLayout gl when containerType == ContainerType.ARRAY -> {
-
                 Class<?> valueType = recordComponentType.getComponentType();
-
                 // The "local" byteOffset for the record recordComponent mapper is zero
                 var componentMapper = recordMapper(valueType, gl, 0);
                 try {
@@ -141,15 +139,9 @@ final class SetComponentHandle<T>
                     // (MemorySegment, GroupLayout, long offset, Object[])void ->
                     // (MemorySegment, long offset, Object[])void
                     mh = MethodHandles.insertArguments(mh, 1, gl);
-
-                    if (containerType == ContainerType.LIST) {
-
-                    }
-
                     // (MemorySegment, long offset, Object[])void ->
                     // (MemorySegment, long offset, T)void
                     mh = MethodHandles.filterArguments(mh, 2, extractor.asType(MethodType.methodType(Object[].class, extractor.type().parameterType(0))));
-
                     // (MemorySegment, long offset, Object[])void -> (MemorySegment, long offset, Object[])void
                     mh = Util.transposeOffset(mh, byteOffset);
                     // (MemorySegment, long offset, Object[])void -> (MemorySegment, long offset, Object)void
@@ -159,9 +151,7 @@ final class SetComponentHandle<T>
                 }
             }
             case GroupLayout gl -> {
-
                 Class<?> valueType = firstGenericType(recordComponent);
-
                 // The "local" byteOffset for the record recordComponent mapper is zero
                 var componentMapper = recordMapper(valueType, gl, 0);
                 try {

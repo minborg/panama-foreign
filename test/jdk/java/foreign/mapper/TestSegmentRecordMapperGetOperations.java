@@ -46,7 +46,6 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.Objects;
 import java.util.stream.IntStream;
-import java.util.stream.LongStream;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -512,7 +511,54 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         SequenceOfPoints sequenceOfPoints = mapper.get(segment);
 
         assertEquals(new SequenceOfPoints(0, new Point[]{new Point(1, 2), new Point(3,4)}, 5), sequenceOfPoints);
+    }
 
+    public record SequenceListPoint(int before, List<Point> points, int after) {}
+
+    @Test
+    public void testSequenceListPoints() {
+
+        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 5).toArray());
+
+        var layout = MemoryLayout.structLayout(
+                JAVA_INT.withName("before"),
+                MemoryLayout.sequenceLayout(2, POINT_LAYOUT).withName("points"),
+                JAVA_INT.withName("after")
+        );
+
+        var mapper = SegmentMapper.ofRecord(SequenceListPoint.class, layout);
+
+        SequenceListPoint sequenceOfPoints = mapper.get(segment);
+
+        Object o = sequenceOfPoints.points();
+        System.out.println("o = " + o);
+        System.out.println("o.getClass().isArray() = " + o.getClass().isArray());
+        System.out.println("o.getClass().componentType() = " + o.getClass().componentType());
+
+        assertEquals(new SequenceListPoint(0, List.of(new Point(1, 2), new Point(3,4)), 5), sequenceOfPoints);
+    }
+
+    public record Points(List<Point> points) {}
+
+    @Test
+    public void testPoints() {
+
+        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 3).toArray());
+
+        var layout = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(2, POINT_LAYOUT).withName("points")
+        );
+
+        var mapper = SegmentMapper.ofRecord(Points.class, layout);
+
+        Points sequenceOfPoints = mapper.get(segment);
+
+        Object o = sequenceOfPoints.points();
+        System.out.println("o = " + o);
+        System.out.println("o.getClass().isArray() = " + o.getClass().isArray());
+        System.out.println("o.getClass().componentType() = " + o.getClass().componentType());
+
+        assertEquals(new Points(List.of(new Point(0, 1), new Point(2,3))), sequenceOfPoints);
     }
 
     @Test

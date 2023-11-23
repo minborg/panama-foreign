@@ -19,10 +19,8 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TransferQueue;
 import java.util.function.Function;
 import java.util.function.IntPredicate;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -77,6 +75,14 @@ public final class Util {
         return LOOKUP.findStatic(Util.class, "toArray", methodType);
     }
 
+    static MethodHandle findStaticFromArray(MethodType methodType) throws NoSuchMethodException, IllegalAccessException {
+        return LOOKUP.findStatic(Util.class, "fromArray", methodType);
+    }
+
+    static MethodHandle findStaticFromList(MethodType methodType) throws NoSuchMethodException, IllegalAccessException {
+        return LOOKUP.findStatic(Util.class, "fromList", methodType);
+    }
+
     // Wrapper to create an array of Records
 
     static <R> R[] toArray(MemorySegment segment,
@@ -84,22 +90,22 @@ public final class Util {
                            long offset,
                            long count,
                            Class<R> type,
-                           MethodHandle mapper) {
+                           MethodHandle getMapper) {
 
         var slice = slice(segment, elementLayout, offset, count);
-        return toArray(slice, elementLayout, type, mapper);
+        return toArray(slice, elementLayout, type, getMapper);
     }
 
     @SuppressWarnings("unchecked")
     static <R> R[] toArray(MemorySegment segment,
                            GroupLayout elementLayout,
                            Class<R> type,
-                           MethodHandle mapper) {
+                           MethodHandle getMapper) {
 
         return segment.elements(elementLayout)
                 .map(s -> {
                     try {
-                        return (R) mapper.invokeExact(s, 0L);
+                        return (R) getMapper.invokeExact(s, 0L);
                     } catch (Throwable t) {
                         throw new IllegalArgumentException(t);
                     }
@@ -108,6 +114,37 @@ public final class Util {
                 .toArray(s -> (R[]) Array.newInstance(type, Math.toIntExact(s)));
     }
 
+    static <R> void fromArray(MemorySegment segment,
+                              GroupLayout elementLayout,
+                              long offset,
+                              MethodHandle setMapper,
+                              R[] records) {
+        for (int i = 0; i < records.length; i++) {
+            try {
+                setMapper.invokeExact(segment,
+                        offset + i * elementLayout.byteSize(),
+                        records[i]);
+            } catch (Throwable t) {
+                throw new IllegalArgumentException(t);
+            }
+        }
+    }
+
+    static <R> void fromList(MemorySegment segment,
+                              GroupLayout elementLayout,
+                              long offset,
+                              MethodHandle setMapper,
+                              List<R> records) {
+        for (int i = 0; i < records.size(); i++) {
+            try {
+                setMapper.invokeExact(segment,
+                        offset + i * elementLayout.byteSize(),
+                        records.get(i));
+            } catch (Throwable t) {
+                throw new IllegalArgumentException(t);
+            }
+        }
+    }
 
     public static MethodHandle findStaticListToArray(MethodType methodType) throws NoSuchMethodException, IllegalAccessException {
         return LOOKUP.findStatic(Util.class, "listToArray", methodType);

@@ -152,6 +152,41 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
         assertContentEquals(segmentOf(0,1,2,3), segment);
     }
 
+    public record SequenceListPoint(int before, List<Point> points, int after) {}
+
+    @Test
+    public void testSequenceListPoint() {
+
+        var layout = MemoryLayout.structLayout(
+                JAVA_INT.withName("before"),
+                MemoryLayout.sequenceLayout(2, POINT_LAYOUT).withName("points"),
+                JAVA_INT.withName("after")
+        );
+
+        var mapper = SegmentMapper.ofRecord(SequenceListPoint.class, layout);
+        var segment = arena.allocate(layout);
+        mapper.set(segment, new SequenceListPoint(0, List.of(new Point(1, 2), new Point(3, 4)), 5));
+
+        assertContentEquals(segmentOf(0, 1, 2, 3, 4, 5), segment);
+    }
+
+    public record SequenceArrayPoint(int before, Point[] points, int after) {}
+
+    @Test
+    public void testSequenceArrayPoint() {
+
+        var layout = MemoryLayout.structLayout(
+                JAVA_INT.withName("before"),
+                MemoryLayout.sequenceLayout(2, POINT_LAYOUT).withName("points"),
+                JAVA_INT.withName("after")
+        );
+
+        var mapper = SegmentMapper.ofRecord(SequenceArrayPoint.class, layout);
+        var segment = arena.allocate(layout);
+        mapper.set(segment, new SequenceArrayPoint(0, new Point[]{new Point(1, 2), new Point(3, 4)}, 5));
+
+        assertContentEquals(segmentOf(0, 1, 2, 3, 4, 5), segment);
+    }
 
     @Test
     void genericTypesRecord() {

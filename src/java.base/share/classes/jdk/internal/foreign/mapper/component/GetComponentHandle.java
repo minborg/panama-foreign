@@ -1,6 +1,5 @@
 package jdk.internal.foreign.mapper.component;
 
-import java.lang.foreign.AddressLayout;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.PaddingLayout;
@@ -11,7 +10,6 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.RecordComponent;
 import java.util.List;
-import java.util.function.Function;
 
 import static jdk.internal.foreign.mapper.component.Util.*;
 import static jdk.internal.foreign.mapper.component.Util.GET_TYPE;
@@ -58,20 +56,20 @@ final class GetComponentHandle<T>
 
     @Override
     public MethodHandle handle(SequenceLayout sl,
-                               RecordComponent component,
+                               RecordComponent recordComponent,
                                long byteOffset) throws NoSuchMethodException, IllegalAccessException {
 
         assertSequenceLayoutValid(sl);
 
-        var componentType = component.getType();
-        ContainerType containerType = ContainerType.of(componentType, sl);
+        var recordComponentType = recordComponent.getType();
+        ContainerType containerType = ContainerType.of(recordComponentType, sl);
 
-        Class<?> valueType = componentType.isArray()
-                ? componentType.getComponentType()
-                : firstGenericType(component);
+        Class<?> valueType = recordComponentType.isArray()
+                ? recordComponentType.getComponentType()
+                : firstGenericType(recordComponent);
 
-        // Faster single-dimensional arrays
-        switch (sl.elementLayout()) {
+        // Single-dimensional arrays
+        return switch (sl.elementLayout()) {
             case ValueLayout vl -> {
                 var mt = MethodType.methodType(vl.carrier().arrayType(),
                         MemorySegment.class, topValueLayoutType(vl), long.class, long.class);
@@ -90,10 +88,11 @@ final class GetComponentHandle<T>
                     mh = MethodHandles.filterReturnValue(mh, finisher);
                 }
 
-                return castReturnType(transposeOffset(mh, byteOffset), component.getType());
+                yield castReturnType(
+                        transposeOffset(mh, byteOffset), recordComponent.getType());
             }
             case GroupLayout gl -> {
-                // The "local" byteOffset for the record component mapper is zero
+                // The "local" byteOffset for the record recordComponent mapper is zero
                 var componentMapper = recordMapper(valueType, gl, 0);
                 try {
                     var mt = MethodType.methodType(Object.class.arrayType(),
@@ -114,15 +113,15 @@ final class GetComponentHandle<T>
                     mh = MethodHandles.insertArguments(mh, 1, gl);
                     // (MemorySegment, long offset) -> (MemorySegment, long offset)Record[]
                     mh = transposeOffset(mh, byteOffset);
-                    // (MemorySegment, long offset)Record[] -> (MemorySegment, long)componentType
-                    return MethodHandles.explicitCastArguments(mh, GET_TYPE.changeReturnType(component.getType()));
+                    // (MemorySegment, long offset)Record[] -> (MemorySegment, long)recordComponentType
+                    yield MethodHandles.explicitCastArguments(mh, GET_TYPE.changeReturnType(recordComponent.getType()));
                 } catch (NoSuchMethodException | IllegalAccessException e) {
                     throw new RuntimeException(e);
                 }
             }
-            case SequenceLayout _ ->  throw new InternalError("Should not reach here");
-            case PaddingLayout  _ -> throw fail(component, sl);
-        }
+            case SequenceLayout _ -> throw new InternalError("Should not reach here");
+            case PaddingLayout _ -> throw fail(recordComponent, sl);
+        };
     }
 
 }

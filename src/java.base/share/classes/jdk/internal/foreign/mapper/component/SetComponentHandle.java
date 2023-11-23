@@ -73,25 +73,21 @@ final class SetComponentHandle<T>
 
     @Override
     public MethodHandle handle(SequenceLayout sl,
-                               RecordComponent component,
+                               RecordComponent recordComponent,
                                long byteOffset) throws NoSuchMethodException, IllegalAccessException {
 
         assertSequenceLayoutValid(sl);
 
-        var componentType = component.getType();
-        ContainerType containerType = ContainerType.of(componentType, sl);
-
-        Class<?> valueType = componentType.isArray()
-                ? componentType.getComponentType()
-                : firstGenericType(component);
+        var recordComponentType = recordComponent.getType();
+        ContainerType containerType = ContainerType.of(recordComponentType, sl);
 
         // (T)[x] or (T)List<x>
-        MethodHandle extractor = lookup.unreflect(component.getAccessor());
+        MethodHandle extractor = lookup.unreflect(recordComponent.getAccessor());
 
         // Only single-dimensional arrays/Lists are supported
-        switch (sl.elementLayout()) {
+        return switch (sl.elementLayout()) {
             case ValueLayout vl -> {
-                // assertTypesMatch(component, valueType, vl);
+                // assertTypesMatch(recordComponent, valueType, vl);
 
                 var mt = MethodType.methodType(void.class,
                         Object.class, int.class,
@@ -126,42 +122,73 @@ final class SetComponentHandle<T>
                 // -> (MemorySegment, long, T)void
                 mh = MethodHandles.filterArguments(mh, 2, extractor.asType(MethodType.methodType(Object.class, extractor.type().parameterType(0))));
                 // -> (MemorySegment, long, T)void
-                return Util.transposeOffset(mh, byteOffset);
+                yield Util.transposeOffset(mh, byteOffset);
             }
-            case GroupLayout gl -> {
-                // Todo: Fix me!
-                return SET_NO_OP;
-                /*
-                // The "local" byteOffset for the record component mapper is zero
-                var componentMapper = recordMapper(info.type(), gl, 0);
+            case GroupLayout gl when containerType == ContainerType.ARRAY -> {
+
+                Class<?> valueType = recordComponentType.getComponentType();
+
+                // The "local" byteOffset for the record recordComponent mapper is zero
+                var componentMapper = recordMapper(valueType, gl, 0);
                 try {
-                    var mt = MethodType.methodType(Object.class.arrayType(),
-                            MemorySegment.class, GroupLayout.class, long.class, long.class, Class.class, MethodHandle.class);
-                    var mh = Util.findStaticToArray(mt);
-                    var mapper = componentMapper.getHandle().asType(GET_TYPE);
-                    // (MemorySegment, GroupLayout, long offset, long count, Class, MethodHandle) ->
-                    // (MemorySegment, GroupLayout, long offset, long count, Class)
-                    mh = MethodHandles.insertArguments(mh, 5, mapper);
-                    // (MemorySegment, GroupLayout, long offset, long count, Class) ->
-                    // (MemorySegment, GroupLayout, long offset, long count)
-                    mh = MethodHandles.insertArguments(mh, 4, componentMapper.type());
-                    // (MemorySegment, GroupLayout, long offset, long count) ->
-                    // (MemorySegment, GroupLayout, long offset)
-                    mh = MethodHandles.insertArguments(mh, 3, info.sequences().getFirst().elementCount());
-                    // (MemorySegment, GroupLayout, long offset) ->
-                    // (MemorySegment, long offset)
+                    var mt = MethodType.methodType(void.class,
+                            MemorySegment.class, GroupLayout.class, long.class, MethodHandle.class, Object[].class);
+                    var mh = Util.findStaticFromArray(mt);
+                    var mapper = componentMapper.setHandle().asType(SET_TYPE);
+                    // (MemorySegment, GroupLayout, long offset, MethodHandle, Object[])void ->
+                    // (MemorySegment, GroupLayout, long offset, Object[])void
+                    mh = MethodHandles.insertArguments(mh, 3, mapper);
+                    // (MemorySegment, GroupLayout, long offset, Object[])void ->
+                    // (MemorySegment, long offset, Object[])void
                     mh = MethodHandles.insertArguments(mh, 1, gl);
-                    // (MemorySegment, long offset) -> (MemorySegment, long offset)Record[]
+
+                    if (containerType == ContainerType.LIST) {
+
+                    }
+
+                    // (MemorySegment, long offset, Object[])void ->
+                    // (MemorySegment, long offset, T)void
+                    mh = MethodHandles.filterArguments(mh, 2, extractor.asType(MethodType.methodType(Object[].class, extractor.type().parameterType(0))));
+
+                    // (MemorySegment, long offset, Object[])void -> (MemorySegment, long offset, Object[])void
                     mh = Util.transposeOffset(mh, byteOffset);
-                    // (MemorySegment, long offset)Record[] -> (MemorySegment, long)componentType
-                    return MethodHandles.explicitCastArguments(mh, GET_TYPE.changeReturnType(component.getType()));
+                    // (MemorySegment, long offset, Object[])void -> (MemorySegment, long offset, Object)void
+                    yield MethodHandles.explicitCastArguments(mh, SET_TYPE);
                 } catch (NoSuchMethodException | IllegalAccessException e) {
                     throw new RuntimeException(e);
-                }*/
+                }
+            }
+            case GroupLayout gl -> {
+
+                Class<?> valueType = firstGenericType(recordComponent);
+
+                // The "local" byteOffset for the record recordComponent mapper is zero
+                var componentMapper = recordMapper(valueType, gl, 0);
+                try {
+                    var mt = MethodType.methodType(void.class,
+                            MemorySegment.class, GroupLayout.class, long.class, MethodHandle.class, List.class);
+                    var mh = Util.findStaticFromList(mt);
+                    var mapper = componentMapper.setHandle().asType(SET_TYPE);
+                    // (MemorySegment, GroupLayout, long offset, MethodHandle, List)void ->
+                    // (MemorySegment, GroupLayout, long offset, List)void
+                    mh = MethodHandles.insertArguments(mh, 3, mapper);
+                    // (MemorySegment, GroupLayout, long offset, List)void ->
+                    // (MemorySegment, long offset, List)void
+                    mh = MethodHandles.insertArguments(mh, 1, gl);
+                    // (MemorySegment, long offset, List)void ->
+                    // (MemorySegment, long offset, T)void
+                    mh = MethodHandles.filterArguments(mh, 2, extractor.asType(MethodType.methodType(List.class, extractor.type().parameterType(0))));
+                    // (MemorySegment, long offset, T)void -> (MemorySegment, long offset, T)void
+                    mh = Util.transposeOffset(mh, byteOffset);
+                    // (MemorySegment, long offset, T)void -> (MemorySegment, long offset, Object)void
+                    yield MethodHandles.explicitCastArguments(mh, SET_TYPE);
+                } catch (NoSuchMethodException | IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
             }
             case SequenceLayout _ ->  throw new InternalError("Should not reach here");
-            case PaddingLayout _ -> throw fail(component, sl);
-        }
+            case PaddingLayout _ -> throw fail(recordComponent, sl);
+        };
 
     }
 

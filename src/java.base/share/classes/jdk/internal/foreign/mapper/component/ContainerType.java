@@ -31,19 +31,36 @@ package jdk.internal.foreign.mapper.component;
 
 import java.lang.foreign.SequenceLayout;
 import java.util.List;
+import java.util.Set;
 
 enum ContainerType {
-    ARRAY, LIST;
+    ARRAY(false),
+    LIST(true),
+    SET(true);
+
+    private final boolean collection;
+
+    ContainerType(boolean collection) {
+        this.collection = collection;
+    }
+
+    boolean isCollection() {
+        return collection;
+    }
 
     static ContainerType of(Class<?> recordComponentType,
                             SequenceLayout sl) {
         if (recordComponentType.isArray()) {
             return ARRAY;
         }
-        if (recordComponentType.isAssignableFrom(List.class)) {
+        if (recordComponentType.equals(List.class)) {
             return LIST;
         }
+        if (recordComponentType.equals(Set.class)) {
+            return SET;
+        }
         throw new IllegalArgumentException("Unable to map '" + sl + "' " +
-                "because the component '" + recordComponentType + "' is not an array or a List.");
+                "because the component '" + recordComponentType + "' is not an array or " +
+                " a List.");
     }
 }

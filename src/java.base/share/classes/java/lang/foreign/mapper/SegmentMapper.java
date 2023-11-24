@@ -351,7 +351,9 @@ public interface SegmentMapper<T> {
                  IllegalArgumentException rethrow) {
             throw rethrow;
         } catch (Throwable e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Unable to invoke getHandle() with " +
+                    "segment="  + segment +
+                    ", offset=" + offset, e);
         }
     }
 
@@ -457,7 +459,10 @@ public interface SegmentMapper<T> {
                  UnsupportedOperationException rethrow) {
             throw rethrow;
         } catch (Throwable e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Unable to invoke setHandle() with " +
+                    "segment=" + segment +
+                    ", offset=" + offset +
+                    ", t=" + t, e);
         }
     }
 

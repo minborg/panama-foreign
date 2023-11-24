@@ -111,8 +111,9 @@ final class GetComponentHandle<T>
                 // (MemorySegment, OfX, long offset)x[] -> (MemorySegment, long offset)x[]
                 mh = MethodHandles.insertArguments(mh, 1, vl);
                 // (MemorySegment, long offset)x[] -> (MemorySegment, long offset)x[]
+                mh = Transpose.transposeOffset(mh, byteOffset);
 
-                if (containerType == ContainerType.LIST) {
+                if (containerType.isCollection()) {
                     // (OfX, [x])List<X>
                     MethodHandle finisher = Util.findStaticArrayToList(MethodType.methodType(
                             List.class,
@@ -120,11 +121,13 @@ final class GetComponentHandle<T>
                             vl.carrier().arrayType()));
                     // (OfX, [x])List<X> -> ([x])List<X>
                     finisher = MethodHandles.insertArguments(finisher, 0, vl);
+                    if (containerType == ContainerType.SET) {
+                        // ([x])List<X> -> ([x])Set<X>
+                        finisher = MethodHandles.filterReturnValue(finisher, SET_AS_COPY_OF_LIST);
+                    }
                     mh = MethodHandles.filterReturnValue(mh, finisher);
                 }
-
-                yield castReturnType(
-                        Transpose.transposeOffset(mh, byteOffset), recordComponent.getType());
+                yield castReturnType(mh, recordComponent.getType());
             }
             case GroupLayout gl -> {
                 // The "local" byteOffset for the record recordComponent mapper is zero
@@ -155,9 +158,13 @@ final class GetComponentHandle<T>
                     // (MemorySegment, long offset)Record[] -> (MemorySegment, long offset)Record[]
                     mh = Transpose.transposeOffset(mh, byteOffset);
 
-                    if (containerType == ContainerType.LIST) {
+                    if (containerType.isCollection()) {
                         // (MemorySegment, long offset)Record[] -> (MemorySegment, long offset)List
                         mh = MethodHandles.filterReturnValue(mh, LIST_OF);
+                        if (containerType.equals(ContainerType.SET)) {
+                            // (MemorySegment, long offset)List -> (MemorySegment, long offset)Set
+                            mh = MethodHandles.filterReturnValue(mh, SET_AS_COPY_OF_LIST);
+                        }
                     }
 
                     // (MemorySegment, long offset)(Record[] | List)

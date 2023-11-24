@@ -37,6 +37,8 @@ import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.IntStream;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -180,6 +182,27 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
         mapper.set(segment, new SequenceArrayPoint(0, new Point[]{new Point(1, 2), new Point(3, 4)}, 5));
 
         assertContentEquals(segmentOf(0, 1, 2, 3, 4, 5), segment);
+    }
+
+    @Test
+    public void testPointSet() {
+
+        var layout = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(2, POINT_LAYOUT).withName("points")
+        );
+
+        var segment = arena.allocate(layout);
+
+        var mapper = SegmentMapper.ofRecord(PointSet.class, layout);
+
+        mapper.set(segment, new PointSet(Set.of(new Point(0, 1), new Point(2,3))));
+
+        // The iteration order is undefined
+        try {
+            assertContentEquals(segmentOf(0, 1, 2, 3), segment);
+        } catch (AssertionError _) {
+            assertContentEquals(segmentOf(2, 3, 1, 2), segment);
+        }
     }
 
     @Test

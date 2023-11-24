@@ -42,7 +42,9 @@ import java.lang.reflect.Array;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public final class Util {
@@ -63,14 +65,39 @@ public final class Util {
     // (x[])List<X>
     public static final MethodHandle LIST_OF;
 
+    // A MethodHandle of type (List)Set that creates a new Set from a List
+    // (List<X>)Set<X>
+    public static final MethodHandle SET_AS_COPY_OF_LIST;
+
+    // A MethodHandle of type (Set)List that creates a new List from a Set
+    // (Set<X>)List<X>
+    public static final MethodHandle LIST_AS_COPY_OF_SET;
+
     static {
         try {
-            SUM_LONG = LOOKUP.findStatic(Long.class,
+            SUM_LONG = MethodHandles.publicLookup().findStatic(Long.class,
                     "sum",
                     MethodType.methodType(long.class, long.class, long.class));
             LIST_OF = MethodHandles.publicLookup().findStatic(List.class,
                     "of",
                     MethodType.methodType(List.class, Object[].class));
+
+            var setCopyOf = MethodHandles.publicLookup().findStatic(Set.class,
+                    "copyOf",
+                    MethodType.methodType(Set.class, Collection.class));
+            var listAsCollection = LOOKUP.findStatic(Util.class,
+                    "listAsCollection",
+                    MethodType.methodType(Collection.class, List.class));
+            SET_AS_COPY_OF_LIST = MethodHandles.filterArguments(setCopyOf, 0, listAsCollection);
+
+            var listCopyOf = MethodHandles.publicLookup().findStatic(List.class,
+                    "copyOf",
+                    MethodType.methodType(List.class, Collection.class));
+            var setAsCollection = LOOKUP.findStatic(Util.class,
+                    "setAsCollection",
+                    MethodType.methodType(Collection.class, Set.class));
+            LIST_AS_COPY_OF_SET = MethodHandles.filterArguments(listCopyOf, 0, setAsCollection);
+
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -402,6 +429,13 @@ public final class Util {
         return List.of(in);
     }
 
+    private static <T> Collection<T> listAsCollection(List<T> list) {
+        return list;
+    }
+
+    private static <T> Collection<T> setAsCollection(Set<T> set) {
+        return set;
+    }
 
     // End: Reflectively used methods
 
@@ -441,6 +475,5 @@ public final class Util {
             throw new IllegalArgumentException("Arrays of booleans (" + sl.elementLayout() + ") are not supported");
         }
     }
-
 
 }

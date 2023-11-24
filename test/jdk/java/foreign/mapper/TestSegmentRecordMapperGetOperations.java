@@ -43,6 +43,7 @@ import java.lang.invoke.VarHandle;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.Objects;
 import java.util.stream.IntStream;
@@ -543,6 +544,22 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         Points sequenceOfPoints = mapper.get(segment);
 
         assertEquals(new Points(List.of(new Point(0, 1), new Point(2,3))), sequenceOfPoints);
+    }
+
+    @Test
+    public void testPointSet() {
+
+        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 3).toArray());
+
+        var layout = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(2, POINT_LAYOUT).withName("points")
+        );
+
+        var mapper = SegmentMapper.ofRecord(PointSet.class, layout);
+
+        PointSet sequenceOfPoints = mapper.get(segment);
+
+        assertEquals(new PointSet(Set.of(new Point(0, 1), new Point(2,3))), sequenceOfPoints);
     }
 
     @Test

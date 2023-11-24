@@ -110,7 +110,7 @@ final class SetComponentHandle<T>
         var recordComponentType = recordComponent.getType();
         ContainerType containerType = ContainerType.of(recordComponentType, sl);
 
-        // (T)[x] or (T)List<x>
+        // (T)[x] or (T)(Set<X> | List<X>)
         MethodHandle extractor = lookup.unreflect(recordComponent.getAccessor());
 
         // Only single-dimensional arrays/Lists are supported
@@ -194,7 +194,11 @@ final class SetComponentHandle<T>
                     // (MemorySegment, GroupLayout, long offset, List)void ->
                     // (MemorySegment, long offset, List)void
                     mh = MethodHandles.insertArguments(mh, 1, gl);
-                    // (MemorySegment, long offset, List)void ->
+                    if (containerType.equals(ContainerType.SET)) {
+                        // (T)Set<X> -> (T)List<X>
+                        extractor = MethodHandles.filterReturnValue(extractor, LIST_AS_COPY_OF_SET);
+                    }
+                    // (MemorySegment, long offset, (List|Set))void ->
                     // (MemorySegment, long offset, T)void
                     mh = MethodHandles.filterArguments(mh, 2, extractor.asType(MethodType.methodType(List.class, extractor.type().parameterType(0))));
                     // (MemorySegment, long offset, T)void -> (MemorySegment, long offset, T)void

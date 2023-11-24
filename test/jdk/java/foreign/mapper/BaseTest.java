@@ -32,6 +32,7 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.util.List;
+import java.util.Set;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 
@@ -56,6 +57,8 @@ public abstract class BaseTest {
     public record SequenceListPoint(int before, List<Point> points, int after) {}
 
     public record Points(List<Point> points) {}
+
+    public record PointSet(Set<Point> points) {}
 
     public interface PointAccessor {
         int x();

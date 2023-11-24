@@ -1,0 +1,90 @@
+digraph g {
+fontname="Helvetica,Arial,sans-serif"
+node [fontname="Helvetica,Arial,sans-serif"]
+edge [fontname="Helvetica,Arial,sans-serif"]
+graph [
+rankdir = "LR"
+];
+node [
+fontsize = "16"
+shape = "ellipse"
+];
+edge [
+];
+"node0" [
+label = "<h>Segment|<f0>0|<f1>1|<f2>2|<f3>3|<f4>4|<f5>5|<f6>6|<f7>7|<f8>8|<f9>9|<fa>a|<fb>b|<fc>c|<fd>d|<fe>e|<ff>f"
+shape = "record"
+style= "filled", fillcolor="gray90"
+];
+"node1" [
+label = "<h>Extractor:int| <f0> | <f1> | <f2> | <f3>"
+shape = "record"
+];
+"node2" [
+label = "<h>Extractor:int| <f0> | <f1> | <f2> | <f3>"
+shape = "record"
+];
+"node3" [
+label = "<h>Extractor:int| <f0> | <f1> | <f2> | <f3>"
+shape = "record"
+];
+"node4" [
+label = "<h>Extractor:int| <f0> | <f1> | <f2> | <f3>"
+shape = "record"
+];
+"begin" [
+label = "<h>record Point| <f0> int x| <f1> int y"
+shape = "record"
+];
+"end" [
+label = "<h>record Point| <f0> int x| <f1> int y"
+shape = "record"
+];
+"line" [
+label = "<h>record Line| <f0> Point begin| <f1> Point end"
+shape = "record"
+];
+"node0":f0 -> "node1":f0 [
+id = 0
+];
+"node0":f3 -> "node1":f3 [
+id = 1
+];
+"node0":f4 -> "node2":f0 [
+id = 2
+];
+"node0":f7 -> "node2":f3 [
+id = 3
+];
+"node0":f8 -> "node3":f0 [
+id = 0
+];
+"node0":fb -> "node3":f3 [
+id = 1
+];
+"node0":fc -> "node4":f0 [
+id = 2
+];
+"node0":ff -> "node4":f3 [
+id = 3
+];
+"node1":h -> "begin":f0 [
+id = 2
+];
+"node2":h -> "begin":f1 [
+id = 3
+];
+"node3":h -> "end":f0 [
+id = 2
+];
+"node4":h -> "end":f1 [
+id = 3
+];
+"begin":h -> "line":f0 [
+id = 2
+];
+"end":h -> "line":f1 [
+id = 3
+];
+
+}

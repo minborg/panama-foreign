@@ -34,16 +34,16 @@ abstract sealed class AbstractComponentHandle<T>
     }
 
     @Override
-    public MethodHandle handle(RecordComponent component) {
-        var pathElement = MemoryLayout.PathElement.groupElement(component.getName());
+    public MethodHandle handle(RecordComponent recordComponent) {
+        var pathElement = MemoryLayout.PathElement.groupElement(recordComponent.getName());
         var componentLayout = layout.select(pathElement);
         var byteOffset = layout.byteOffset(pathElement) + offset;
         try {
             return switch (componentLayout) {
-                case ValueLayout vl    -> handle(vl, component, byteOffset);
-                case GroupLayout gl    -> handle(gl, component, byteOffset);
-                case SequenceLayout sl -> handle(sl, component, byteOffset);
-                case PaddingLayout _   -> throw fail(component, componentLayout);
+                case ValueLayout vl    -> handle(vl, recordComponent, byteOffset);
+                case GroupLayout gl    -> handle(gl, recordComponent, byteOffset);
+                case SequenceLayout sl -> handle(sl, recordComponent, byteOffset);
+                case PaddingLayout _   -> throw fail(recordComponent, componentLayout);
             };
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new InternalError(e);

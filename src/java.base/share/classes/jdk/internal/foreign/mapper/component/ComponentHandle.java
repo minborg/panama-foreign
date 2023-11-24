@@ -17,14 +17,14 @@ import static jdk.internal.foreign.layout.MemoryLayoutUtil.requireNonNegative;
 public sealed interface ComponentHandle<T>
         permits AbstractComponentHandle, GetComponentHandle, SetComponentHandle {
 
-    MethodHandle handle(RecordComponent component);
+    MethodHandle handle(RecordComponent recordComponent);
 
     MethodHandle handle(ValueLayout vl,
-                        RecordComponent component,
+                        RecordComponent recordComponent,
                         long byteOffset) throws NoSuchMethodException, IllegalAccessException;
 
     MethodHandle handle(GroupLayout gl,
-                        RecordComponent component,
+                        RecordComponent recordComponent,
                         long byteOffset) throws NoSuchMethodException, IllegalAccessException;
 
     MethodHandle handle(SequenceLayout sl,

@@ -26,17 +26,17 @@ final class SetComponentHandle<T>
     }
 
     @Override
-    public MethodHandle handle(RecordComponent component) {
-        return super.handle(component)
+    public MethodHandle handle(RecordComponent recordComponent) {
+        return super.handle(recordComponent)
                 .asType(SET_TYPE);
     }
 
     @Override
     public MethodHandle handle(ValueLayout vl,
-                               RecordComponent component,
+                               RecordComponent recordComponent,
                                long byteOffset) throws NoSuchMethodException, IllegalAccessException {
 
-        assertTypesMatch(component, component.getType(), vl);
+        assertTypesMatch(recordComponent, recordComponent.getType(), vl);
 
         var mt = MethodType.methodType(void.class, topValueLayoutType(vl), long.class, vl.carrier());
         var mh = MethodHandles.publicLookup().findVirtual(MemorySegment.class, "set", mt);
@@ -47,7 +47,7 @@ final class SetComponentHandle<T>
         mh = Util.transposeOffset(mh, byteOffset);
 
         // (Object)x
-        MethodHandle extractor = lookup.unreflect(component.getAccessor());
+        MethodHandle extractor = lookup.unreflect(recordComponent.getAccessor());
         // (MemorySegment, long, x) -> (MemorySegment, long, Object)
         mh = MethodHandles.filterArguments(mh, 2, extractor);
         return mh;
@@ -55,16 +55,16 @@ final class SetComponentHandle<T>
 
     @Override
     public MethodHandle handle(GroupLayout gl,
-                               RecordComponent component,
+                               RecordComponent recordComponent,
                                long byteOffset) throws IllegalAccessException {
         // (T)x
-        MethodHandle extractor = lookup.unreflect(component.getAccessor());
+        MethodHandle extractor = lookup.unreflect(recordComponent.getAccessor());
 
         // (T)Object
         extractor = extractor.asType(extractor.type().changeReturnType(Object.class));
 
         // (MemorySegment, long, T)
-        MethodHandle mh = recordMapper(component.getType(), gl, byteOffset)
+        MethodHandle mh = recordMapper(recordComponent.getType(), gl, byteOffset)
                 .setHandle();
 
         // (MemorySegment, long, T) -> (MemorySegment, long, x)

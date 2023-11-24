@@ -370,6 +370,11 @@ public final class Util {
         return List.of(arr);
     }
 
+    private static List<?> arrayToList(Object[] in) {
+        return List.of(in);
+    }
+
+
     // End: Reflectively used methods
 
     private static MemorySegment slice(MemorySegment segment,

@@ -4,16 +4,17 @@ import java.lang.foreign.SequenceLayout;
 import java.util.List;
 
 enum ContainerType {
-    UNKNOWN, ARRAY, LIST;
+    ARRAY, LIST;
 
-    static ContainerType of(Class<?> componentType, SequenceLayout sl) {
-        if (componentType.isArray()) {
+    static ContainerType of(Class<?> recordComponentType,
+                            SequenceLayout sl) {
+        if (recordComponentType.isArray()) {
             return ARRAY;
         }
-        if (componentType.isAssignableFrom(List.class)) {
+        if (recordComponentType.isAssignableFrom(List.class)) {
             return LIST;
         }
-        throw new IllegalArgumentException("Unable to map '" + sl +
-                "' because the component '" + componentType.getName() + " " + componentType.componentType().getName() + "' is not an array or a List.");
+        throw new IllegalArgumentException("Unable to map '" + sl + "' " +
+                "because the component '" + recordComponentType + "' is not an array or a List.");
     }
 }

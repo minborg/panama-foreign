@@ -61,8 +61,6 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
         arena.close();
     }
 
-    public record Empty(){}
-
     @Test
     void empty() {
         var mapper = SegmentMapper.ofRecord(Empty.class, POINT_LAYOUT);
@@ -151,8 +149,6 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
 
         assertContentEquals(segmentOf(0,1,2,3), segment);
     }
-
-    public record SequenceListPoint(int before, List<Point> points, int after) {}
 
     @Test
     public void testSequenceListPoint() {

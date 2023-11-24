@@ -188,8 +188,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         );
     }
 
-    public record Empty() {}
-
     @Test
     public void testEmptyRecord() {
         var mapper = SegmentMapper.ofRecord(Empty.class, POINT_LAYOUT);
@@ -513,8 +511,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         assertEquals(new SequenceOfPoints(0, new Point[]{new Point(1, 2), new Point(3,4)}, 5), sequenceOfPoints);
     }
 
-    public record SequenceListPoint(int before, List<Point> points, int after) {}
-
     @Test
     public void testSequenceListPoints() {
 
@@ -530,15 +526,8 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
         SequenceListPoint sequenceOfPoints = mapper.get(segment);
 
-        Object o = sequenceOfPoints.points();
-        System.out.println("o = " + o);
-        System.out.println("o.getClass().isArray() = " + o.getClass().isArray());
-        System.out.println("o.getClass().componentType() = " + o.getClass().componentType());
-
         assertEquals(new SequenceListPoint(0, List.of(new Point(1, 2), new Point(3,4)), 5), sequenceOfPoints);
     }
-
-    public record Points(List<Point> points) {}
 
     @Test
     public void testPoints() {
@@ -552,11 +541,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         var mapper = SegmentMapper.ofRecord(Points.class, layout);
 
         Points sequenceOfPoints = mapper.get(segment);
-
-        Object o = sequenceOfPoints.points();
-        System.out.println("o = " + o);
-        System.out.println("o.getClass().isArray() = " + o.getClass().isArray());
-        System.out.println("o.getClass().componentType() = " + o.getClass().componentType());
 
         assertEquals(new Points(List.of(new Point(0, 1), new Point(2,3))), sequenceOfPoints);
     }

@@ -1,5 +1,6 @@
 package java.lang.foreign.mapper;
 
+import jdk.internal.foreign.mapper.InternalLayoutGenerators;
 import jdk.internal.foreign.mapper.MapperUtil;
 
 import java.lang.foreign.GroupLayout;
@@ -38,7 +39,7 @@ public final class LayoutGenerators {
      */
     public static <T> GroupLayout ofInterface(Class<T> type) {
         MapperUtil.requireImplementableInterfaceType(type);
-        return MapperUtil.groupLayoutOf(type);
+        return InternalLayoutGenerators.groupLayoutOf(type);
     }
 
     /**
@@ -66,7 +67,7 @@ public final class LayoutGenerators {
      */
     public static <T extends Record> GroupLayout ofRecord(Class<T> type) {
         MapperUtil.requireRecordType(type);
-        return MapperUtil.groupLayoutOf(type);
+        return InternalLayoutGenerators.groupLayoutOf(type);
     }
 
 }

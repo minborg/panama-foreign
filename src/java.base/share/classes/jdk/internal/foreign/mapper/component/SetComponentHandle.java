@@ -44,7 +44,7 @@ final class SetComponentHandle<T>
         mh = MethodHandles.insertArguments(mh, 1, vl);
 
         // (MemorySegment, long, x) -> (MemorySegment, long, x)
-        mh = Util.transposeOffset(mh, byteOffset);
+        mh = Transpose.transposeOffset(mh, byteOffset);
 
         // (Object)x
         MethodHandle extractor = lookup.unreflect(recordComponent.getAccessor());
@@ -122,7 +122,7 @@ final class SetComponentHandle<T>
                 // -> (MemorySegment, long, T)void
                 mh = MethodHandles.filterArguments(mh, 2, extractor.asType(MethodType.methodType(Object.class, extractor.type().parameterType(0))));
                 // -> (MemorySegment, long, T)void
-                yield Util.transposeOffset(mh, byteOffset);
+                yield Transpose.transposeOffset(mh, byteOffset);
             }
             case GroupLayout gl when containerType == ContainerType.ARRAY -> {
                 Class<?> valueType = recordComponentType.getComponentType();
@@ -143,7 +143,7 @@ final class SetComponentHandle<T>
                     // (MemorySegment, long offset, T)void
                     mh = MethodHandles.filterArguments(mh, 2, extractor.asType(MethodType.methodType(Object[].class, extractor.type().parameterType(0))));
                     // (MemorySegment, long offset, Object[])void -> (MemorySegment, long offset, Object[])void
-                    mh = Util.transposeOffset(mh, byteOffset);
+                    mh = Transpose.transposeOffset(mh, byteOffset);
                     // (MemorySegment, long offset, Object[])void -> (MemorySegment, long offset, Object)void
                     yield MethodHandles.explicitCastArguments(mh, SET_TYPE);
                 } catch (NoSuchMethodException | IllegalAccessException e) {
@@ -169,7 +169,7 @@ final class SetComponentHandle<T>
                     // (MemorySegment, long offset, T)void
                     mh = MethodHandles.filterArguments(mh, 2, extractor.asType(MethodType.methodType(List.class, extractor.type().parameterType(0))));
                     // (MemorySegment, long offset, T)void -> (MemorySegment, long offset, T)void
-                    mh = Util.transposeOffset(mh, byteOffset);
+                    mh = Transpose.transposeOffset(mh, byteOffset);
                     // (MemorySegment, long offset, T)void -> (MemorySegment, long offset, Object)void
                     yield MethodHandles.explicitCastArguments(mh, SET_TYPE);
                 } catch (NoSuchMethodException | IllegalAccessException e) {

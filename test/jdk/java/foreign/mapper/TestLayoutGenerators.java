@@ -29,6 +29,7 @@
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.mapper.LayoutGenerators;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -56,6 +57,13 @@ final class TestLayoutGenerators extends BaseTest {
     void fromLine() {
         GroupLayout layout = LayoutGenerators.ofRecord(Line.class);
         assertEquals(LINE_LAYOUT.withName(Line.class.getName()), layout);
+    }
+
+    @Test
+    void fromPoints() {
+        assertThrows(IllegalArgumentException.class, () ->
+                LayoutGenerators.ofRecord(Points.class)
+        );
     }
 
     @Test

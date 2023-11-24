@@ -2,6 +2,7 @@ import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
+import java.util.List;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 
@@ -15,11 +16,17 @@ public abstract class BaseTest {
             POINT_LAYOUT.withName("begin"),
             POINT_LAYOUT.withName("end"));
 
+    public record Empty(){}
+
     public record Point(int x, int y){}
 
     public record TinyPoint(byte x, byte y){}
 
     public record Line(Point begin, Point end){}
+
+    public record SequenceListPoint(int before, List<Point> points, int after) {}
+
+    public record Points(List<Point> points) {}
 
     public interface PointAccessor {
         int x();

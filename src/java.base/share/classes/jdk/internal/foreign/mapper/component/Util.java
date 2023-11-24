@@ -34,15 +34,22 @@ public final class Util {
             MemorySegment.class, long.class, Object.class);
 
     // A MethodHandle of type (long, long)long that adds the two terms
-    private static final MethodHandle SUM_LONG;
+    static final MethodHandle SUM_LONG;
     // A MethodHandle of type (MemorySegment, long, Object)void that does nothing
     public static final MethodHandle SET_NO_OP = MethodHandles.empty(SET_TYPE);
+
+    // A MethodHandle of type (Object[])List that creates a new List from an Object array
+    // (x[])List<X>
+    public static final MethodHandle LIST_OF;
 
     static {
         try {
             SUM_LONG = LOOKUP.findStatic(Long.class,
                     "sum",
                     MethodType.methodType(long.class, long.class, long.class));
+            LIST_OF = MethodHandles.publicLookup().findStatic(List.class,
+                    "of",
+                    MethodType.methodType(List.class, Object[].class));
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -383,80 +390,6 @@ public final class Util {
                                        long count) {
 
         return segment.asSlice(offset, elementLayout.byteSize() * count);
-    }
-
-    static Object toMultiArrayFunction(MemorySegment segment,
-                                       MultidimensionalSequenceLayoutInfo info,
-                                       long offset,
-                                       Class<?> leafType,
-                                       Function<MemorySegment, Object> leafArrayConstructor) {
-
-        int[] dimensions = info.dimensions();
-        // Create the array to return
-        Object result = Array.newInstance(leafType, dimensions);
-
-        int firstDimension = info.firstDimension();
-
-        var infoFirstRemoved = info.removeFirst();
-        int secondDimension = infoFirstRemoved.firstDimension();
-        long chunkByteSize = infoFirstRemoved.layoutByteSize();
-
-        for (int i = 0; i < firstDimension; i++) {
-            Object part;
-            if (dimensions.length == 2) {
-                // Trivial case: Just extract the array from the memory segment
-                var slice = slice(segment, info.elementLayout(), offset + i * chunkByteSize, secondDimension);
-                part = leafArrayConstructor.apply(slice);
-            } else {
-                // Recursively convert to arrays of (dimension - 1)
-                var slice = segment.asSlice(i * chunkByteSize);
-                part = toMultiArrayFunction(slice, infoFirstRemoved, offset, leafType, leafArrayConstructor);
-            }
-            Array.set(result, i, part);
-        }
-        return result;
-    }
-
-    // Transposing offsets
-
-    private static final Map<Long, MethodHandle> TRANSPOSERS = new ConcurrentHashMap<>();
-    private static final IntPredicate CACHED;
-
-    static {
-        BitSet set = new BitSet();
-        // Likely common offsets
-        // {1, 2, 3, 4, 6, 8, 12, 16, 24, 32}
-        IntStream.rangeClosed(1, 4)
-                .flatMap(i -> IntStream.of(i,
-                        i * Short.BYTES,
-                        i * Integer.BYTES,
-                        i * Long.BYTES))
-                .forEach(set::set);
-        CACHED = ImmutableBitSetPredicate.of(set);
-    }
-
-    public static MethodHandle transposeOffset(MethodHandle mh,
-                                               long offset) {
-        return offset == 0
-                ? mh // Nothing to do
-                // (MemorySegment, long)x -> (MemorySegment, long)x
-                : MethodHandles.filterArguments(mh, 1, transposing(offset));
-    }
-
-    private static MethodHandle transposing(long offset) {
-        return isCached(offset)
-                ? TRANSPOSERS.computeIfAbsent(offset, Util::transposing0)
-                : transposing0(offset);
-    }
-
-    private static MethodHandle transposing0(long offset) {
-        // (long, long)long -> (long)long
-        return MethodHandles.insertArguments(Util.SUM_LONG, 1, offset);
-    }
-
-    private static boolean isCached(long offset) {
-        return offset < Integer.MAX_VALUE - 1 &&
-                CACHED.test((int) offset);
     }
 
     public static Class<?> firstGenericType(RecordComponent rc) {

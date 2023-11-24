@@ -37,7 +37,7 @@ final class GetComponentHandle<T>
         // (MemorySegment, OfX, long)x -> (MemorySegment, long)x
         mh = MethodHandles.insertArguments(mh, 1, vl);
 
-        return transposeOffset(mh, byteOffset);
+        return Transpose.transposeOffset(mh, byteOffset);
     }
 
     @Override
@@ -95,7 +95,7 @@ final class GetComponentHandle<T>
                 }
 
                 yield castReturnType(
-                        transposeOffset(mh, byteOffset), recordComponent.getType());
+                        Transpose.transposeOffset(mh, byteOffset), recordComponent.getType());
             }
             case GroupLayout gl -> {
                 // The "local" byteOffset for the record recordComponent mapper is zero
@@ -124,16 +124,11 @@ final class GetComponentHandle<T>
                     // (MemorySegment, long offset)
                     mh = MethodHandles.insertArguments(mh, 1, gl);
                     // (MemorySegment, long offset)Record[] -> (MemorySegment, long offset)Record[]
-                    mh = transposeOffset(mh, byteOffset);
+                    mh = Transpose.transposeOffset(mh, byteOffset);
 
                     if (containerType == ContainerType.LIST) {
-                        // ([x])List<X>
-                        MethodHandle finisher = MethodHandles.publicLookup().findStatic(
-                                List.class,
-                                "of",
-                                MethodType.methodType(List.class, Object[].class));
                         // (MemorySegment, long offset)Record[] -> (MemorySegment, long offset)List
-                        mh = MethodHandles.filterReturnValue(mh, finisher);
+                        mh = MethodHandles.filterReturnValue(mh, LIST_OF);
                     }
 
                     // (MemorySegment, long offset)(Record[] | List)

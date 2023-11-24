@@ -29,13 +29,13 @@
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.mapper.LayoutGenerators;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 final class TestLayoutGenerators extends BaseTest {
 
+    @Test
     void nulls() {
         assertThrows(NullPointerException.class, () ->
                 LayoutGenerators.ofRecord(null)

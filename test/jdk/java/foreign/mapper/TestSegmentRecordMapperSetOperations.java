@@ -201,7 +201,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
         try {
             assertContentEquals(segmentOf(0, 1, 2, 3), segment);
         } catch (AssertionError _) {
-            assertContentEquals(segmentOf(2, 3, 1, 2), segment);
+            assertContentEquals(segmentOf(2, 3, 0, 1), segment);
         }
     }
 

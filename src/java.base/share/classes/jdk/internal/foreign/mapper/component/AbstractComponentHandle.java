@@ -42,7 +42,7 @@ import java.lang.reflect.RecordComponent;
 
 abstract sealed class AbstractComponentHandle<T>
         implements ComponentHandle<T>
-        permits GetComponentHandle, SetComponentHandle {
+        permits RecordGetComponentHandle, InterfaceGetComponentHandle, RecordSetComponentHandle {
 
     final MethodHandles.Lookup lookup;
     final Class<T> type;

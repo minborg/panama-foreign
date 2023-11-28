@@ -42,15 +42,15 @@ import java.util.List;
 
 import static jdk.internal.foreign.mapper.component.Util.*;
 
-final class SetComponentHandle<T>
+final class RecordSetComponentHandle<T>
         extends AbstractComponentHandle<T>
         implements ComponentHandle<T> {
 
-    SetComponentHandle(MethodHandles.Lookup lookup,
-                       Class<T> type,
-                       GroupLayout layout,
-                       long offset,
-                       int depth) {
+    RecordSetComponentHandle(MethodHandles.Lookup lookup,
+                             Class<T> type,
+                             GroupLayout layout,
+                             long offset,
+                             int depth) {
         super(lookup, type, layout, offset, depth);
     }
 

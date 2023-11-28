@@ -44,7 +44,7 @@ import static jdk.internal.foreign.layout.MemoryLayoutUtil.requireNonNegative;
  * Interface to model the resolving of get and set method handles.
  */
 public sealed interface ComponentHandle<T>
-        permits AbstractComponentHandle, GetComponentHandle, SetComponentHandle {
+        permits AbstractComponentHandle, RecordGetComponentHandle, InterfaceGetComponentHandle, RecordSetComponentHandle {
 
     MethodHandle handle(RecordComponent recordComponent);
 
@@ -68,7 +68,7 @@ public sealed interface ComponentHandle<T>
         Objects.requireNonNull(type);
         Objects.requireNonNull(initialLayout);
         requireNonNegative(offset);
-        return new GetComponentHandle<>(lookup, type, initialLayout, offset, 0);
+        return new RecordGetComponentHandle<>(lookup, type, initialLayout, offset, 0);
     }
 
     static <T> ComponentHandle<T> ofSet(MethodHandles.Lookup lookup,
@@ -79,7 +79,19 @@ public sealed interface ComponentHandle<T>
         Objects.requireNonNull(type);
         Objects.requireNonNull(initialLayout);
         requireNonNegative(offset);
-        return new SetComponentHandle<>(lookup, type, initialLayout, offset, 0);
+        return new RecordSetComponentHandle<>(lookup, type, initialLayout, offset, 0);
     }
+
+    static <T> ComponentHandle<T> ofInterfaceGet(MethodHandles.Lookup lookup,
+                                                 Class<T> type,
+                                                 GroupLayout initialLayout,
+                                                 long offset) {
+        Objects.requireNonNull(lookup);
+        Objects.requireNonNull(type);
+        Objects.requireNonNull(initialLayout);
+        requireNonNegative(offset);
+        return new RecordGetComponentHandle<>(lookup, type, initialLayout, offset, 0);
+    }
+
 
 }

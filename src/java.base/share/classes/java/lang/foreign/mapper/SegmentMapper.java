@@ -1,6 +1,7 @@
 package java.lang.foreign.mapper;
 
 import jdk.internal.foreign.mapper.MapperUtil;
+import jdk.internal.foreign.mapper.SegmentInterfaceMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper;
 
 import java.lang.foreign.GroupLayout;
@@ -200,7 +201,7 @@ import java.util.stream.Stream;
  * static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
  *
  * // Automatically adds a segment() method that connects to the backing segment
- * public interface PointAccessor extends SegmentMapper.SegmentBacked {
+ * public interface PointAccessor extends SegmentBacked {
  *     int x();
  *     void x(int x);
  *     int y();
@@ -228,7 +229,7 @@ import java.util.stream.Stream;
  *     }
  *
  * }
- * }
+ *}
  *
  * <h2 id="formal-mapping">Formal mapping description</h2>
  *
@@ -253,24 +254,6 @@ import java.util.stream.Stream;
 // Todo: Check all exceptions in JavaDocs: See TestScopedOperations
 // Todo: Consider generating a graphics rendering.
 public interface SegmentMapper<T> {
-
-    /**
-     * Exposes the backing memory segment for segment mapped interfaces.
-     * <p>
-     * Interfaces types provided to factory methods of SegmentMapper that are
-     * implementing the {@code SegmentBacked} interface will obtain an extra method
-     * {@code segment()} that will return the backing segment for the interface
-     * (either internal or external).
-     * <p>
-     * It is an error to let a record implement this interface and then provide such
-     * a record type to any of the record factory methods of SegmentMapper.
-     */
-    interface SegmentBacked {
-        /**
-         * {@return the segment that backs this interface (internal or external)}
-         */
-        MemorySegment segment();
-    }
 
     /**
      * {@return the type that this mapper is mapping to and from}
@@ -681,7 +664,7 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
-        return new SegmentRecordMapper<>(lookup, type, layout, 0, 0);
+        return new SegmentInterfaceMapper<>(lookup, type, layout, 0, 0);
     }
 
 }

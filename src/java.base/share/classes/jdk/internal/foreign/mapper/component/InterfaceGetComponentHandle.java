@@ -41,17 +41,16 @@ import java.lang.reflect.RecordComponent;
 import java.util.List;
 
 import static jdk.internal.foreign.mapper.component.Util.*;
-import static jdk.internal.foreign.mapper.component.Util.GET_TYPE;
 
-final class GetComponentHandle<T>
+final class InterfaceGetComponentHandle<T>
         extends AbstractComponentHandle<T>
         implements ComponentHandle<T> {
 
-    GetComponentHandle(MethodHandles.Lookup lookup,
-                       Class<T> type,
-                       GroupLayout layout,
-                       long offset,
-                       int depth) {
+    InterfaceGetComponentHandle(MethodHandles.Lookup lookup,
+                                Class<T> type,
+                                GroupLayout layout,
+                                long offset,
+                                int depth) {
         super(lookup, type, layout, offset, depth);
     }
 

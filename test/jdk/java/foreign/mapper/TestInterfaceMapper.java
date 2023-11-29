@@ -33,6 +33,7 @@
 
 import jdk.internal.classfile.AccessFlags;
 import jdk.internal.classfile.AttributeMapper;
+import jdk.internal.classfile.BootstrapMethodEntry;
 import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.ClassModel;
 import jdk.internal.classfile.Classfile;
@@ -40,6 +41,7 @@ import jdk.internal.classfile.CodeElement;
 import jdk.internal.classfile.CodeModel;
 import jdk.internal.classfile.FieldModel;
 import jdk.internal.classfile.Instruction;
+import jdk.internal.classfile.Label;
 import jdk.internal.classfile.MethodElement;
 import jdk.internal.classfile.MethodModel;
 import jdk.internal.classfile.attribute.MethodParameterInfo;
@@ -76,20 +78,33 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
+import java.lang.constant.DirectMethodHandleDesc;
+import java.lang.constant.DirectMethodHandleDesc.Kind;
+import java.lang.constant.DynamicCallSiteDesc;
+import java.lang.constant.MethodHandleDesc;
 import java.lang.constant.MethodTypeDesc;
+import java.lang.foreign.Arena;
+import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.mapper.SegmentBacked;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.AccessFlag;
-import java.lang.reflect.InvocationTargetException;
+import java.lang.runtime.ObjectMethods;
 import java.nio.file.Files;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Collection;
+import java.util.HexFormat;
 
 import static java.lang.constant.ConstantDescs.*;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.util.stream.Collectors.joining;
 import static jdk.internal.classfile.Classfile.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -105,7 +120,7 @@ final class TestInterfaceMapper {
     }
 
     @Test
-    void fromModel() {
+    void fromModel() throws IOException {
 
         ClassDesc genClassDesc = ClassDesc.of("SomeName");
         ClassDesc interfaceClassDesc = ClassDesc.of(PointAccessor.class.getName());
@@ -117,33 +132,39 @@ final class TestInterfaceMapper {
 
         // class SomeName
         byte[] bytes = Classfile.of(ClassHierarchyResolverOption.of(ClassHierarchyResolver.ofClassLoading(loader))).build(genClassDesc, cb -> {
-            cb.withFlags(ACC_PUBLIC | ACC_FINAL | ACC_SYNTHETIC);
+            cb.withFlags(ACC_PUBLIC | ACC_FINAL | ACC_SUPER);
             // extends Record
             cb.withSuperclass(recordClassDesc);
             // implements PointAccessor
             //cb.withInterfaces(cb.constantPool().classEntry(interfaceClassDesc));
             cb.withInterfaceSymbols(interfaceClassDesc);
             // private final MemorySegment segment;
-            cb.withField("segment", ClassDesc.of(MemorySegment.class.getName()),ACC_PRIVATE | ACC_FINAL);
+            cb.withField("segment", memorySegmentClassDesc,ACC_PRIVATE | ACC_FINAL);
+            // private final long offset;
+            cb.withField("offset", CD_long, ACC_PRIVATE | ACC_FINAL);
 
             // Constructor <init> (MemorySegment segment)
-            //   public TestInterfaceMapper$PointAccessorImpl(java.lang.foreign.MemorySegment);
-            //    descriptor: (Ljava/lang/foreign/MemorySegment;)V
+            // public TestInterfaceMapper$PointAccessorImpl(java.lang.foreign.MemorySegment, long);
+            //    descriptor: (Ljava/lang/foreign/MemorySegment;J)V
             //    flags: (0x0001) ACC_PUBLIC
             //    Code:
-            //      stack=2, locals=2, args_size=2
+            //      stack=3, locals=4, args_size=3
             //         0: aload_0
             //         1: invokespecial #1                  // Method java/lang/Record."<init>":()V
             //         4: aload_0
             //         5: aload_1
             //         6: putfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-            //         9: return
+            //         9: aload_0
+            //        10: lload_2
+            //        11: putfield      #13                 // Field offset:J
+            //        14: return
             //      LineNumberTable:
-            //        line 51: 0
+            //        line 524: 0
             //    MethodParameters:
             //      Name                           Flags
             //      segment
-            cb.withMethodBody(ConstantDescs.INIT_NAME, MethodTypeDesc.of(CD_void, memorySegmentClassDesc), Classfile.ACC_PUBLIC, cob ->
+            //      offset
+            cb.withMethodBody(ConstantDescs.INIT_NAME, MethodTypeDesc.of(CD_void, memorySegmentClassDesc, CD_long), Classfile.ACC_PUBLIC, cob ->
                     cob.aload(0)
                     // Call Record's constructor
                     .invokespecial(recordClassDesc, ConstantDescs.INIT_NAME, ConstantDescs.MTD_void, false)
@@ -151,106 +172,317 @@ final class TestInterfaceMapper {
                     .aload(0)
                     .aload(1)
                     .putfield(genClassDesc, "segment", memorySegmentClassDesc)
+                    // Set "offset"
+                    .aload(0)
+                    .lload(2)
+                    .putfield(genClassDesc, "offset", CD_long)
                     .return_());
 
-            // 8: {opcode: INVOKEVIRTUAL, owner: java/lang/foreign/MemorySegment, method name: get, method type: (Ljava/lang/foreign/MemorySegment;Ljava/lang/foreign/ValueLayout$OfInt;J)I}
-
-            //  public int x();
+            //    public int x();
             //    descriptor: ()I
             //    flags: (0x0001) ACC_PUBLIC
             //    Code:
             //      stack=4, locals=1, args_size=1
             //         0: aload_0
             //         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-            //         4: getstatic     #13                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-            //         7: lconst_0
-            //         8: invokeinterface #19,  4           // InterfaceMethod java/lang/foreign/MemorySegment.get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
-            //        13: ireturn
+            //         4: getstatic     #17                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
+            //         7: aload_0
+            //         8: getfield      #13                 // Field offset:J
+            //        11: invokeinterface #23,  4           // InterfaceMethod java/lang/foreign/MemorySegment.get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
+            //        16: ireturn
             //      LineNumberTable:
-            //        line 56: 0
-
+            //        line 529: 0
             cb.withMethodBody("x", MethodTypeDesc.of(CD_int), Classfile.ACC_PUBLIC, cob ->
                     cob.aload(0)
                             .getfield(genClassDesc, "segment", memorySegmentClassDesc)
                             .getstatic(valueLayoutsClassDesc, "JAVA_INT", desc(ValueLayout.OfInt.class))
-                            .lconst_0()
+                            .aload(0)
+                            .getfield(genClassDesc, "offset", CD_long)
                             .invokeinterface(memorySegmentClassDesc, "get", MethodTypeDesc.of(CD_int, desc(ValueLayout.OfInt.class), CD_long))
                             .ireturn()
             );
 
+            //  public int y();
+            //    descriptor: ()I
+            //    flags: (0x0001) ACC_PUBLIC
+            //    Code:
+            //      stack=6, locals=1, args_size=1
+            //         0: aload_0
+            //         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
+            //         4: getstatic     #17                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
+            //         7: aload_0
+            //         8: getfield      #13                 // Field offset:J
+            //        11: ldc2_w        #29                 // long 4l
+            //        14: ladd
+            //        15: invokeinterface #23,  4           // InterfaceMethod java/lang/foreign/MemorySegment.get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
+            //        20: ireturn
+            //      LineNumberTable:
+            //        line 534: 0
             cb.withMethodBody("y", MethodTypeDesc.of(CD_int), Classfile.ACC_PUBLIC, cob ->
                     cob.aload(0)
                             .getfield(genClassDesc, "segment", memorySegmentClassDesc)
                             .getstatic(valueLayoutsClassDesc, "JAVA_INT", desc(ValueLayout.OfInt.class))
+                            .aload(0)
+                            .getfield(genClassDesc, "offset", CD_long)
                             .ldc(4L)
+                            .ladd()
                             .invokeinterface(memorySegmentClassDesc, "get", MethodTypeDesc.of(CD_int, desc(ValueLayout.OfInt.class), CD_long))
                             .ireturn()
             );
 
-            //   public void x(int);
+            // public void x(int);
             //    descriptor: (I)V
             //    flags: (0x0001) ACC_PUBLIC
             //    Code:
             //      stack=5, locals=2, args_size=2
             //         0: aload_0
             //         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-            //         4: getstatic     #13                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-            //         7: lconst_0
-            //         8: iload_1
-            //         9: invokeinterface #27,  5           // InterfaceMethod java/lang/foreign/MemorySegment.set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
-            //        14: return
+            //         4: getstatic     #17                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
+            //         7: aload_0
+            //         8: getfield      #13                 // Field offset:J
+            //        11: iload_1
+            //        12: invokeinterface #31,  5           // InterfaceMethod java/lang/foreign/MemorySegment.set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
+            //        17: return
             //      LineNumberTable:
-            //        line 66: 0
-            //        line 67: 14
+            //        line 539: 0
+            //        line 540: 17
             cb.withMethodBody("x", MethodTypeDesc.of(CD_void, CD_int), Classfile.ACC_PUBLIC, cob ->
                     cob.aload(0)
                             .getfield(genClassDesc, "segment", memorySegmentClassDesc)
                             .getstatic(valueLayoutsClassDesc, "JAVA_INT", desc(ValueLayout.OfInt.class))
-                            .lconst_0()
+                            .aload(0)
+                            .getfield(genClassDesc, "offset", CD_long)
                             .iload(1)
                             .invokeinterface(memorySegmentClassDesc, "get", MethodTypeDesc.of(CD_void, desc(ValueLayout.OfInt.class), CD_long, CD_int))
                             .return_()
             );
 
+            //  public void y(int);
+            //    descriptor: (I)V
+            //    flags: (0x0001) ACC_PUBLIC
+            //    Code:
+            //      stack=6, locals=2, args_size=2
+            //         0: aload_0
+            //         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
+            //         4: getstatic     #17                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
+            //         7: aload_0
+            //         8: getfield      #13                 // Field offset:J
+            //        11: ldc2_w        #29                 // long 4l
+            //        14: ladd
+            //        15: iload_1
+            //        16: invokeinterface #31,  5           // InterfaceMethod java/lang/foreign/MemorySegment.set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
+            //        21: return
+            //      LineNumberTable:
+            //        line 544: 0
+            //        line 545: 21
             cb.withMethodBody("y", MethodTypeDesc.of(CD_void, CD_int), Classfile.ACC_PUBLIC, cob ->
                     cob.aload(0)
                             .getfield(genClassDesc, "segment", memorySegmentClassDesc)
                             .getstatic(valueLayoutsClassDesc, "JAVA_INT", desc(ValueLayout.OfInt.class))
+                            .aload(0)
+                            .getfield(genClassDesc, "offset", CD_long)
                             .ldc(4L)
+                            .ladd()
                             .iload(1)
                             .invokeinterface(memorySegmentClassDesc, "get", MethodTypeDesc.of(CD_void, desc(ValueLayout.OfInt.class), CD_long, CD_int))
                             .return_()
             );
 
+            //  public java.lang.foreign.MemorySegment segment();
+            //    descriptor: ()Ljava/lang/foreign/MemorySegment;
+            //    flags: (0x0001) ACC_PUBLIC
+            //    Code:
+            //      stack=1, locals=1, args_size=1
+            //         0: aload_0
+            //         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
+            //         4: areturn
+            //      LineNumberTable:
+            //        line 524: 0
+            cb.withMethodBody("segment", MethodTypeDesc.of(memorySegmentClassDesc), Classfile.ACC_PUBLIC, cob ->
+                    cob.aload(0)
+                            .getfield(genClassDesc, "segment", memorySegmentClassDesc)
+                            .areturn()
+            );
 
+            cb.withMethodBody("offset", MethodTypeDesc.of(CD_long), Classfile.ACC_PUBLIC, cob ->
+                    cob.aload(0)
+                            .getfield(genClassDesc, "offset", CD_long)
+                            .lreturn()
+            );
+
+
+            cb.withMethodBody("toString", MethodTypeDesc.of(CD_String), Classfile.ACC_PUBLIC | ACC_FINAL, cob -> {
+
+                        DirectMethodHandleDesc bootstrap = ConstantDescs.ofCallsiteBootstrap(
+                                ClassDesc.of(StringConcatFactory.class.getName()),
+                                "makeConcatWithConstants",
+                                CD_CallSite,
+                                CD_String, CD_Object.arrayType()
+                        );
+
+                String recipe = "PointAccessor[x()=\u0001, y()=\u0001]";
+                        DynamicCallSiteDesc desc = DynamicCallSiteDesc.of(
+                                bootstrap,
+                                "toString",
+                                MethodTypeDesc.of(CD_String, CD_int, CD_int), // String, x, y
+                                recipe
+                        );
+
+                        cob.aload(0)
+                                .invokevirtual(genClassDesc, "x", MethodTypeDesc.of(CD_int)) // Method x:()I
+                                .aload(0)
+                                .invokevirtual(genClassDesc, "y", MethodTypeDesc.of(CD_int)) // Method y:()I
+                                .invokedynamic(desc)
+                                .areturn();
+                    }
+            );
+
+/*
+            cb.withMethodBody("toString", MethodTypeDesc.of(CD_String), Classfile.ACC_PUBLIC | ACC_FINAL, cob ->
+                    cob.aload(0)
+                            .getfield(genClassDesc, "offset", CD_long)
+                            .invokestatic(ClassDesc.of(Long.class.getName()), "toString", MethodTypeDesc.of(CD_String, CD_long))
+                            .areturn()
+            );
+*/
+
+/*            cb.withMethodBody("toString", MethodTypeDesc.of(CD_String), Classfile.ACC_PUBLIC | ACC_FINAL, cob -> {
+                        DirectMethodHandleDesc bootstrap = ConstantDescs.ofCallsiteBootstrap(
+                                ClassDesc.of(ObjectMethods.class.getName()),
+                                "bootstrap",
+                                CD_Object,
+                                CD_Class, CD_String, CD_MethodHandle.arrayType()
+                        );
+
+                        DynamicCallSiteDesc desc = DynamicCallSiteDesc.of(
+                                bootstrap,
+                                "toString",
+                                MethodTypeDesc.of(CD_String, genClassDesc),
+                                genClassDesc,
+                                "segment,offset",
+                                MethodHandleDesc.ofMethod(Kind.INTERFACE_VIRTUAL, genClassDesc, "segment", MethodTypeDesc.of(memorySegmentClassDesc, genClassDesc)),
+                                MethodHandleDesc.ofMethod(Kind.INTERFACE_VIRTUAL, genClassDesc, "offset", MethodTypeDesc.of(CD_long, genClassDesc))
+                        );
+
+                        cob.aload(0)
+                                .invokedynamic(desc)
+*//*                                .invokedynamic(DynamicCallSiteDesc.of(
+                                        MethodHandleDesc.ofMethod(
+                                                DirectMethodHandleDesc.Kind.STATIC,
+                                                ClassDesc.of(MethodHandles.lookup().lookupClass().getName()),
+                                                "toString",
+                                                MethodTypeDesc.of(CD_String, genClassDesc)
+                                        ),
+                                        "bootstrap",
+                                        MethodTypeDesc.of(CD_Object, CD_MethodHandles_Lookup, CD_String, CD_MethodTypeDesc, CD_Class, CD_String, CD_MethodHandle.arrayType()),
+                                        bootstrap))*//*
+                                .areturn();
+                    }
+            );*/
+
+            cb.withMethodBody("hashCode", MethodTypeDesc.of(CD_int), Classfile.ACC_PUBLIC | ACC_FINAL, cob ->
+                    cob.aload(0)
+                            .invokestatic(ClassDesc.of(System.class.getName()), "identityHashCode", MethodTypeDesc.of(CD_int, CD_Object))
+                            .ireturn()
+            );
+
+            //  public boolean equals(java.lang.Object);
+            //    descriptor: (Ljava/lang/Object;)Z
+            //    flags: (0x0001) ACC_PUBLIC
+            //    Code:
+            //      stack=2, locals=2, args_size=2
+            //         0: aload_0
+            //         1: aload_1
+            //         2: if_acmpne     9
+            //         5: iconst_1
+            //         6: goto          10
+            //         9: iconst_0
+            //        10: ireturn
+            //      LineNumberTable:
+            //        line 654: 0
+            //      StackMapTable: number_of_entries = 2
+            //        frame_type = 9 /* same */
+            //        frame_type = 64 /* same_locals_1_stack_item */
+            //          stack = [ int ]
+            cb.withMethodBody("equals", MethodTypeDesc.of(CD_boolean, CD_Object), Classfile.ACC_PUBLIC | ACC_FINAL, cob -> {
+                        Label l0 = cob.newLabel();
+                        Label l1 = cob.newLabel();
+                        cob.aload(0)
+                                .aload(1)
+                                .if_acmpne(l0)
+                                .iconst_1()
+                                .goto_(l1)
+                                .labelBinding(l0)
+                                .iconst_0()
+                                .labelBinding(l1)
+                                .ireturn()
+                        ;
+                    }
+            );
 
         });
+
+        Files.write(Path.of("/Users/pminborg/dev/minborg-panama/open/test/jdk/java/foreign/mapper/SomeName.class"), bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+        ClassModel cm = Classfile.of().parse(bytes);
+        javap(cm);
 
         try {
             @SuppressWarnings("unchecked")
             Class<PointAccessor> c = (Class<PointAccessor>) MethodHandles.lookup().defineClass(bytes);
 
-            MethodHandle ctor = MethodHandles.lookup().findConstructor(c, MethodType.methodType(void.class, MemorySegment.class));
+            MethodHandle ctor = MethodHandles.lookup().findConstructor(c, MethodType.methodType(void.class, MemorySegment.class, long.class));
             ctor = ctor.asType(ctor.type().changeReturnType(PointAccessor.class));
 
             var segment = MemorySegment.ofArray(new int[]{3, 4});
-            PointAccessor accessor = (PointAccessor) ctor.invokeExact(segment);
+            PointAccessor accessor = (PointAccessor) ctor.invokeExact(segment, 0L);
             int x = accessor.x();
             System.out.println("x = " + x);
             int y = accessor.y();
             System.out.println("y = " + y);
 
-            System.out.println("c = " + c);
+            System.out.println("accessor = " + accessor);
+            System.out.println("accessor.hashCode() = " + accessor.hashCode());
+            System.out.println("accessor.equals(\"A\") = " + accessor.equals("A"));
+            System.out.println("accessor.equals(accessor) = " + accessor.equals(accessor));
+            print(accessor.segment()); // .asSlice(accessor.offset())
+
+            PointAccessor accessor2 = new PointAccessorImpl(segment, 0L);
+            System.out.println("accessor2 = " + accessor2);
+            System.out.println("accessor2.hashCode() = " + accessor2.hashCode());
+
+            MethodHandle sh = MethodHandles.publicLookup().findStatic(MemorySegment.class,
+                    "copy",
+                    MethodType.methodType(void.class, MemorySegment.class, long.class, MemorySegment.class, long.class, long.class));
+            // ->(MS, l, MS, l)
+            //           -----
+            sh = MethodHandles.insertArguments(sh, 4, POINT_LAYOUT.byteSize());
+
+            MethodHandle segExtractor = MethodHandles.lookup().findVirtual(c, "segment", MethodType.methodType(MemorySegment.class));
+            MethodHandle offsetExtractor = MethodHandles.lookup().findVirtual(c, "offset", MethodType.methodType(long.class));
+            // ->(T, l, MS, l)
+            sh = MethodHandles.filterArguments(sh, 0, segExtractor);
+            // ->(T, T, MS, l)
+            sh = MethodHandles.filterArguments(sh, 1, offsetExtractor);
+            // ->(MS, l, T)
+            sh = MethodHandles.permuteArguments(sh, MethodType.methodType(void.class, MemorySegment.class, long.class, c), 2, 2, 0, 1);
+
+            sh = sh.asType(MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class));
+
+            var copy = Arena.ofAuto().allocate(POINT_LAYOUT);
+            sh.invokeExact(copy, 0L, (Object) accessor);
+            print(copy);
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
 
-        //TestInterfaceMapper.class.getClassLoader().
-
-
-        ClassModel cm = Classfile.of().parse(bytes);
-        javap(cm);
         fail();
+    }
+
+    static void print(MemorySegment segment) {
+        HexFormat hf = HexFormat.ofDelimiter(" ");
+        String hex = hf.formatHex(segment.toArray(JAVA_BYTE));
+        System.out.println(hex);
     }
 
     static ClassDesc desc(Class<?> clazz ) {
@@ -349,8 +581,25 @@ final class TestInterfaceMapper {
                 System.out.println(render(e));
             }
             System.out.println();
+
+
+            //BootstrapMethods:
+            //  0: #65 REF_invokeStatic java/lang/runtime/ObjectMethods.bootstrap:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;
+            //    Method arguments:
+            //      #8 TestInterfaceMapper$PointAccessorImpl
+            //      #63 segment
+            //      #64 REF_getField TestInterfaceMapper$PointAccessorImpl.segment:Ljava/lang/foreign/MemorySegment;
+            System.out.println("BootstrapMethods:");
+            for (int i = 0; i < cp.bootstrapMethodCount(); i++) {
+                BootstrapMethodEntry e = cp.bootstrapMethodEntry(i);
+                System.out.format("  %d: %s%n", e.bsmIndex(), e.bootstrapMethod());
+                System.out.println("    Method arguments:");
+                for (LoadableConstantEntry le : e.arguments()) {
+                    System.out.format("      #%d %s%n", le.index(), le);
+                }
+            }
+
         }
-        fail();
     }
 
     static String render(PoolEntry pe) {
@@ -514,6 +763,12 @@ final class TestInterfaceMapper {
         return sb.toString();
     }
 
+
+    GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
+            JAVA_INT.withName("x"),
+            JAVA_INT.withName("y")
+    );
+
     public interface PointAccessor extends SegmentBacked {
         int x();
         int y();
@@ -526,22 +781,37 @@ final class TestInterfaceMapper {
 
         @Override
         public int x() {
-            return segment.get(ValueLayout.JAVA_INT, offset);
+            return segment.get(JAVA_INT, offset);
         }
 
         @Override
         public int y() {
-            return segment.get(ValueLayout.JAVA_INT, offset + 4);
+            return segment.get(JAVA_INT, offset + 4);
         }
 
         @Override
         public void x(int x) {
-            segment.set(ValueLayout.JAVA_INT, offset, x);
+            segment.set(JAVA_INT, offset, x);
         }
 
         @Override
         public void y(int y) {
-            segment.set(ValueLayout.JAVA_INT, offset + 4, y);
+            segment.set(JAVA_INT, offset + 4, y);
+        }
+
+       @Override
+        public int hashCode() {
+            return System.identityHashCode(this);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return this == obj;
+        }
+
+        @Override
+        public String toString() {
+            return "PointAccessor[x=" + x() + ", y=" + y() + "]";
         }
     }
 
@@ -550,8 +820,8 @@ WITH OFFSET
 
 pminborg@pminborg-mac minborg-panama % javap -p -c -l -verbose  build/macosx-aarch64/test-support/jtreg_open_test_jdk_java_foreign_mapper_TestInterfaceMapper_java/classes/0/java/foreign/mapper/TestInterfaceMapper.d/TestInterfaceMapper\$PointAccessorImpl.class
 Classfile /Users/pminborg/dev/minborg-panama/build/macosx-aarch64/test-support/jtreg_open_test_jdk_java_foreign_mapper_TestInterfaceMapper_java/classes/0/java/foreign/mapper/TestInterfaceMapper.d/TestInterfaceMapper$PointAccessorImpl.class
-  Last modified Nov 28, 2023; size 2127 bytes
-  SHA-256 checksum 409d36b36aec9276bbb9d1192d367974bd9b52637891537bcaf4f97e5ee5e3f1
+  Last modified Nov 29, 2023; size 2127 bytes
+  SHA-256 checksum c5ff3f1646352268ead7c242bc43ffd9f795b0f35feb6d2a77c0ca6e092fd06b
   Compiled from "TestInterfaceMapper.java"
 public final class TestInterfaceMapper$PointAccessorImpl extends java.lang.Record implements TestInterfaceMapper$PointAccessor
   minor version: 0
@@ -673,7 +943,7 @@ Constant pool:
         11: putfield      #13                 // Field offset:J
         14: return
       LineNumberTable:
-        line 524: 0
+        line 713: 0
     MethodParameters:
       Name                           Flags
       segment
@@ -692,7 +962,7 @@ Constant pool:
         11: invokeinterface #23,  4           // InterfaceMethod java/lang/foreign/MemorySegment.get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
         16: ireturn
       LineNumberTable:
-        line 529: 0
+        line 718: 0
 
   public int y();
     descriptor: ()I
@@ -709,7 +979,7 @@ Constant pool:
         15: invokeinterface #23,  4           // InterfaceMethod java/lang/foreign/MemorySegment.get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
         20: ireturn
       LineNumberTable:
-        line 534: 0
+        line 723: 0
 
   public void x(int);
     descriptor: (I)V
@@ -725,8 +995,8 @@ Constant pool:
         12: invokeinterface #31,  5           // InterfaceMethod java/lang/foreign/MemorySegment.set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
         17: return
       LineNumberTable:
-        line 539: 0
-        line 540: 17
+        line 728: 0
+        line 729: 17
 
   public void y(int);
     descriptor: (I)V
@@ -744,8 +1014,8 @@ Constant pool:
         16: invokeinterface #31,  5           // InterfaceMethod java/lang/foreign/MemorySegment.set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
         21: return
       LineNumberTable:
-        line 544: 0
-        line 545: 21
+        line 733: 0
+        line 734: 21
 
   public final java.lang.String toString();
     descriptor: ()Ljava/lang/String;
@@ -756,7 +1026,7 @@ Constant pool:
          1: invokedynamic #35,  0             // InvokeDynamic #0:toString:(LTestInterfaceMapper$PointAccessorImpl;)Ljava/lang/String;
          6: areturn
       LineNumberTable:
-        line 524: 0
+        line 713: 0
 
   public final int hashCode();
     descriptor: ()I
@@ -767,7 +1037,7 @@ Constant pool:
          1: invokedynamic #39,  0             // InvokeDynamic #0:hashCode:(LTestInterfaceMapper$PointAccessorImpl;)I
          6: ireturn
       LineNumberTable:
-        line 524: 0
+        line 713: 0
 
   public final boolean equals(java.lang.Object);
     descriptor: (Ljava/lang/Object;)Z
@@ -779,7 +1049,7 @@ Constant pool:
          2: invokedynamic #43,  0             // InvokeDynamic #0:equals:(LTestInterfaceMapper$PointAccessorImpl;Ljava/lang/Object;)Z
          7: ireturn
       LineNumberTable:
-        line 524: 0
+        line 713: 0
 
   public java.lang.foreign.MemorySegment segment();
     descriptor: ()Ljava/lang/foreign/MemorySegment;
@@ -790,7 +1060,7 @@ Constant pool:
          1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
          4: areturn
       LineNumberTable:
-        line 524: 0
+        line 713: 0
 
   public long offset();
     descriptor: ()J
@@ -801,7 +1071,7 @@ Constant pool:
          1: getfield      #13                 // Field offset:J
          4: lreturn
       LineNumberTable:
-        line 524: 0
+        line 713: 0
 }
 SourceFile: "TestInterfaceMapper.java"
 NestHost: class TestInterfaceMapper
@@ -824,280 +1094,6 @@ InnerClasses:
   public static #83= #81 of #18;          // OfInt=class java/lang/foreign/ValueLayout$OfInt of class java/lang/foreign/ValueLayout
   public static #84= #47 of #64;          // PointAccessor=class TestInterfaceMapper$PointAccessor of class TestInterfaceMapper
   public static final #89= #85 of #87;    // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles
-
-
- */
-
-
-
-
-
-/*
-NO OFFSET
-
-pminborg@pminborg-mac minborg-panama % javap -p -c -l -verbose  build/macosx-aarch64/test-support/jtreg_open_test_jdk_java_foreign_mapper/classes/3/java/foreign/mapper/TestInterfaceMapper.d/TestInterfaceMapper\$PointAccessorImpl.class
-Classfile /Users/pminborg/dev/minborg-panama/build/macosx-aarch64/test-support/jtreg_open_test_jdk_java_foreign_mapper/classes/3/java/foreign/mapper/TestInterfaceMapper.d/TestInterfaceMapper$PointAccessorImpl.class
-  Last modified Nov 27, 2023; size 1992 bytes
-  SHA-256 checksum 1480e83b8bd17436038ec4d8e4ccaec69c75448c2f62f355129c533335adeea4
-  Compiled from "TestInterfaceMapper.java"
-public final class TestInterfaceMapper$PointAccessorImpl extends java.lang.Record implements TestInterfaceMapper$PointAccessor
-  minor version: 0
-  major version: 66
-  flags: (0x0031) ACC_PUBLIC, ACC_FINAL, ACC_SUPER
-  this_class: #8                          // TestInterfaceMapper$PointAccessorImpl
-  super_class: #2                         // java/lang/Record
-  interfaces: 1, fields: 1, methods: 9, attributes: 5
-Constant pool:
-   #1 = Methodref          #2.#3          // java/lang/Record."<init>":()V
-   #2 = Class              #4             // java/lang/Record
-   #3 = NameAndType        #5:#6          // "<init>":()V
-   #4 = Utf8               java/lang/Record
-   #5 = Utf8               <init>
-   #6 = Utf8               ()V
-   #7 = Fieldref           #8.#9          // TestInterfaceMapper$PointAccessorImpl.segment:Ljava/lang/foreign/MemorySegment;
-   #8 = Class              #10            // TestInterfaceMapper$PointAccessorImpl
-   #9 = NameAndType        #11:#12        // segment:Ljava/lang/foreign/MemorySegment;
-  #10 = Utf8               TestInterfaceMapper$PointAccessorImpl
-  #11 = Utf8               segment
-  #12 = Utf8               Ljava/lang/foreign/MemorySegment;
-  #13 = Fieldref           #14.#15        // java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-  #14 = Class              #16            // java/lang/foreign/ValueLayout
-  #15 = NameAndType        #17:#18        // JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-  #16 = Utf8               java/lang/foreign/ValueLayout
-  #17 = Utf8               JAVA_INT
-  #18 = Utf8               Ljava/lang/foreign/ValueLayout$OfInt;
-  #19 = InterfaceMethodref #20.#21        // java/lang/foreign/MemorySegment.get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
-  #20 = Class              #22            // java/lang/foreign/MemorySegment
-  #21 = NameAndType        #23:#24        // get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
-  #22 = Utf8               java/lang/foreign/MemorySegment
-  #23 = Utf8               get
-  #24 = Utf8               (Ljava/lang/foreign/ValueLayout$OfInt;J)I
-  #25 = Long               4l
-  #27 = InterfaceMethodref #20.#28        // java/lang/foreign/MemorySegment.set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
-  #28 = NameAndType        #29:#30        // set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
-  #29 = Utf8               set
-  #30 = Utf8               (Ljava/lang/foreign/ValueLayout$OfInt;JI)V
-  #31 = InvokeDynamic      #0:#32         // #0:toString:(LTestInterfaceMapper$PointAccessorImpl;)Ljava/lang/String;
-  #32 = NameAndType        #33:#34        // toString:(LTestInterfaceMapper$PointAccessorImpl;)Ljava/lang/String;
-  #33 = Utf8               toString
-  #34 = Utf8               (LTestInterfaceMapper$PointAccessorImpl;)Ljava/lang/String;
-  #35 = InvokeDynamic      #0:#36         // #0:hashCode:(LTestInterfaceMapper$PointAccessorImpl;)I
-  #36 = NameAndType        #37:#38        // hashCode:(LTestInterfaceMapper$PointAccessorImpl;)I
-  #37 = Utf8               hashCode
-  #38 = Utf8               (LTestInterfaceMapper$PointAccessorImpl;)I
-  #39 = InvokeDynamic      #0:#40         // #0:equals:(LTestInterfaceMapper$PointAccessorImpl;Ljava/lang/Object;)Z
-  #40 = NameAndType        #41:#42        // equals:(LTestInterfaceMapper$PointAccessorImpl;Ljava/lang/Object;)Z
-  #41 = Utf8               equals
-  #42 = Utf8               (LTestInterfaceMapper$PointAccessorImpl;Ljava/lang/Object;)Z
-  #43 = Class              #44            // TestInterfaceMapper$PointAccessor
-  #44 = Utf8               TestInterfaceMapper$PointAccessor
-  #45 = Utf8               (Ljava/lang/foreign/MemorySegment;)V
-  #46 = Utf8               Code
-  #47 = Utf8               LineNumberTable
-  #48 = Utf8               MethodParameters
-  #49 = Utf8               x
-  #50 = Utf8               ()I
-  #51 = Utf8               y
-  #52 = Utf8               (I)V
-  #53 = Utf8               ()Ljava/lang/String;
-  #54 = Utf8               (Ljava/lang/Object;)Z
-  #55 = Utf8               ()Ljava/lang/foreign/MemorySegment;
-  #56 = Utf8               SourceFile
-  #57 = Utf8               TestInterfaceMapper.java
-  #58 = Utf8               NestHost
-  #59 = Class              #60            // TestInterfaceMapper
-  #60 = Utf8               TestInterfaceMapper
-  #61 = Utf8               Record
-  #62 = Utf8               BootstrapMethods
-  #63 = String             #11            // segment
-  #64 = MethodHandle       1:#7           // REF_getField TestInterfaceMapper$PointAccessorImpl.segment:Ljava/lang/foreign/MemorySegment;
-  #65 = MethodHandle       6:#66          // REF_invokeStatic java/lang/runtime/ObjectMethods.bootstrap:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;
-  #66 = Methodref          #67.#68        // java/lang/runtime/ObjectMethods.bootstrap:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;
-  #67 = Class              #69            // java/lang/runtime/ObjectMethods
-  #68 = NameAndType        #70:#71        // bootstrap:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;
-  #69 = Utf8               java/lang/runtime/ObjectMethods
-  #70 = Utf8               bootstrap
-  #71 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;
-  #72 = Utf8               InnerClasses
-  #73 = Utf8               PointAccessorImpl
-  #74 = Class              #75            // java/lang/foreign/ValueLayout$OfInt
-  #75 = Utf8               java/lang/foreign/ValueLayout$OfInt
-  #76 = Utf8               OfInt
-  #77 = Utf8               PointAccessor
-  #78 = Class              #79            // java/lang/invoke/MethodHandles$Lookup
-  #79 = Utf8               java/lang/invoke/MethodHandles$Lookup
-  #80 = Class              #81            // java/lang/invoke/MethodHandles
-  #81 = Utf8               java/lang/invoke/MethodHandles
-  #82 = Utf8               Lookup
-{
-  private final java.lang.foreign.MemorySegment segment;
-    descriptor: Ljava/lang/foreign/MemorySegment;
-    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
-
-LineNumber[line=51]
-Load[OP=ALOAD_0, slot=0]
-Invoke[OP=INVOKESPECIAL, m=java/lang/Record.<init>()V]
-Load[OP=ALOAD_0, slot=0]
-Load[OP=ALOAD_1, slot=1]
-Field[OP=PUTFIELD, field=TestInterfaceMapper$PointAccessorImpl.segment:Ljava/lang/foreign/MemorySegment;]
-Return[OP=RETURN]
- UnboundMethodParameterInfo[name=Optional[segment], flagsMask=0]
-
-  public TestInterfaceMapper$PointAccessorImpl(java.lang.foreign.MemorySegment);
-    descriptor: (Ljava/lang/foreign/MemorySegment;)V
-    flags: (0x0001) ACC_PUBLIC
-    Code:
-      stack=2, locals=2, args_size=2
-         0: aload_0
-         1: invokespecial #1                  // Method java/lang/Record."<init>":()V
-         4: aload_0
-         5: aload_1
-         6: putfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-         9: return
-      LineNumberTable:
-        line 51: 0
-    MethodParameters:
-      Name                           Flags
-      segment
-
-  public int x();
-    descriptor: ()I
-    flags: (0x0001) ACC_PUBLIC
-    Code:
-      stack=4, locals=1, args_size=1
-         0: aload_0
-         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-         4: getstatic     #13                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-         7: lconst_0
-         8: invokeinterface #19,  4           // InterfaceMethod java/lang/foreign/MemorySegment.get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
-        13: ireturn
-      LineNumberTable:
-        line 56: 0
-
-public ()I.x ;
- descriptor: ()I
- flags: (0x0001) [PUBLIC]
- Code:
- stack=4, locals=1, args_size=-1
-public
-    Line number:56
-    0: aload_0
-    1: putfield      #7             // segment:Ljava/lang/foreign/MemorySegment;
-    4: putfield      #13            // JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-    7: lconst_0
-    8: invokeinterface#19           // 11 java/lang/foreign/MemorySegment.get-(Ljava/lang/foreign/ValueLayout$OfInt;J)I
-   13: return
-
-
-
-  public int y();
-    descriptor: ()I
-    flags: (0x0001) ACC_PUBLIC
-    Code:
-      stack=4, locals=1, args_size=1
-         0: aload_0
-         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-         4: getstatic     #13                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-         7: ldc2_w        #25                 // long 4l
-        10: invokeinterface #19,  4           // InterfaceMethod java/lang/foreign/MemorySegment.get:(Ljava/lang/foreign/ValueLayout$OfInt;J)I
-        15: ireturn
-      LineNumberTable:
-        line 61: 0
-
-  public void x(int);
-    descriptor: (I)V
-    flags: (0x0001) ACC_PUBLIC
-    Code:
-      stack=5, locals=2, args_size=2
-         0: aload_0
-         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-         4: getstatic     #13                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-         7: lconst_0
-         8: iload_1
-         9: invokeinterface #27,  5           // InterfaceMethod java/lang/foreign/MemorySegment.set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
-        14: return
-      LineNumberTable:
-        line 66: 0
-        line 67: 14
-
-  public void y(int);
-    descriptor: (I)V
-    flags: (0x0001) ACC_PUBLIC
-    Code:
-      stack=5, locals=2, args_size=2
-         0: aload_0
-         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-         4: getstatic     #13                 // Field java/lang/foreign/ValueLayout.JAVA_INT:Ljava/lang/foreign/ValueLayout$OfInt;
-         7: ldc2_w        #25                 // long 4l
-        10: iload_1
-        11: invokeinterface #27,  5           // InterfaceMethod java/lang/foreign/MemorySegment.set:(Ljava/lang/foreign/ValueLayout$OfInt;JI)V
-        16: return
-      LineNumberTable:
-        line 71: 0
-        line 72: 16
-
-  public final java.lang.String toString();
-    descriptor: ()Ljava/lang/String;
-    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
-    Code:
-      stack=1, locals=1, args_size=1
-         0: aload_0
-         1: invokedynamic #31,  0             // InvokeDynamic #0:toString:(LTestInterfaceMapper$PointAccessorImpl;)Ljava/lang/String;
-         6: areturn
-      LineNumberTable:
-        line 51: 0
-
-  public final int hashCode();
-    descriptor: ()I
-    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
-    Code:
-      stack=1, locals=1, args_size=1
-         0: aload_0
-         1: invokedynamic #35,  0             // InvokeDynamic #0:hashCode:(LTestInterfaceMapper$PointAccessorImpl;)I
-         6: ireturn
-      LineNumberTable:
-        line 51: 0
-
-  public final boolean equals(java.lang.Object);
-    descriptor: (Ljava/lang/Object;)Z
-    flags: (0x0011) ACC_PUBLIC, ACC_FINAL
-    Code:
-      stack=2, locals=2, args_size=2
-         0: aload_0
-         1: aload_1
-         2: invokedynamic #39,  0             // InvokeDynamic #0:equals:(LTestInterfaceMapper$PointAccessorImpl;Ljava/lang/Object;)Z
-         7: ireturn
-      LineNumberTable:
-        line 51: 0
-
-  public java.lang.foreign.MemorySegment segment();
-    descriptor: ()Ljava/lang/foreign/MemorySegment;
-    flags: (0x0001) ACC_PUBLIC
-    Code:
-      stack=1, locals=1, args_size=1
-         0: aload_0
-         1: getfield      #7                  // Field segment:Ljava/lang/foreign/MemorySegment;
-         4: areturn
-      LineNumberTable:
-        line 51: 0
-}
-SourceFile: "TestInterfaceMapper.java"
-NestHost: class TestInterfaceMapper
-Record:
-  java.lang.foreign.MemorySegment segment;
-    descriptor: Ljava/lang/foreign/MemorySegment;
-
-BootstrapMethods:
-  0: #65 REF_invokeStatic java/lang/runtime/ObjectMethods.bootstrap:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;
-    Method arguments:
-      #8 TestInterfaceMapper$PointAccessorImpl
-      #63 segment
-      #64 REF_getField TestInterfaceMapper$PointAccessorImpl.segment:Ljava/lang/foreign/MemorySegment;
-InnerClasses:
-  public static final #73= #8 of #59;     // PointAccessorImpl=class TestInterfaceMapper$PointAccessorImpl of class TestInterfaceMapper
-  public static #76= #74 of #14;          // OfInt=class java/lang/foreign/ValueLayout$OfInt of class java/lang/foreign/ValueLayout
-  public static #77= #43 of #59;          // PointAccessor=class TestInterfaceMapper$PointAccessor of class TestInterfaceMapper
-  public static final #82= #78 of #80;    // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles
  */
 
 

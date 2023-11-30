@@ -79,9 +79,7 @@ import java.io.IOException;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
 import java.lang.constant.DirectMethodHandleDesc;
-import java.lang.constant.DirectMethodHandleDesc.Kind;
 import java.lang.constant.DynamicCallSiteDesc;
-import java.lang.constant.MethodHandleDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
@@ -89,27 +87,145 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.mapper.SegmentBacked;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.AccessFlag;
-import java.lang.runtime.ObjectMethods;
 import java.nio.file.Files;
-import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Collection;
 import java.util.HexFormat;
 
 import static java.lang.constant.ConstantDescs.*;
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
-import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.*;
 import static java.util.stream.Collectors.joining;
 import static jdk.internal.classfile.Classfile.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 final class TestInterfaceMapper {
+
+    GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
+            JAVA_INT.withName("x"),
+            JAVA_INT.withName("y")
+    );
+
+    @Test
+    void smokeTest() {
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(lookup, PointAccessor.class, POINT_LAYOUT);
+        System.out.println("mapper = " + mapper);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+        System.out.println("accessor = " + accessor);
+        System.out.println("accessor.x() = " + accessor.x());
+        System.out.println("accessor.y() = " + accessor.y());
+        System.out.println("accessor.segment() = " + accessor.segment());
+        System.out.println("accessor.offset() = " + accessor.offset());
+        accessor.x(1);
+        accessor.y(2);
+        System.out.println("accessor = " + accessor);
+        fail();
+    }
+
+    GroupLayout MIXED_LAYOUT = MemoryLayout.structLayout(
+            JAVA_LONG.withName("l"),
+            JAVA_DOUBLE.withName("d"),
+            JAVA_INT.withName("i"),
+            JAVA_FLOAT.withName("f"),
+            JAVA_CHAR.withName("c"),
+            JAVA_SHORT.withName("s"),
+            JAVA_BYTE.withName("b")
+    );
+
+    interface MixedBag {
+        byte b();
+        short s();
+        char c();
+        int i();
+        float f();
+        long l();
+        double d();
+    }
+
+    @Test
+    void smokeTestMixedBag() {
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        SegmentMapper<MixedBag> mapper = SegmentMapper.ofInterface(lookup, MixedBag.class, MIXED_LAYOUT);
+        MemorySegment segment = Arena.ofAuto().allocate(MIXED_LAYOUT);
+
+        MIXED_LAYOUT.varHandle(PathElement.groupElement("l")).set(segment, 0, 42L);
+        MIXED_LAYOUT.varHandle(PathElement.groupElement("d")).set(segment, 0, 123.45d);
+        MIXED_LAYOUT.varHandle(PathElement.groupElement("i")).set(segment, 0, 13);
+        MIXED_LAYOUT.varHandle(PathElement.groupElement("f")).set(segment, 0, 3.1415f);
+        MIXED_LAYOUT.varHandle(PathElement.groupElement("c")).set(segment, 0, 'A');
+        MIXED_LAYOUT.varHandle(PathElement.groupElement("s")).set(segment, 0, (short) 32767);
+        MIXED_LAYOUT.varHandle(PathElement.groupElement("b")).set(segment, 0, (byte) 127);
+
+        MixedBag accessor = mapper.get(segment);
+        System.out.println("accessor = " + accessor);
+        fail();
+    }
+
+    GroupLayout LINE_LAYOUT = MemoryLayout.structLayout(
+            POINT_LAYOUT.withName("begin"),
+            POINT_LAYOUT.withName("y")
+    );
+
+
+    interface XAccessor { int x();}
+    interface YAccessor { int y();}
+    interface XYAccessor extends XAccessor, YAccessor {};
+
+    @Test
+    void xyAccessor() {
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        SegmentMapper<XYAccessor> mapper = SegmentMapper.ofInterface(lookup, XYAccessor.class, POINT_LAYOUT);
+        System.out.println("mapper = " + mapper);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        XYAccessor accessor = mapper.get(segment, 0);
+        System.out.println("accessor = " + accessor);
+    }
+
+
+    interface LineAccessor {
+        PointAccessor begin();
+        PointAccessor end();
+    }
+
+    @Test
+    void line() {
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(lookup, LineAccessor.class, LINE_LAYOUT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+
+        LineAccessor accessor = mapper.get(segment);
+        System.out.println("accessor = " + accessor);
+    }
+
+
+    public record LineAccessorImpl(@Override MemorySegment segment,
+                                   @Override long offset,
+                                   @Override PointAccessor begin,
+                                   @Override PointAccessor end) implements LineAccessor {
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(this);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return this == obj;
+        }
+
+        @Override
+        public String toString() {
+            return "LineAccessor[begin()=" + begin() + ", end()=" + end() + "]";
+        }
+    }
 
     //@Test
     void fromFile() throws IOException {
@@ -119,7 +235,7 @@ final class TestInterfaceMapper {
         fail();
     }
 
-    @Test
+    //@Test
     void fromModel() throws IOException {
 
         ClassDesc genClassDesc = ClassDesc.of("SomeName");
@@ -428,8 +544,12 @@ final class TestInterfaceMapper {
         javap(cm);
 
         try {
+            //@SuppressWarnings("unchecked")
+            //Class<PointAccessor> c = (Class<PointAccessor>) MethodHandles.lookup().defineClass(bytes);
+
+            MethodHandles.Lookup lookup = MethodHandles.lookup().defineHiddenClass(bytes, true);
             @SuppressWarnings("unchecked")
-            Class<PointAccessor> c = (Class<PointAccessor>) MethodHandles.lookup().defineClass(bytes);
+            Class<PointAccessor> c = (Class<PointAccessor>)lookup.lookupClass();
 
             MethodHandle ctor = MethodHandles.lookup().findConstructor(c, MethodType.methodType(void.class, MemorySegment.class, long.class));
             ctor = ctor.asType(ctor.type().changeReturnType(PointAccessor.class));
@@ -441,6 +561,7 @@ final class TestInterfaceMapper {
             int y = accessor.y();
             System.out.println("y = " + y);
 
+            System.out.println("class = " + c);
             System.out.println("accessor = " + accessor);
             System.out.println("accessor.hashCode() = " + accessor.hashCode());
             System.out.println("accessor.equals(\"A\") = " + accessor.equals("A"));
@@ -764,10 +885,6 @@ final class TestInterfaceMapper {
     }
 
 
-    GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
-            JAVA_INT.withName("x"),
-            JAVA_INT.withName("y")
-    );
 
     public interface PointAccessor extends SegmentBacked {
         int x();
@@ -811,7 +928,7 @@ final class TestInterfaceMapper {
 
         @Override
         public String toString() {
-            return "PointAccessor[x=" + x() + ", y=" + y() + "]";
+            return "PointAccessor[x()=" + x() + ", y()=" + y() + "]";
         }
     }
 

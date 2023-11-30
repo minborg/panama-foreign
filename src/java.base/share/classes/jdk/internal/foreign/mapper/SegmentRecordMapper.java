@@ -113,10 +113,6 @@ public record SegmentRecordMapper<T>(
 
     // Private methods and classes
 
-    private record Handles(boolean isExhaustive,
-                           MethodHandle getHandle,
-                           MethodHandle setHandle) {}
-
     // This method is using a partially initialized mapper
     private static <T> Handles handles(SegmentRecordMapper<T> mapper) {
         assertMappingsCorrect(mapper.type(), mapper.layout());

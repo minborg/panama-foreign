@@ -578,6 +578,7 @@ public interface SegmentMapper<T> {
      *         specified above.
      * @see #ofInterface(MethodHandles.Lookup, Class, GroupLayout)
      */
+    // Todo: Remove this factory
     static <T> SegmentMapper<T> ofInterface(Class<T> type,
                                             GroupLayout layout) {
         return ofInterface(MethodHandles.publicLookup(), type, layout);
@@ -609,8 +610,7 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireImplementableInterfaceType(type);
         Objects.requireNonNull(layout);
-
-        throw new UnsupportedOperationException();
+        return new SegmentInterfaceMapper<>(lookup, type, layout, 0L, 0);
     }
 
     /**
@@ -664,7 +664,7 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
-        return new SegmentInterfaceMapper<>(lookup, type, layout, 0, 0);
+        return new SegmentInterfaceMapper<>(lookup, type, layout, 0L, 0);
     }
 
 }

@@ -589,6 +589,9 @@ public interface SegmentMapper<T> {
      *          to the provided interface {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
      *
+     * @implNote The order in which methods appear (e.g. in the {@code toString} method)
+     *           is unspecified.
+     *
      * @param lookup to use when performing reflective analysis on the
      *               provided {@code type}
      * @param type to map memory segment from and to

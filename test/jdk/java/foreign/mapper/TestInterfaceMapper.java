@@ -96,8 +96,11 @@ import java.lang.reflect.AccessFlag;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HexFormat;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static java.lang.constant.ConstantDescs.*;
 import static java.lang.foreign.ValueLayout.*;
@@ -105,9 +108,12 @@ import static java.util.stream.Collectors.joining;
 import static jdk.internal.classfile.Classfile.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+// Note: the order in which interface methods appears is unspecified.
 final class TestInterfaceMapper {
 
-    GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
+    private static final double EPSILON = 1e-6;
+
+    private static final GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
             JAVA_INT.withName("x"),
             JAVA_INT.withName("y")
     );
@@ -116,18 +122,22 @@ final class TestInterfaceMapper {
     void smokeTest() {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(lookup, PointAccessor.class, POINT_LAYOUT);
-        System.out.println("mapper = " + mapper);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
-        System.out.println("accessor = " + accessor);
-        System.out.println("accessor.x() = " + accessor.x());
-        System.out.println("accessor.y() = " + accessor.y());
-        System.out.println("accessor.segment() = " + accessor.segment());
-        System.out.println("accessor.offset() = " + accessor.offset());
+        {
+            assertEquals(6, accessor.x());
+            assertEquals(8, accessor.y());
+            assertToString(accessor, PointAccessor.class, Set.of("x()=6", "y()=8"));
+        }
         accessor.x(1);
         accessor.y(2);
-        System.out.println("accessor = " + accessor);
-        fail();
+        {
+            assertEquals(1, accessor.x());
+            assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
+            assertEquals(2, accessor.y());
+            assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
+            assertToString(accessor, PointAccessor.class, Set.of("x()=1", "y()=2"));
+        }
     }
 
     GroupLayout MIXED_LAYOUT = MemoryLayout.structLayout(
@@ -165,15 +175,26 @@ final class TestInterfaceMapper {
         MIXED_LAYOUT.varHandle(PathElement.groupElement("b")).set(segment, 0, (byte) 127);
 
         MixedBag accessor = mapper.get(segment);
-        System.out.println("accessor = " + accessor);
-        fail();
+
+        assertEquals(42L, accessor.l());
+        assertEquals(123.45d, accessor.d(), EPSILON);
+        assertEquals(13, accessor.i());
+        assertEquals(3.1415f, accessor.f(), EPSILON);
+        assertEquals('A', accessor.c());
+        assertEquals((short) 32767, accessor.s());
+        assertEquals((byte) 127, accessor.b());
+
+        Set<String> set = Arrays.stream("i()=13, b()=127, s()=32767, c()=A, f()=3.1415, l()=42, d()=123.4".split(", "))
+                .collect(Collectors.toSet());
+        assertToString(accessor, MixedBag.class, set);
+
+        // Todo: Update values and check
     }
 
-    GroupLayout LINE_LAYOUT = MemoryLayout.structLayout(
+    private static final GroupLayout LINE_LAYOUT = MemoryLayout.structLayout(
             POINT_LAYOUT.withName("begin"),
-            POINT_LAYOUT.withName("y")
+            POINT_LAYOUT.withName("end")
     );
-
 
     interface XAccessor { int x();}
     interface YAccessor { int y();}
@@ -186,9 +207,10 @@ final class TestInterfaceMapper {
         System.out.println("mapper = " + mapper);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         XYAccessor accessor = mapper.get(segment, 0);
-        System.out.println("accessor = " + accessor);
+        assertEquals(3, accessor.x());
+        assertEquals(4, accessor.y());
+        assertToString(accessor, XYAccessor.class, Set.of("x()=3", "y()=4"));
     }
-
 
     interface LineAccessor {
         PointAccessor begin();
@@ -198,18 +220,48 @@ final class TestInterfaceMapper {
     @Test
     void line() {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
-        SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(lookup, LineAccessor.class, LINE_LAYOUT);
+        var pointMapper = SegmentMapper.ofInterface(lookup, PointAccessor.class, LINE_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
+        LineAccessor accessor = new LineAccessorImpl(segment, 0L, pointMapper.getHandle());
+        assertEquals(3, accessor.begin().x());
+        assertEquals(4, accessor.begin().y());
+        assertEquals(6, accessor.end().x());
+        assertEquals(8, accessor.end().y());
+
+/*        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(lookup, LineAccessor.class, LINE_LAYOUT);
         LineAccessor accessor = mapper.get(segment);
-        System.out.println("accessor = " + accessor);
+        System.out.println("accessor = " + accessor);*/
     }
 
+    public static final class LineAccessorImpl implements LineAccessor {
+            private final MemorySegment $segment$;
+            private final long $offset$;
+            private final MethodHandle $pointAccessorFactory$;
 
-    public record LineAccessorImpl(@Override MemorySegment segment,
-                                   @Override long offset,
-                                   @Override PointAccessor begin,
-                                   @Override PointAccessor end) implements LineAccessor {
+        public LineAccessorImpl(MemorySegment segment,
+                                long offset,
+                                MethodHandle pointAccessorFactory) {
+            this.$segment$ = segment;
+            this.$offset$ = offset;
+            this.$pointAccessorFactory$ = pointAccessorFactory;
+        }
+
+        public PointAccessor begin() {
+            return (PointAccessor) $evalWithMemorySegmentAndOffset$(
+                    $pointAccessorFactory$,
+                    $segment$,
+                    $offset$);
+        }
+
+        public PointAccessor end() {
+            return (PointAccessor) $evalWithMemorySegmentAndOffset$(
+                    $pointAccessorFactory$,
+                    $segment$,
+                    $offset$ + 8L);
+        }
+
 
         @Override
         public int hashCode() {
@@ -225,6 +277,27 @@ final class TestInterfaceMapper {
         public String toString() {
             return "LineAccessor[begin()=" + begin() + ", end()=" + end() + "]";
         }
+
+        private static Object $evalWithMemorySegmentAndOffset$(MethodHandle mh,
+                                                               MemorySegment segment,
+                                                               long offset) {
+            try {
+                return mh.invokeExact(segment, offset);
+            } catch (Throwable e) {
+                throw new IllegalStateException("Unable to invoke method handle " + mh, e);
+            }
+        }
+
+    }
+
+    void assertToString(Object o,
+                        Class<?> clazz, Set<String> fragments) {
+        String s = o.toString();
+        assertTrue(s.startsWith(clazz.getSimpleName() + "["));
+        for (var fragment:fragments) {
+            assertTrue(s.contains(fragment));
+        }
+        assertTrue(s.endsWith("]"));
     }
 
     //@Test
@@ -891,7 +964,7 @@ final class TestInterfaceMapper {
         void y(int y);
     }
 
-    public final class PointAccessorImpl implements PointAccessor {
+    public static final class PointAccessorImpl implements PointAccessor {
 
         private final MemorySegment segment;
         private final long offset;

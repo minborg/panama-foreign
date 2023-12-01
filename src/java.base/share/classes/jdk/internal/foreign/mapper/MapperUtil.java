@@ -25,6 +25,8 @@
 
 package jdk.internal.foreign.mapper;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.invoke.MethodHandle;
 import java.util.Objects;
 
 public final class MapperUtil {
@@ -62,5 +64,14 @@ public final class MapperUtil {
     static IllegalArgumentException newIae(Class<?> type, String trailingInfo) {
         return new IllegalArgumentException(type.getName() + " is " + trailingInfo);
     }
+
+    public static Object evalWithMemorySegmentAndOffset(MethodHandle mh, MemorySegment segment, long offset) {
+        try {
+            return mh.invokeExact(segment, offset);
+        } catch (Throwable e) {
+            throw new IllegalStateException("Unable to invoke method handle " + mh, e);
+        }
+    }
+
 
 }

@@ -49,7 +49,6 @@ import java.lang.invoke.MethodType;
 import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -57,7 +56,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -95,7 +93,6 @@ public record SegmentInterfaceMapper<T>(
                     .map(Method::getName)
                     .collect(Collectors.toSet());
 
-    private static final ClassDesc RECORD_CLASS_DESC = desc(Record.class);
     private static final ClassDesc VALUE_LAYOUTS_CLASS_DESC = desc(ValueLayout.class);
     private static final ClassDesc MEMORY_SEGMENT_CLASS_DESC = desc(MemorySegment.class);
 
@@ -150,8 +147,8 @@ public record SegmentInterfaceMapper<T>(
                 .build(classDesc, cb -> {
             // public final
             cb.withFlags(ACC_PUBLIC | ACC_FINAL | ACC_SUPER);
-            // extends Record
-            cb.withSuperclass(RECORD_CLASS_DESC);
+            // extends Object
+            cb.withSuperclass(CD_Object);
             // implements "type"
             cb.withInterfaceSymbols(interfaceClassDesc);
             // private final MemorySegment segment;
@@ -166,8 +163,8 @@ public record SegmentInterfaceMapper<T>(
             // }
             cb.withMethodBody(ConstantDescs.INIT_NAME, MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long), Classfile.ACC_PUBLIC, cob ->
                     cob.aload(0)
-                            // Call Record's constructor
-                            .invokespecial(RECORD_CLASS_DESC, ConstantDescs.INIT_NAME, ConstantDescs.MTD_void, false)
+                            // Call Object's constructor
+                            .invokespecial(CD_Object, ConstantDescs.INIT_NAME, ConstantDescs.MTD_void, false)
                             // Set "segment"
                             .aload(0)
                             .aload(1)

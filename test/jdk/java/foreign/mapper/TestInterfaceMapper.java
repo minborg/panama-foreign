@@ -884,8 +884,6 @@ final class TestInterfaceMapper {
         return sb.toString();
     }
 
-
-
     public interface PointAccessor extends SegmentBacked {
         int x();
         int y();
@@ -893,8 +891,25 @@ final class TestInterfaceMapper {
         void y(int y);
     }
 
-    public record PointAccessorImpl(@Override MemorySegment segment, long offset)
-            implements PointAccessor {
+    public final class PointAccessorImpl implements PointAccessor {
+
+        private final MemorySegment segment;
+        private final long offset;
+
+        public PointAccessorImpl(MemorySegment segment, long offset) {
+            this.segment = segment;
+            this.offset = offset;
+        }
+
+        @Override
+        public MemorySegment segment() {
+            return segment;
+        }
+
+        @Override
+        public long offset() {
+            return offset;
+        }
 
         @Override
         public int x() {

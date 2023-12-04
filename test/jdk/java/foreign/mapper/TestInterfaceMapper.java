@@ -204,7 +204,6 @@ final class TestInterfaceMapper {
     void xyAccessor() {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         SegmentMapper<XYAccessor> mapper = SegmentMapper.ofInterface(lookup, XYAccessor.class, POINT_LAYOUT);
-        System.out.println("mapper = " + mapper);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         XYAccessor accessor = mapper.get(segment, 0);
         assertEquals(3, accessor.x());
@@ -220,7 +219,7 @@ final class TestInterfaceMapper {
     @Test
     void line() {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
-        var pointMapper = SegmentMapper.ofInterface(lookup, PointAccessor.class, LINE_LAYOUT);
+        var pointMapper = SegmentMapper.ofInterface(lookup, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
         LineAccessor accessor = new LineAccessorImpl(segment, 0L, pointMapper.getHandle());
@@ -229,12 +228,13 @@ final class TestInterfaceMapper {
         assertEquals(6, accessor.end().x());
         assertEquals(8, accessor.end().y());
 
-/*        MethodHandles.Lookup lookup = MethodHandles.lookup();
         SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(lookup, LineAccessor.class, LINE_LAYOUT);
-        LineAccessor accessor = mapper.get(segment);
-        System.out.println("accessor = " + accessor);*/
+        LineAccessor realAccessor = mapper.get(segment);
+        System.out.println("realAccessor = " + realAccessor);
+        fail();
     }
 
+    // @ValueBased
     public static final class LineAccessorImpl implements LineAccessor {
             private final MemorySegment $segment$;
             private final long $offset$;
@@ -964,6 +964,7 @@ final class TestInterfaceMapper {
         void y(int y);
     }
 
+    // @ValueBased
     public static final class PointAccessorImpl implements PointAccessor {
 
         private final MemorySegment segment;

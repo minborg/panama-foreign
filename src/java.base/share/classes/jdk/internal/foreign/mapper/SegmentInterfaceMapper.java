@@ -31,8 +31,10 @@ import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.Classfile;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
+import jdk.internal.foreign.LayoutTransformer;
 
 import java.lang.constant.ClassDesc;
+import java.lang.constant.ConstantDesc;
 import java.lang.constant.ConstantDescs;
 import java.lang.constant.DirectMethodHandleDesc;
 import java.lang.constant.DynamicCallSiteDesc;
@@ -50,7 +52,9 @@ import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -64,27 +68,9 @@ import static jdk.internal.classfile.Classfile.*;
 
 /**
  * A record mapper that is matching components of an interface with elements in a GroupLayout.
- *
- * @param lookup       to use for reflective operations
- * @param type         record type to map to/from
- * @param layout       group layout to use for matching record components
- * @param isExhaustive if mapping is exhaustive
- * @param <T>          mapper type
  */
-// Records have trusted instance fields.
 @ValueBased
-public record SegmentInterfaceMapper<T>(
-            @Override MethodHandles.Lookup lookup,
-            @Override Class<T> type,
-            @Override GroupLayout layout,
-            long offset,
-            int depth,
-            Class<T> implClass,
-            @Override boolean isExhaustive,
-            // (MemorySegment, long)T
-            @Override MethodHandle getHandle,
-            // (MemorySegment, long, T)void
-            @Override MethodHandle setHandle) implements SegmentMapper<T>, HasLookup {
+public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLookup {
 
     private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
 
@@ -96,13 +82,20 @@ public record SegmentInterfaceMapper<T>(
     private static final ClassDesc VALUE_LAYOUTS_CLASS_DESC = desc(ValueLayout.class);
     private static final ClassDesc MEMORY_SEGMENT_CLASS_DESC = desc(MemorySegment.class);
 
-    public SegmentInterfaceMapper(MethodHandles.Lookup lookup,
-                                  Class<T> type,
-                                  GroupLayout layout,
-                                  long offset,
-                                  int depth) {
-        this(lookup, type, layout, offset, depth, null, false, null, null);
-    }
+    static final String SEGMENT_FIELD_NAME = "$segment$";
+    static final String OFFSET_FIELD_NAME = "$offset$";
+
+    private final MethodHandles.Lookup lookup;
+    private final Class<T> type;
+    private final GroupLayout layout;
+    private final long offset;
+    private final int depth;
+    private final Class<T> implClass;
+    private final boolean isExhaustive;
+    private final MethodHandle getHandle;
+    private final MethodHandle setHandle;
+
+    private final Map<Class<?>, MethodHandle> factories;
 
     // Canonical constructor in which we ignore some of the
     // input values and derive them internally instead.
@@ -110,21 +103,20 @@ public record SegmentInterfaceMapper<T>(
                                   Class<T> type,
                                   GroupLayout layout,
                                   long offset,
-                                  int depth,
-                                  Class<T> implClass,        // Ignored
-                                  boolean isExhaustive,      // Ignored
-                                  MethodHandle getHandle,    // Ignored
-                                  MethodHandle setHandle) {  // Ignored
+                                  int depth) {
         this.lookup = lookup;
         this.type = type;
         this.layout = layout;
         this.offset = offset;
         this.depth = depth;
+        this.factories = new HashMap<>();
         List<MethodInfo> getMethods = mappableGetMethods(type, layout);
         List<MethodInfo> setMethods = mappableSetMethods(type, layout);
+        List<MethodInfo> getStructMethods = mappableGetStructMethods(type, layout);
+        // There is no mapping for set operation on interfaces
         assertMappingsCorrect(type, layout, getMethods);
         assertMappingsCorrect(type, layout, setMethods);
-        this.implClass = generateClass(getMethods, setMethods);
+        this.implClass = generateClass(getMethods, setMethods, getStructMethods);
         Handles handles = handles();
         this.isExhaustive = handles.isExhaustive();
         this.getHandle = handles.getHandle();
@@ -138,116 +130,153 @@ public record SegmentInterfaceMapper<T>(
         return Mapped.of(this, newType, toMapper, fromMapper);
     }
 
-    private Class<T> generateClass(List<MethodInfo> getMethods, List<MethodInfo> setMethods) {
+    private Class<T> generateClass(List<MethodInfo> getMethods,
+                                   List<MethodInfo> setMethods,
+                                   List<MethodInfo> getStructMethods) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
         ClassDesc interfaceClassDesc = desc(type);
         ClassLoader loader = type.getClassLoader();
 
-        byte[] bytes = Classfile.of(Classfile.ClassHierarchyResolverOption.of(ClassHierarchyResolver.ofClassLoading(loader)))
+        byte[] bytes = of(ClassHierarchyResolverOption.of(ClassHierarchyResolver.ofClassLoading(loader)))
                 .build(classDesc, cb -> {
-            // public final
-            cb.withFlags(ACC_PUBLIC | ACC_FINAL | ACC_SUPER);
-            // extends Object
-            cb.withSuperclass(CD_Object);
-            // implements "type"
-            cb.withInterfaceSymbols(interfaceClassDesc);
-            // private final MemorySegment segment;
-            cb.withField("segment", MEMORY_SEGMENT_CLASS_DESC,ACC_PRIVATE | ACC_FINAL);
-            // private final long offset;
-            cb.withField("offset", CD_long, ACC_PRIVATE | ACC_FINAL);
+                    // public final
+                    cb.withFlags(ACC_PUBLIC | ACC_FINAL | ACC_SUPER);
+                    // extends Object
+                    cb.withSuperclass(CD_Object);
+                    // implements "type"
+                    cb.withInterfaceSymbols(interfaceClassDesc);
+                    // private final MemorySegment $segment$;
+                    cb.withField(SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC, ACC_PRIVATE | ACC_FINAL);
+                    // private final long $offset$;
+                    cb.withField(OFFSET_FIELD_NAME, CD_long, ACC_PRIVATE | ACC_FINAL);
 
-            // Canonical Constructor
-            // xInterfaceMapper(@Override MemorySegment segment, @Override long offset) {
-            //     this.segment = segment;
-            //     this.offset = offset;
-            // }
-            cb.withMethodBody(ConstantDescs.INIT_NAME, MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long), Classfile.ACC_PUBLIC, cob ->
-                    cob.aload(0)
-                            // Call Object's constructor
-                            .invokespecial(CD_Object, ConstantDescs.INIT_NAME, ConstantDescs.MTD_void, false)
-                            // Set "segment"
-                            .aload(0)
-                            .aload(1)
-                            .putfield(classDesc, "segment", MEMORY_SEGMENT_CLASS_DESC)
-                            // Set "offset"
-                            .aload(0)
-                            .lload(2)
-                            .putfield(classDesc, "offset", CD_long)
-                            .return_());
+/*
+                    // Create a list of the unique sub-interfaces
+                    var interfaceVariants = getStructMethods.stream()
+                            .map(i -> i.method().getReturnType())
+                            .distinct()
+                            .toList();
 
-            // If the interface implements SegmentBacked then we need to add those methods
-            if (SegmentBacked.class.isAssignableFrom(type)) {
+                    // E.g. private final MethodHandle $com_company_app_PointAccessor_Factory$;
+                    for (Class<?> inter : interfaceVariants) {
+                        cb.withField(mangleFieldName(inter), CD_MethodHandle, ACC_PRIVATE | ACC_FINAL);
+                    }*/
 
-                // @Override
-                // MemorySegment segment() {
-                //     return segment;
-                // }
-                cb.withMethodBody("segment", MethodTypeDesc.of(MEMORY_SEGMENT_CLASS_DESC), Classfile.ACC_PUBLIC, cob ->
+
+/*                    List<ClassDesc> ctorDesc = Stream.concat(
+                                    Stream.of(MEMORY_SEGMENT_CLASS_DESC, CD_long),
+                                    interfaceVariants.stream().map(SegmentInterfaceMapper::desc))
+                            .toList();*/
+
+                    // Canonical Constructor
+                    // xInterfaceMapper(@Override MemorySegment segment, @Override long offset) {
+                    //     this.segment = segment;
+                    //     this.offset = offset;
+                    // }
+
+                    cb.withMethodBody(INIT_NAME, MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long), ACC_PUBLIC, cob -> {
                         cob.aload(0)
-                                .getfield(classDesc, "segment", MEMORY_SEGMENT_CLASS_DESC)
-                                .areturn()
-                );
-
-                // @Override
-                // long offset() {
-                //     return offset;
-                // }
-                cb.withMethodBody("offset", MethodTypeDesc.of(CD_long), Classfile.ACC_PUBLIC, cob ->
-                        cob.aload(0)
-                                .getfield(classDesc, "offset", CD_long)
-                                .lreturn()
-                );
-            }
-
-            for (MethodInfo method:getMethods) {
-                // @Override
-                // <t> gX() {
-                //     return segment.get(JAVA_t, offset);
-                // }
-                generateGetter(cb, classDesc, method);
-            }
-
-            for (MethodInfo method : setMethods) {
-                generateSetter(cb, classDesc, method);
-            }
-
-            // @Override
-            // int hashCode() {
-            //     return System.identityHashCode(this);
-            // }
-            cb.withMethodBody("hashCode", MethodTypeDesc.of(CD_int), Classfile.ACC_PUBLIC | ACC_FINAL, cob ->
-                    cob.aload(0)
-                            .invokestatic(desc(System.class), "identityHashCode", MethodTypeDesc.of(CD_int, CD_Object))
-                            .ireturn()
-            );
-
-            // @Override
-            // boolean equals(Object o) {
-            //     return this == o;
-            // }
-            cb.withMethodBody("equals", MethodTypeDesc.of(CD_boolean, CD_Object), Classfile.ACC_PUBLIC | ACC_FINAL, cob -> {
-                        Label l0 = cob.newLabel();
-                        Label l1 = cob.newLabel();
-                        cob.aload(0)
+                                // Call Object's constructor
+                                .invokespecial(CD_Object, INIT_NAME, MTD_void, false)
+                                // Set "segment"
+                                .aload(0)
                                 .aload(1)
-                                .if_acmpne(l0)
-                                .iconst_1()
-                                .goto_(l1)
-                                .labelBinding(l0)
-                                .iconst_0()
-                                .labelBinding(l1)
-                                .ireturn()
-                        ;
+                                .putfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
+                                // Set "offset"
+                                .aload(0)
+                                .lload(2)
+                                .putfield(classDesc, OFFSET_FIELD_NAME, CD_long)
+                                .return_();
+                    });
+
+                    // If the interface implements SegmentBacked then we need to add those methods
+                    if (SegmentBacked.class.isAssignableFrom(type)) {
+
+                        // @Override
+                        // MemorySegment segment() {
+                        //     return segment;
+                        // }
+                        cb.withMethodBody("segment", MethodTypeDesc.of(MEMORY_SEGMENT_CLASS_DESC), ACC_PUBLIC, cob ->
+                                cob.aload(0)
+                                        .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
+                                        .areturn()
+                        );
+
+                        // @Override
+                        // long offset() {
+                        //     return offset;
+                        // }
+                        cb.withMethodBody("offset", MethodTypeDesc.of(CD_long), ACC_PUBLIC, cob ->
+                                cob.aload(0)
+                                        .getfield(classDesc, OFFSET_FIELD_NAME, CD_long)
+                                        .lreturn()
+                        );
                     }
-            );
 
-            //  @Override
-            //  public String toString() {
-            //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
-            //  }
-            generateToString(cb, classDesc, getMethods);
+                    for (MethodInfo method : getMethods) {
+                        // @Override
+                        // <t> gX() {
+                        //     return segment.get(JAVA_t, offset + elementOffset);
+                        // }
+                        generateGetter(cb, classDesc, method);
+                    }
 
-        });
+                    // @Override
+                    // void gX(<t> t) {
+                    //     segment.get(JAVA_t, offset + elementOffset, t);
+                    // }
+                    for (MethodInfo method : setMethods) {
+                        generateSetter(cb, classDesc, method);
+                    }
+
+/*                    // Generate factory method handles
+                    for (MethodInfo method: getStructMethods) {
+                        factories.computeIfAbsent(method.method().getReturnType(), r -> {
+
+                        });
+                    }*/
+
+                    for (MethodInfo method : getStructMethods) {
+                        generateStructGetter(cb, classDesc, method);
+                    }
+
+                    // @Override
+                    // int hashCode() {
+                    //     return System.identityHashCode(this);
+                    // }
+                    cb.withMethodBody("hashCode", MethodTypeDesc.of(CD_int), ACC_PUBLIC | ACC_FINAL, cob ->
+                            cob.aload(0)
+                                    .invokestatic(desc(System.class), "identityHashCode", MethodTypeDesc.of(CD_int, CD_Object))
+                                    .ireturn()
+                    );
+
+                    // @Override
+                    // boolean equals(Object o) {
+                    //     return this == o;
+                    // }
+                    cb.withMethodBody("equals", MethodTypeDesc.of(CD_boolean, CD_Object), ACC_PUBLIC | ACC_FINAL, cob -> {
+                                Label l0 = cob.newLabel();
+                                Label l1 = cob.newLabel();
+                                cob.aload(0)
+                                        .aload(1)
+                                        .if_acmpne(l0)
+                                        .iconst_1()
+                                        .goto_(l1)
+                                        .labelBinding(l0)
+                                        .iconst_0()
+                                        .labelBinding(l1)
+                                        .ireturn()
+                                ;
+                            }
+                    );
+
+                    //  @Override
+                    //  public String toString() {
+                    //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
+                    //  }
+                    generateToString(cb, classDesc, getMethods);
+
+                });
         try {
             @SuppressWarnings("unchecked")
             Class<T> c = (Class<T>) lookup
@@ -307,7 +336,7 @@ public record SegmentInterfaceMapper<T>(
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
 
         // Make sure we have all components distinctly mapped
-        for (MethodInfo component: methods) {
+        for (MethodInfo component : methods) {
             String name = component.method().getName();
             switch (nameMappingCounts.getOrDefault(name, 0L).intValue()) {
                 case 0 -> throw new IllegalArgumentException("No mapping for " +
@@ -327,7 +356,19 @@ public record SegmentInterfaceMapper<T>(
         // The types for the components
         List<Method> methods = candidates(type, 0)
                 .filter(m -> m.getReturnType() != void.class && m.getReturnType() != Void.class)
-                .filter(m -> !isSegmentBacked(type, m))
+                // Todo: check wrapper classes
+                .filter(m -> m.getReturnType().isPrimitive())
+                .toList();
+
+        return mappableMethods(methods, layout, Method::getReturnType);
+    }
+
+    private static List<MethodInfo> mappableGetStructMethods(Class<?> type,
+                                                             GroupLayout layout) {
+        // The types for the components
+        List<Method> methods = candidates(type, 0)
+                .filter(m -> m.getReturnType() != void.class && m.getReturnType() != Void.class)
+                .filter(m -> m.getReturnType().isInterface())
                 .toList();
 
         return mappableMethods(methods, layout, Method::getReturnType);
@@ -356,15 +397,30 @@ public record SegmentInterfaceMapper<T>(
                 .map(m -> {
                     var type = typeExtractor.apply(m);
                     var elementPath = MemoryLayout.PathElement.groupElement(m.getName());
-                    var element = layout.select(elementPath);
-                    if (element instanceof ValueLayout vl) {
-                        if (!type.equals(vl.carrier())) {
-                            throw new IllegalArgumentException("The type " + type + " for method " + m +
-                                    "does not match " + element);
-                        }
+
+                    MemoryLayout element;
+                    try {
+                        element = layout.select(elementPath);
+                    } catch (IllegalArgumentException i) {
+                        throw new IllegalArgumentException("Unable to resolve '" + m + "' in " + layout, i);
                     }
                     var offset = layout.byteOffset(elementPath);
-                    return new MethodInfo(m, type.describeConstable().orElseThrow(), valueLayoutInfo(element), offset);
+
+                    return switch (element) {
+                        case ValueLayout vl -> {
+                            if (!type.equals(vl.carrier())) {
+                                throw new IllegalArgumentException("The type " + type + " for method " + m +
+                                        "does not match " + element);
+                            }
+                            yield new MethodInfo(m, desc(type), layoutInfo(vl), offset);
+                        }
+                        case GroupLayout gl -> {
+                            MapperUtil.requireImplementableInterfaceType(type);
+                            yield new MethodInfo(m, desc(type), layoutInfo(gl), offset);
+                        }
+                        default -> throw new IllegalArgumentException("Cannot map " + element + " for " + type);
+                    };
+
                 })
                 .toList();
     }
@@ -373,6 +429,7 @@ public record SegmentInterfaceMapper<T>(
         return Arrays.stream(type.getMethods())
                 .filter(m -> m.getParameterCount() == paramCount)
                 .filter(m -> !Modifier.isStatic(m.getModifiers()))
+                .filter(m -> !isSegmentBacked(type, m))
                 .filter(m -> !m.isDefault());
     }
 
@@ -382,12 +439,12 @@ public record SegmentInterfaceMapper<T>(
 
         String name = info.method().getName();
         ClassDesc returnDesc = info.desc();
-        ClassDesc layoutDesc = info.valueLayoutInfo().desc();
+        ClassDesc layoutDesc = info.layoutInfo().desc();
 
-        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), Classfile.ACC_PUBLIC, cob -> {
+        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, "segment", MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.valueLayoutInfo().name(), layoutDesc)
+                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc)
                             .aload(0)
                             .getfield(classDesc, "offset", CD_long);
                     if (info.offset() != 0) {
@@ -397,7 +454,7 @@ public record SegmentInterfaceMapper<T>(
                     var getDesc = MethodTypeDesc.of(returnDesc, layoutDesc, CD_long);
                     cob.invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "get", getDesc);
                     // lreturn(), dreturn() etc.
-                    info.valueLayoutInfo().returnOp().accept(cob);
+                    info.layoutInfo().returnOp().accept(cob);
                 }
         );
     }
@@ -408,20 +465,20 @@ public record SegmentInterfaceMapper<T>(
 
         String name = info.method().getName();
         ClassDesc parameterDesc = info.desc();
-        ClassDesc layoutDesc = info.valueLayoutInfo().desc();
+        ClassDesc layoutDesc = info.layoutInfo().desc();
 
-        cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), Classfile.ACC_PUBLIC, cob -> {
-                    cob     .aload(0)
+        cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
+                    cob.aload(0)
                             .getfield(classDesc, "segment", MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.valueLayoutInfo().name(), layoutDesc)
+                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc)
                             .aload(0)
                             .getfield(classDesc, "offset", CD_long);
                     if (info.offset() != 0) {
-                        cob     .ldc(info.offset())
+                        cob.ldc(info.offset())
                                 .ladd();
                     }
                     var setDesc = MethodTypeDesc.of(CD_void, layoutDesc, CD_long, parameterDesc);
-                    cob     .iload(1)
+                    cob.iload(1)
                             .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "set", setDesc)
                             .return_();
                 }
@@ -429,10 +486,37 @@ public record SegmentInterfaceMapper<T>(
 
     }
 
+    private void generateStructGetter(ClassBuilder cb,
+                                      ClassDesc classDesc,
+                                      MethodInfo info) {
+
+        String name = info.method().getName();
+        ClassDesc parameterDesc = info.desc();
+        ClassDesc layoutDesc = info.layoutInfo().desc();
+/*
+        ConstantDesc constantDesc =
+
+                cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
+                            cob.ldc()
+                            if (info.offset() != 0) {
+                                cob.ldc(info.offset())
+                                        .ladd();
+                            }
+                            var setDesc = MethodTypeDesc.of(CD_void, layoutDesc, CD_long, parameterDesc);
+                            cob.iload(1)
+                                    .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "set", setDesc)
+                                    .return_();
+                        }
+                );*/
+
+    }
+
+
     record MethodInfo(Method method,
                       ClassDesc desc,
-                      LayoutInfo valueLayoutInfo,
-                      long offset) {}
+                      LayoutInfo layoutInfo,
+                      long offset) {
+    }
 
     private void generateToString(ClassBuilder cb,
                                   ClassDesc classDesc,
@@ -442,7 +526,7 @@ public record SegmentInterfaceMapper<T>(
                 .map(m -> String.format("%s()=\u0001", m.method().getName()))
                 .collect(Collectors.joining(", ", type.getSimpleName() + "[", "]"));
 
-        DirectMethodHandleDesc bootstrap = ConstantDescs.ofCallsiteBootstrap(
+        DirectMethodHandleDesc bootstrap = ofCallsiteBootstrap(
                 desc(StringConcatFactory.class),
                 "makeConcatWithConstants",
                 CD_CallSite,
@@ -460,7 +544,7 @@ public record SegmentInterfaceMapper<T>(
 
         cb.withMethodBody("toString",
                 MethodTypeDesc.of(CD_String),
-                Classfile.ACC_PUBLIC | ACC_FINAL,
+                ACC_PUBLIC | ACC_FINAL,
                 cob -> {
                     for (int i = 0; i < getMethods.size(); i++) {
                         var name = getMethods.get(i).method().getName();
@@ -486,24 +570,116 @@ public record SegmentInterfaceMapper<T>(
                       Consumer<CodeBuilder> returnOp) {
     }
 
-    private static LayoutInfo valueLayoutInfo(MemoryLayout layout) {
+    private static LayoutInfo layoutInfo(ValueLayout layout) {
         return switch (layout) {
             // Todo: Remove boolean?
-            case ValueLayout.OfBoolean _ -> new LayoutInfo(layout,"JAVA_BOOLEAN", desc(ValueLayout.OfBoolean.class), CodeBuilder::ireturn);
-            case ValueLayout.OfByte _    -> new LayoutInfo(layout,"JAVA_BYTE", desc(ValueLayout.OfByte.class), CodeBuilder::ireturn);
-            case ValueLayout.OfShort _   -> new LayoutInfo(layout,"JAVA_SHORT", desc(ValueLayout.OfShort.class), CodeBuilder::ireturn);
-            case ValueLayout.OfChar _    -> new LayoutInfo(layout,"JAVA_CHAR", desc(ValueLayout.OfChar.class), CodeBuilder::ireturn);
-            case ValueLayout.OfInt _     -> new LayoutInfo(layout,"JAVA_INT", desc(ValueLayout.OfInt.class), CodeBuilder::ireturn);
-            case ValueLayout.OfFloat _   -> new LayoutInfo(layout,"JAVA_FLOAT", desc(ValueLayout.OfFloat.class), CodeBuilder::freturn);
-            case ValueLayout.OfLong _    -> new LayoutInfo(layout,"JAVA_LONG", desc(ValueLayout.OfLong.class), CodeBuilder::lreturn);
-            case ValueLayout.OfDouble _  -> new LayoutInfo(layout,"JAVA_DOUBLE", desc(ValueLayout.OfDouble.class), CodeBuilder::dreturn);
+            case ValueLayout.OfBoolean _ -> new LayoutInfo(layout, "JAVA_BOOLEAN", desc(ValueLayout.OfBoolean.class), CodeBuilder::ireturn);
+            case ValueLayout.OfByte _ -> new LayoutInfo(layout, "JAVA_BYTE", desc(ValueLayout.OfByte.class), CodeBuilder::ireturn);
+            case ValueLayout.OfShort _ -> new LayoutInfo(layout, "JAVA_SHORT", desc(ValueLayout.OfShort.class), CodeBuilder::ireturn);
+            case ValueLayout.OfChar _ -> new LayoutInfo(layout, "JAVA_CHAR", desc(ValueLayout.OfChar.class), CodeBuilder::ireturn);
+            case ValueLayout.OfInt _ -> new LayoutInfo(layout, "JAVA_INT", desc(ValueLayout.OfInt.class), CodeBuilder::ireturn);
+            case ValueLayout.OfFloat _ -> new LayoutInfo(layout, "JAVA_FLOAT", desc(ValueLayout.OfFloat.class), CodeBuilder::freturn);
+            case ValueLayout.OfLong _ -> new LayoutInfo(layout, "JAVA_LONG", desc(ValueLayout.OfLong.class), CodeBuilder::lreturn);
+            case ValueLayout.OfDouble _ -> new LayoutInfo(layout, "JAVA_DOUBLE", desc(ValueLayout.OfDouble.class), CodeBuilder::dreturn);
             default -> throw new IllegalArgumentException("Unable to map to a LayoutInfo: " + layout);
         };
+    }
+
+    private static LayoutInfo layoutInfo(GroupLayout layout) {
+        return new LayoutInfo(layout, null, null, CodeBuilder::areturn);
     }
 
     private static ClassDesc desc(Class<?> clazz) {
         return clazz.describeConstable()
                 .orElseThrow();
+    }
+
+    private static String mangleFieldName(Class<?> clazz) {
+        return "$" + clazz.toString().replaceAll("\\.", "_") + "_Factory$";
+    }
+
+    @Override
+    public MethodHandles.Lookup lookup() {
+        return lookup;
+    }
+
+    @Override
+    public Class<T> type() {
+        return type;
+    }
+
+    @Override
+    public GroupLayout layout() {
+        return layout;
+    }
+
+    public long offset() {
+        return offset;
+    }
+
+    public int depth() {
+        return depth;
+    }
+
+    public Class<T> implClass() {
+        return implClass;
+    }
+
+    @Override
+    public boolean isExhaustive() {
+        return isExhaustive;
+    }
+
+    @Override
+    public MethodHandle getHandle() {
+        return getHandle;
+    }
+
+    @Override
+    public MethodHandle setHandle() {
+        return setHandle;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == this) return true;
+        if (obj == null || obj.getClass() != this.getClass()) return false;
+        var that = (SegmentInterfaceMapper) obj;
+        return Objects.equals(this.lookup, that.lookup) &&
+                Objects.equals(this.type, that.type) &&
+                Objects.equals(this.layout, that.layout) &&
+                this.offset == that.offset &&
+                this.depth == that.depth &&
+                Objects.equals(this.implClass, that.implClass) &&
+                this.isExhaustive == that.isExhaustive &&
+                Objects.equals(this.getHandle, that.getHandle) &&
+                Objects.equals(this.setHandle, that.setHandle);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(lookup, type, layout, offset, depth, implClass, isExhaustive, getHandle, setHandle);
+    }
+
+    @Override
+    public String toString() {
+        return "SegmentInterfaceMapper[" +
+                "lookup=" + lookup + ", " +
+                "type=" + type + ", " +
+                "layout=" + layout + ", " +
+                "offset=" + offset + ", " +
+                "depth=" + depth + ", " +
+                "implClass=" + implClass + ", " +
+                "isExhaustive=" + isExhaustive + ", " +
+                "getHandle=" + getHandle + ", " +
+                "setHandle=" + setHandle + ']';
+    }
+
+
+    record ClassLayoutKey(Class<?> clazz, MemoryLayout layout) {
+        ClassLayoutKey {
+            layout = LayoutTransformer.transform(layout, LayoutTransformer.MemoryLayoutTransformer.of(MemoryLayout::withoutName));
+        }
     }
 
     /**
@@ -522,7 +698,7 @@ public record SegmentInterfaceMapper<T>(
      */
     // Records have trusted instance fields.
     @ValueBased
-    record Mapped<T, R> (
+    record Mapped<T, R>(
             @Override MethodHandles.Lookup lookup,
             @Override Class<R> type,
             @Override GroupLayout layout,
@@ -551,7 +727,7 @@ public record SegmentInterfaceMapper<T>(
             MethodHandle toMh = findVirtual("mapTo").bindTo(this);
             this.getHandle = MethodHandles.filterReturnValue(getHandle, toMh);
             MethodHandle fromMh = findVirtual("mapFrom").bindTo(this);
-            if (setHandle!=null) {
+            if (setHandle != null) {
                 this.setHandle = MethodHandles.filterArguments(setHandle, 2, fromMh);
             } else {
                 this.setHandle = null;
@@ -587,14 +763,14 @@ public record SegmentInterfaceMapper<T>(
             Objects.requireNonNull(fromMapper);
 
             return new Mapped<>(original.lookup(),
-                        newType,
-                        original.layout(),
-                        false, // There is no way to evaluate exhaustiveness
-                        original.getHandle(),
-                        original.setHandle(),
-                        toMapper,
-                        fromMapper
-                );
+                    newType,
+                    original.layout(),
+                    false, // There is no way to evaluate exhaustiveness
+                    original.getHandle(),
+                    original.setHandle(),
+                    toMapper,
+                    fromMapper
+            );
         }
 
         private static MethodHandle findVirtual(String name) {

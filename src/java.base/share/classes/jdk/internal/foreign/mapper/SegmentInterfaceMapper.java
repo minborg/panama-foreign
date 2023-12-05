@@ -34,6 +34,7 @@ import jdk.internal.classfile.Label;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.DirectMethodHandleDesc;
 import java.lang.constant.DynamicCallSiteDesc;
+import java.lang.constant.DynamicConstantDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
@@ -47,10 +48,9 @@ import java.lang.invoke.MethodType;
 import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -91,8 +91,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     private final MethodHandle getHandle;
     private final MethodHandle setHandle;
 
-    private final Map<ClassLayoutKey, MethodHandle> factories;
-
     // Canonical constructor in which we ignore some of the
     // input values and derive them internally instead.
     public SegmentInterfaceMapper(MethodHandles.Lookup lookup,
@@ -105,16 +103,9 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.layout = layout;
         this.offset = offset;
         this.depth = depth;
-        this.factories = new HashMap<>();
         List<MethodInfo> getMethods = mappableGetMethods(type, layout);
         List<MethodInfo> setMethods = mappableSetMethods(type, layout);
         List<MethodInfo> getStructMethods = mappableGetStructMethods(type, layout);
-        Map<ClassLayoutKey, List<MethodInfo>> collect = getStructMethods.stream()
-                .collect(Collectors.groupingBy(
-                        (MethodInfo mi) -> new ClassLayoutKey(mi.method().getReturnType(), mi.layoutInfo.layout())));
-        Map<ClassLayoutKey, MethodHandle> handles = collect.entrySet()
-                .stream().collect(Collectors.toMap(Map.Entry::getKey, ))
-        // There is no mapping for set operation on interfaces
         assertMappingsCorrect(type, layout, getMethods);
         assertMappingsCorrect(type, layout, setMethods);
         this.implClass = generateClass(getMethods, setMethods, getStructMethods);
@@ -150,30 +141,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     cb.withField(SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC, ACC_PRIVATE | ACC_FINAL);
                     // private final long $offset$;
                     cb.withField(OFFSET_FIELD_NAME, CD_long, ACC_PRIVATE | ACC_FINAL);
-
-/*
-                    // Create a list of the unique sub-interfaces
-                    var interfaceVariants = getStructMethods.stream()
-                            .map(i -> i.method().getReturnType())
-                            .distinct()
-                            .toList();
-
-                    // E.g. private final MethodHandle $com_company_app_PointAccessor_Factory$;
-                    for (Class<?> inter : interfaceVariants) {
-                        cb.withField(mangleFieldName(inter), CD_MethodHandle, ACC_PRIVATE | ACC_FINAL);
-                    }*/
-
-
-/*                    List<ClassDesc> ctorDesc = Stream.concat(
-                                    Stream.of(MEMORY_SEGMENT_CLASS_DESC, CD_long),
-                                    interfaceVariants.stream().map(SegmentInterfaceMapper::desc))
-                            .toList();*/
-
-                    // Canonical Constructor
-                    // xInterfaceMapper(@Override MemorySegment segment, @Override long offset) {
-                    //     this.segment = segment;
-                    //     this.offset = offset;
-                    // }
 
                     cb.withMethodBody(INIT_NAME, MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long), ACC_PUBLIC, cob -> {
                         cob.aload(0)
@@ -230,15 +197,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                         generateSetter(cb, classDesc, method);
                     }
 
-/*                    // Generate factory method handles
-                    for (MethodInfo method: getStructMethods) {
-                        factories.computeIfAbsent(method.method().getReturnType(), r -> {
-
-                        });
-                    }*/
-
-                    for (MethodInfo method : getStructMethods) {
-                        generateStructGetter(cb, classDesc, method);
+                    // @Override
+                    // T gX() {
+                    //     return (T) mh[x].invokeExact(segment, offset + elementOffset);
+                    // }
+                    for (int i = 0; i < getStructMethods.size(); i++) {
+                        MethodInfo info = getStructMethods.get(i);
+                        generateStructGetter(cb, classDesc, info, i);
                     }
 
                     // @Override
@@ -275,13 +240,21 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    generateToString(cb, classDesc, getMethods);
+                    List<MethodInfo> allMethods = new ArrayList<>(getMethods);
+                    allMethods.addAll(getStructMethods);
+                    generateToString(cb, classDesc, allMethods);
 
                 });
         try {
+
+            // Here are the actual pre-computed method handles to be loaded by .ldc()
+            List<MethodHandle> getMethodHandles = getStructMethods.stream()
+                    .map(this::methodHandleFor)
+                    .toList();
+
             @SuppressWarnings("unchecked")
             Class<T> c = (Class<T>) lookup
-                    .defineHiddenClass(bytes, true)
+                    .defineHiddenClassWithClassData(bytes, getMethodHandles, true)
                     .lookupClass();
             return c;
         } catch (IllegalAccessException | VerifyError e) {
@@ -389,7 +362,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return mappableMethods(methods, layout, m -> m.getParameterTypes()[0]);
     }
 
-
     private static List<MethodInfo> mappableMethods(List<Method> methods,
                                                     GroupLayout layout,
                                                     Function<? super Method, ? extends Class<?>> typeExtractor) {
@@ -434,6 +406,18 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .filter(m -> !m.isDefault());
     }
 
+    private MethodHandle methodHandleFor(MethodInfo methodInfo) {
+
+        SegmentInterfaceMapper<?> innerMapper = new SegmentInterfaceMapper<>(
+                lookup,
+                methodInfo.method().getReturnType(),
+                (GroupLayout) methodInfo.layoutInfo().layout(),
+                offset + methodInfo.offset(),
+                depth + 1);
+
+        return innerMapper.getHandle();
+    }
+
     private void generateGetter(ClassBuilder cb,
                                 ClassDesc classDesc,
                                 MethodInfo info) {
@@ -444,10 +428,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
         cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
-                            .getfield(classDesc, "segment", MEMORY_SEGMENT_CLASS_DESC)
+                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
                             .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc)
+                            // Todo:: directly load the known offset
                             .aload(0)
-                            .getfield(classDesc, "offset", CD_long);
+                            .getfield(classDesc, OFFSET_FIELD_NAME, CD_long);
                     if (info.offset() != 0) {
                         cob.ldc(info.offset())
                                 .ladd();
@@ -470,10 +455,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
         cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
-                            .getfield(classDesc, "segment", MEMORY_SEGMENT_CLASS_DESC)
+                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
                             .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc)
+                            // Todo:: directly load the known offset
                             .aload(0)
-                            .getfield(classDesc, "offset", CD_long);
+                            .getfield(classDesc, OFFSET_FIELD_NAME, CD_long);
                     if (info.offset() != 0) {
                         cob.ldc(info.offset())
                                 .ladd();
@@ -489,29 +475,37 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private void generateStructGetter(ClassBuilder cb,
                                       ClassDesc classDesc,
-                                      MethodInfo info) {
+                                      MethodInfo info,
+                                      int boostrapIndex) {
 
-        String name = info.method().getName();
-        ClassDesc parameterDesc = info.desc();
-        ClassDesc layoutDesc = info.layoutInfo().desc();
-/*
-        ConstantDesc constantDesc =
+        var name = info.method().getName();
+        var returnDesc = desc(info.method().getReturnType());
 
-                cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
-                            cob.ldc()
-                            if (info.offset() != 0) {
-                                cob.ldc(info.offset())
-                                        .ladd();
-                            }
-                            var setDesc = MethodTypeDesc.of(CD_void, layoutDesc, CD_long, parameterDesc);
-                            cob.iload(1)
-                                    .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "set", setDesc)
-                                    .return_();
-                        }
-                );*/
+        DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
+                BSM_CLASS_DATA_AT,
+                boostrapIndex
+        );
 
+        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
+                    cob.ldc(desc)
+                            .checkcast(desc(MethodHandle.class)) // MethodHandle
+                            .aload(0)
+                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC) // MemorySegment
+                            // Todo:: directly load the known offset
+                            .aload(0)
+                            .getfield(classDesc, OFFSET_FIELD_NAME, CD_long); // long
+
+                    if (info.offset() != 0) {
+                        cob.ldc(info.offset())
+                                .ladd();
+                    }
+
+                    cob.invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_Object, MEMORY_SEGMENT_CLASS_DESC, CD_long))
+                            .checkcast(returnDesc)
+                            .areturn();
+                }
+        );
     }
-
 
     record MethodInfo(Method method,
                       ClassDesc desc,
@@ -645,7 +639,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     public boolean equals(Object obj) {
         if (obj == this) return true;
         if (obj == null || obj.getClass() != this.getClass()) return false;
-        var that = (SegmentInterfaceMapper) obj;
+        var that = (SegmentInterfaceMapper<?>) obj;
         return Objects.equals(this.lookup, that.lookup) &&
                 Objects.equals(this.type, that.type) &&
                 Objects.equals(this.layout, that.layout) &&
@@ -674,9 +668,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 "isExhaustive=" + isExhaustive + ", " +
                 "getHandle=" + getHandle + ", " +
                 "setHandle=" + setHandle + ']';
-    }
-
-    record ClassLayoutKey(Class<?> clazz, MemoryLayout layout) {
     }
 
     /**

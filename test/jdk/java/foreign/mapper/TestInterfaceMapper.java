@@ -230,8 +230,19 @@ final class TestInterfaceMapper {
 
         SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(lookup, LineAccessor.class, LINE_LAYOUT);
         LineAccessor realAccessor = mapper.get(segment);
+
         System.out.println("realAccessor = " + realAccessor);
-        fail();
+
+        var begin = realAccessor.begin();
+        var end = realAccessor.end();
+
+        System.out.println("begin = " + begin);
+        System.out.println("end = " + end);
+
+        assertEquals(3, begin.x());
+        assertEquals(4, begin.y());
+        assertEquals(6, end.x());
+        assertEquals(8, end.y());
     }
 
     // @ValueBased

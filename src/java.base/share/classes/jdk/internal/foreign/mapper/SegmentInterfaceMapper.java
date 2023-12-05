@@ -28,14 +28,10 @@ package jdk.internal.foreign.mapper;
 import jdk.internal.ValueBased;
 import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.ClassHierarchyResolver;
-import jdk.internal.classfile.Classfile;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
-import jdk.internal.foreign.LayoutTransformer;
 
 import java.lang.constant.ClassDesc;
-import java.lang.constant.ConstantDesc;
-import java.lang.constant.ConstantDescs;
 import java.lang.constant.DirectMethodHandleDesc;
 import java.lang.constant.DynamicCallSiteDesc;
 import java.lang.constant.MethodTypeDesc;
@@ -95,7 +91,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     private final MethodHandle getHandle;
     private final MethodHandle setHandle;
 
-    private final Map<Class<?>, MethodHandle> factories;
+    private final Map<ClassLayoutKey, MethodHandle> factories;
 
     // Canonical constructor in which we ignore some of the
     // input values and derive them internally instead.
@@ -113,6 +109,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         List<MethodInfo> getMethods = mappableGetMethods(type, layout);
         List<MethodInfo> setMethods = mappableSetMethods(type, layout);
         List<MethodInfo> getStructMethods = mappableGetStructMethods(type, layout);
+        Map<ClassLayoutKey, List<MethodInfo>> collect = getStructMethods.stream()
+                .collect(Collectors.groupingBy(
+                        (MethodInfo mi) -> new ClassLayoutKey(mi.method().getReturnType(), mi.layoutInfo.layout())));
+        Map<ClassLayoutKey, MethodHandle> handles = collect.entrySet()
+                .stream().collect(Collectors.toMap(Map.Entry::getKey, ))
         // There is no mapping for set operation on interfaces
         assertMappingsCorrect(type, layout, getMethods);
         assertMappingsCorrect(type, layout, setMethods);
@@ -675,11 +676,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 "setHandle=" + setHandle + ']';
     }
 
-
     record ClassLayoutKey(Class<?> clazz, MemoryLayout layout) {
-        ClassLayoutKey {
-            layout = LayoutTransformer.transform(layout, LayoutTransformer.MemoryLayoutTransformer.of(MemoryLayout::withoutName));
-        }
     }
 
     /**

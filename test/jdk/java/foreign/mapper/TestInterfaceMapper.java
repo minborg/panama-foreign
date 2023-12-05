@@ -111,6 +111,8 @@ import static org.junit.jupiter.api.Assertions.*;
 // Note: the order in which interface methods appears is unspecified.
 final class TestInterfaceMapper {
 
+    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+
     private static final double EPSILON = 1e-6;
 
     private static final GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
@@ -120,8 +122,7 @@ final class TestInterfaceMapper {
 
     @Test
     void smokeTest() {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
-        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(lookup, PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
         {
@@ -136,7 +137,7 @@ final class TestInterfaceMapper {
             assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
             assertEquals(2, accessor.y());
             assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
-            assertToString(accessor, PointAccessor.class, Set.of("x()=1", "y()=2"));
+            assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
         }
     }
 
@@ -158,37 +159,56 @@ final class TestInterfaceMapper {
         float f();
         long l();
         double d();
+
+        void b(byte b);
+        void s(short s);
+        void c(char c);
+        void i(int i);
+        void f(float f);
+        void l(long l);
+        void d(double d);
     }
 
     @Test
     void smokeTestMixedBag() {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
-        SegmentMapper<MixedBag> mapper = SegmentMapper.ofInterface(lookup, MixedBag.class, MIXED_LAYOUT);
-        MemorySegment segment = Arena.ofAuto().allocate(MIXED_LAYOUT);
+        SegmentMapper<MixedBag> mapper = SegmentMapper.ofInterface(LOOKUP, MixedBag.class, MIXED_LAYOUT);
+        try (var arena = Arena.ofConfined()) {
+            MemorySegment segment = arena.allocate(MIXED_LAYOUT);
 
-        MIXED_LAYOUT.varHandle(PathElement.groupElement("l")).set(segment, 0, 42L);
-        MIXED_LAYOUT.varHandle(PathElement.groupElement("d")).set(segment, 0, 123.45d);
-        MIXED_LAYOUT.varHandle(PathElement.groupElement("i")).set(segment, 0, 13);
-        MIXED_LAYOUT.varHandle(PathElement.groupElement("f")).set(segment, 0, 3.1415f);
-        MIXED_LAYOUT.varHandle(PathElement.groupElement("c")).set(segment, 0, 'A');
-        MIXED_LAYOUT.varHandle(PathElement.groupElement("s")).set(segment, 0, (short) 32767);
-        MIXED_LAYOUT.varHandle(PathElement.groupElement("b")).set(segment, 0, (byte) 127);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("l")).set(segment, 0, 42L);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("d")).set(segment, 0, 123.45d);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("i")).set(segment, 0, 13);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("f")).set(segment, 0, 3.1415f);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("c")).set(segment, 0, 'B');
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("s")).set(segment, 0, (short) 32767);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("b")).set(segment, 0, (byte) 127);
 
-        MixedBag accessor = mapper.get(segment);
+            MixedBag accessor = mapper.get(segment);
 
-        assertEquals(42L, accessor.l());
-        assertEquals(123.45d, accessor.d(), EPSILON);
-        assertEquals(13, accessor.i());
-        assertEquals(3.1415f, accessor.f(), EPSILON);
-        assertEquals('A', accessor.c());
-        assertEquals((short) 32767, accessor.s());
-        assertEquals((byte) 127, accessor.b());
+            assertEquals(42L, accessor.l());
+            assertEquals(123.45d, accessor.d(), EPSILON);
+            assertEquals(13, accessor.i());
+            assertEquals(3.1415f, accessor.f(), EPSILON);
+            assertEquals('B', accessor.c());
+            assertEquals((short) 32767, accessor.s());
+            assertEquals((byte) 127, accessor.b());
 
-        Set<String> set = Arrays.stream("i()=13, b()=127, s()=32767, c()=A, f()=3.1415, l()=42, d()=123.4".split(", "))
-                .collect(Collectors.toSet());
-        assertToString(accessor, MixedBag.class, set);
+            Set<String> set = Arrays.stream("i()=13, b()=127, s()=32767, c()=B, f()=3.1415, l()=42, d()=123.4".split(", "))
+                    .collect(Collectors.toSet());
+            assertToString(accessor, MixedBag.class, set);
 
-        // Todo: Update values and check
+            accessor.b((byte) (accessor.b() - 1));
+            accessor.s((short) (accessor.s() - 1));
+            accessor.c((char) (accessor.c() - 1));
+            accessor.i(accessor.i() - 1);
+            accessor.f(accessor.f() - 1);
+            accessor.l(accessor.l() - 1);
+            accessor.d(accessor.d() - 1);
+
+            Set<String> set2 = Arrays.stream("i()=12, b()=126, s()=32766, c()=A, f()=2.1415, l()=41, d()=122.4".split(", "))
+                    .collect(Collectors.toSet());
+            assertToString(accessor, mapper.type(), set2);
+        }
     }
 
     private static final GroupLayout LINE_LAYOUT = MemoryLayout.structLayout(
@@ -202,13 +222,12 @@ final class TestInterfaceMapper {
 
     @Test
     void xyAccessor() {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
-        SegmentMapper<XYAccessor> mapper = SegmentMapper.ofInterface(lookup, XYAccessor.class, POINT_LAYOUT);
+        SegmentMapper<XYAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, XYAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         XYAccessor accessor = mapper.get(segment, 0);
         assertEquals(3, accessor.x());
         assertEquals(4, accessor.y());
-        assertToString(accessor, XYAccessor.class, Set.of("x()=3", "y()=4"));
+        assertToString(accessor, mapper.type(), Set.of("x()=3", "y()=4"));
     }
 
     interface LineAccessor {
@@ -218,86 +237,58 @@ final class TestInterfaceMapper {
 
     @Test
     void line() {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
-        var pointMapper = SegmentMapper.ofInterface(lookup, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
-        LineAccessor accessor = new LineAccessorImpl(segment, 0L, pointMapper.getHandle());
-        assertEquals(3, accessor.begin().x());
-        assertEquals(4, accessor.begin().y());
-        assertEquals(6, accessor.end().x());
-        assertEquals(8, accessor.end().y());
+        SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, LineAccessor.class, LINE_LAYOUT);
+        LineAccessor accessor = mapper.get(segment);
 
-        SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(lookup, LineAccessor.class, LINE_LAYOUT);
-        LineAccessor realAccessor = mapper.get(segment);
-
-        System.out.println("realAccessor = " + realAccessor);
-
-        var begin = realAccessor.begin();
-        var end = realAccessor.end();
-
-        System.out.println("begin = " + begin);
-        System.out.println("end = " + end);
+        var begin = accessor.begin();
+        var end = accessor.end();
 
         assertEquals(3, begin.x());
         assertEquals(4, begin.y());
         assertEquals(6, end.x());
         assertEquals(8, end.y());
+
+        assertToString(accessor, mapper.type(), Set.of("begin()=PointAccessor[", "end()=PointAccessor["));
     }
 
-    // @ValueBased
-    public static final class LineAccessorImpl implements LineAccessor {
-            private final MemorySegment $segment$;
-            private final long $offset$;
-            private final MethodHandle $pointAccessorFactory$;
+    interface Empty {
+    }
 
-        public LineAccessorImpl(MemorySegment segment,
-                                long offset,
-                                MethodHandle pointAccessorFactory) {
-            this.$segment$ = segment;
-            this.$offset$ = offset;
-            this.$pointAccessorFactory$ = pointAccessorFactory;
-        }
+    @Test
+    void empty() {
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
-        public PointAccessor begin() {
-            return (PointAccessor) $evalWithMemorySegmentAndOffset$(
-                    $pointAccessorFactory$,
-                    $segment$,
-                    $offset$);
-        }
+        SegmentMapper<Empty> mapper = SegmentMapper.ofInterface(LOOKUP, Empty.class, LINE_LAYOUT);
+        Empty accessor = mapper.get(segment);
 
-        public PointAccessor end() {
-            return (PointAccessor) $evalWithMemorySegmentAndOffset$(
-                    $pointAccessorFactory$,
-                    $segment$,
-                    $offset$ + 8L);
-        }
+        assertToString(accessor, mapper.type(), Set.of());
+    }
 
+    interface Fail1 {
+        // Setters of accessor not allowed
+        void begin(PointAccessor pointAccessor);
+    }
 
-        @Override
-        public int hashCode() {
-            return System.identityHashCode(this);
-        }
+    @Test
+    void fail1() {
+                IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
+                SegmentMapper.ofInterface(LOOKUP, Fail1.class, LINE_LAYOUT)
+        );
 
-        @Override
-        public boolean equals(Object obj) {
-            return this == obj;
-        }
+    }
 
-        @Override
-        public String toString() {
-            return "LineAccessor[begin()=" + begin() + ", end()=" + end() + "]";
-        }
+    interface Fail2 {
+        // Only one parameter is allowed
+        void x(int i, Object o);
+    }
 
-        private static Object $evalWithMemorySegmentAndOffset$(MethodHandle mh,
-                                                               MemorySegment segment,
-                                                               long offset) {
-            try {
-                return mh.invokeExact(segment, offset);
-            } catch (Throwable e) {
-                throw new IllegalStateException("Unable to invoke method handle " + mh, e);
-            }
-        }
+    @Test
+    void fail2() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
+                SegmentMapper.ofInterface(LOOKUP, Fail2.class, POINT_LAYOUT)
+        );
 
     }
 
@@ -306,7 +297,7 @@ final class TestInterfaceMapper {
         String s = o.toString();
         assertTrue(s.startsWith(clazz.getSimpleName() + "["));
         for (var fragment:fragments) {
-            assertTrue(s.contains(fragment));
+            assertTrue(s.contains(fragment), s + " does not contain " + fragment);
         }
         assertTrue(s.endsWith("]"));
     }

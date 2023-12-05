@@ -30,6 +30,7 @@ import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
+import jdk.internal.classfile.TypeKind;
 
 import java.lang.constant.ClassDesc;
 import java.lang.constant.DirectMethodHandleDesc;
@@ -56,6 +57,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntConsumer;
+import java.util.function.ObjIntConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -426,20 +429,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         ClassDesc returnDesc = info.desc();
         ClassDesc layoutDesc = info.layoutInfo().desc();
 
+        var getDesc = MethodTypeDesc.of(returnDesc, layoutDesc, CD_long);
+
         cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc)
-                            // Todo:: directly load the known offset
-                            .aload(0)
-                            .getfield(classDesc, OFFSET_FIELD_NAME, CD_long);
-                    if (info.offset() != 0) {
-                        cob.ldc(info.offset())
-                                .ladd();
-                    }
-                    var getDesc = MethodTypeDesc.of(returnDesc, layoutDesc, CD_long);
-                    cob.invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "get", getDesc);
-                    // lreturn(), dreturn() etc.
+                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc);
+                    offsetBlock(cob, classDesc, info.offset())
+                            .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "get", getDesc);
+                    // ireturn(), dreturn() etc.
                     info.layoutInfo().returnOp().accept(cob);
                 }
         );
@@ -453,20 +451,16 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         ClassDesc parameterDesc = info.desc();
         ClassDesc layoutDesc = info.layoutInfo().desc();
 
+        var setDesc = MethodTypeDesc.of(CD_void, layoutDesc, CD_long, parameterDesc);
+
         cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc)
-                            // Todo:: directly load the known offset
-                            .aload(0)
-                            .getfield(classDesc, OFFSET_FIELD_NAME, CD_long);
-                    if (info.offset() != 0) {
-                        cob.ldc(info.offset())
-                                .ladd();
-                    }
-                    var setDesc = MethodTypeDesc.of(CD_void, layoutDesc, CD_long, parameterDesc);
-                    cob.iload(1)
-                            .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "set", setDesc)
+                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc);
+                    offsetBlock(cob, classDesc, info.offset());
+                    // iload, dload, etc.
+                    info.layoutInfo().paramOp().accept(cob, 1);
+                    cob.invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "set", setDesc)
                             .return_();
                 }
         );
@@ -490,21 +484,27 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     cob.ldc(desc)
                             .checkcast(desc(MethodHandle.class)) // MethodHandle
                             .aload(0)
-                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC) // MemorySegment
-                            // Todo:: directly load the known offset
-                            .aload(0)
-                            .getfield(classDesc, OFFSET_FIELD_NAME, CD_long); // long
-
-                    if (info.offset() != 0) {
-                        cob.ldc(info.offset())
-                                .ladd();
-                    }
-
-                    cob.invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_Object, MEMORY_SEGMENT_CLASS_DESC, CD_long))
+                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
+                    offsetBlock(cob, classDesc, info.offset())
+                            .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_Object, MEMORY_SEGMENT_CLASS_DESC, CD_long))
                             .checkcast(returnDesc)
                             .areturn();
                 }
         );
+    }
+
+    // Generate code that calculates "this.offset + layoutOffset"
+    private static CodeBuilder offsetBlock(CodeBuilder cob,
+                                           ClassDesc classDesc,
+                                           long layoutOffset) {
+        cob.aload(0)
+                .getfield(classDesc, OFFSET_FIELD_NAME, CD_long); // long
+
+        if (layoutOffset != 0) {
+            cob.ldc(layoutOffset)
+                    .ladd();
+        }
+        return cob;
     }
 
     record MethodInfo(Method method,
@@ -562,26 +562,27 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     record LayoutInfo(MemoryLayout layout,
                       String name,
                       ClassDesc desc,
-                      Consumer<CodeBuilder> returnOp) {
+                      Consumer<CodeBuilder> returnOp,
+                      ObjIntConsumer<CodeBuilder> paramOp) {
     }
 
     private static LayoutInfo layoutInfo(ValueLayout layout) {
         return switch (layout) {
             // Todo: Remove boolean?
-            case ValueLayout.OfBoolean _ -> new LayoutInfo(layout, "JAVA_BOOLEAN", desc(ValueLayout.OfBoolean.class), CodeBuilder::ireturn);
-            case ValueLayout.OfByte _ -> new LayoutInfo(layout, "JAVA_BYTE", desc(ValueLayout.OfByte.class), CodeBuilder::ireturn);
-            case ValueLayout.OfShort _ -> new LayoutInfo(layout, "JAVA_SHORT", desc(ValueLayout.OfShort.class), CodeBuilder::ireturn);
-            case ValueLayout.OfChar _ -> new LayoutInfo(layout, "JAVA_CHAR", desc(ValueLayout.OfChar.class), CodeBuilder::ireturn);
-            case ValueLayout.OfInt _ -> new LayoutInfo(layout, "JAVA_INT", desc(ValueLayout.OfInt.class), CodeBuilder::ireturn);
-            case ValueLayout.OfFloat _ -> new LayoutInfo(layout, "JAVA_FLOAT", desc(ValueLayout.OfFloat.class), CodeBuilder::freturn);
-            case ValueLayout.OfLong _ -> new LayoutInfo(layout, "JAVA_LONG", desc(ValueLayout.OfLong.class), CodeBuilder::lreturn);
-            case ValueLayout.OfDouble _ -> new LayoutInfo(layout, "JAVA_DOUBLE", desc(ValueLayout.OfDouble.class), CodeBuilder::dreturn);
+            case ValueLayout.OfBoolean _ -> new LayoutInfo(layout, "JAVA_BOOLEAN", desc(ValueLayout.OfBoolean.class), CodeBuilder::ireturn, CodeBuilder::iload);
+            case ValueLayout.OfByte _ -> new LayoutInfo(layout, "JAVA_BYTE", desc(ValueLayout.OfByte.class), CodeBuilder::ireturn, CodeBuilder::iload);
+            case ValueLayout.OfShort _ -> new LayoutInfo(layout, "JAVA_SHORT", desc(ValueLayout.OfShort.class), CodeBuilder::ireturn, CodeBuilder::iload);
+            case ValueLayout.OfChar _ -> new LayoutInfo(layout, "JAVA_CHAR", desc(ValueLayout.OfChar.class), CodeBuilder::ireturn, CodeBuilder::iload);
+            case ValueLayout.OfInt _ -> new LayoutInfo(layout, "JAVA_INT", desc(ValueLayout.OfInt.class), CodeBuilder::ireturn, CodeBuilder::iload);
+            case ValueLayout.OfFloat _ -> new LayoutInfo(layout, "JAVA_FLOAT", desc(ValueLayout.OfFloat.class), CodeBuilder::freturn, CodeBuilder::fload);
+            case ValueLayout.OfLong _ -> new LayoutInfo(layout, "JAVA_LONG", desc(ValueLayout.OfLong.class), CodeBuilder::lreturn, CodeBuilder::lload);
+            case ValueLayout.OfDouble _ -> new LayoutInfo(layout, "JAVA_DOUBLE", desc(ValueLayout.OfDouble.class), CodeBuilder::dreturn, CodeBuilder::dload);
             default -> throw new IllegalArgumentException("Unable to map to a LayoutInfo: " + layout);
         };
     }
 
     private static LayoutInfo layoutInfo(GroupLayout layout) {
-        return new LayoutInfo(layout, null, null, CodeBuilder::areturn);
+        return new LayoutInfo(layout, null, null, CodeBuilder::areturn, CodeBuilder::aload);
     }
 
     private static ClassDesc desc(Class<?> clazz) {

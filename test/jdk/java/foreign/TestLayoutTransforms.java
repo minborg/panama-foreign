@@ -52,6 +52,12 @@ final class TestLayoutTransforms {
         assertEquals(JAVA_INT, actual);
     }
 
+
+    @Test
+    void swapEndianInFoo() {
+        // Todo: swap endianness for all value layouts nested in a struct whose name is "foo", but leave all other structs unchanged
+    }
+
     @ParameterizedTest
     @MethodSource("composites")
     void testMemoryLayoutTransformer(MemoryLayout compositeLayout) {

@@ -29,10 +29,12 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.VarHandle;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import jdk.internal.foreign.LayoutPath;
 import jdk.internal.foreign.LayoutPath.PathElementImpl.PathKind;
+import jdk.internal.foreign.TransformerSupport;
 import jdk.internal.foreign.Utils;
 import jdk.internal.foreign.layout.MemoryLayoutUtil;
 import jdk.internal.foreign.layout.PaddingLayoutImpl;
@@ -1074,4 +1076,53 @@ public sealed interface MemoryLayout
                 .map(Objects::requireNonNull)
                 .toList());
     }
+
+    /**
+     * {@return a deep transformation of this memory layout by recursively applying the
+     *          provided {@code transformer} to all elements in this layout tree}
+     *
+     * @param transformer to deeply apply
+     */
+    default MemoryLayout transform(Transformer<?> transformer) {
+        return TransformerSupport.transform(this, transformer);
+    }
+
+    /**
+     * Represents a transformation of memory layouts of type {@code T}.
+     * <p>
+     * A transformer of type T will only be applied to memory layouts that implements T.
+     *
+     * @param <T> type to transform
+     */
+    sealed interface Transformer<T extends MemoryLayout>
+            permits TransformerSupport.TransformerImpl {
+
+        /**
+         * {@return the type of memory layout to transform}
+         */
+        Class<T> type();
+
+        /**
+         * {@return a transformed version of the provided memory layout {@code original}}
+         *
+         * @param original memory layout to transform
+         */
+        MemoryLayout transform(T original);
+
+        /**
+         * {@return a transformer for the provided {@code type} for which the provided {@code op}
+         *          will be applied}
+         *
+         * @param type of memory layout to transform
+         * @param op to be applied
+         * @param <T> memory layout type to transform
+         */
+        static <T extends MemoryLayout> Transformer<T> of(Class<T> type,
+                                                          Function<? super T, ? extends MemoryLayout> op) {
+            Objects.requireNonNull(type);
+            Objects.requireNonNull(op);
+            return TransformerSupport.transformer(type, op);
+        }
+    }
+
 }

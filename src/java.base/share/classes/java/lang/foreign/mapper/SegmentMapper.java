@@ -140,7 +140,7 @@ import java.util.stream.Stream;
  *
  *  MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
  *
- *  SegmentMapper<Point> mapper = SegmentMapper.ofInterface(Point.class, POINT);
+ *  SegmentMapper<Point> mapper = SegmentMapper.ofInterface(MethodHandles.lookup(), Point.class, POINT);
  *
  *  // Creates a new Point interface instance with an external segment
  *  Point point = mapper.get(segment); // Point[x=3, y=4]
@@ -177,7 +177,7 @@ import java.util.stream.Stream;
  * }
  *
  * SegmentMapper<NarrowedPointAccessor> narrowedPointMapper =
- *          SegmentMapper.ofInterface(PointAccessor.class, POINT)
+ *          SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT)
  *                 .map(NarrowedPointAccessor.class, NarrowedPointAccessor::fromPointAccessor);
  *
  * MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
@@ -216,7 +216,7 @@ import java.util.stream.Stream;
  * public static void main(String[] args) {
  *
  *     SegmentMapper<PointAccessor> mapper =
- *             SegmentMapper.ofInterface(PointAccessor.class, POINT);
+ *             SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT);
  *
  *     try (Arena arena = Arena.ofConfined()){
  *         // Creates an interface mapper backed by an internal segment
@@ -557,35 +557,6 @@ public interface SegmentMapper<T> {
 
     /**
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided interface {@code type} using the provided {@code layout}}
-     * <p>
-     * Reflective analysis on the provided {@code type} will be made using the
-     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
-     *
-     * @param type to map memory segment from and to
-     * @param layout to be used when mapping the provided {@code type}
-     * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided {@code type} is not an interface
-     * @throws IllegalArgumentException if the provided {@code type} is a hidden interface
-     * @throws IllegalArgumentException if the provided {@code type} is a sealed interface
-     * @throws IllegalArgumentException if the provided interface {@code type} cannot be
-     *        reflectively analysed using the
-     *        {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
-     * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         methods for which there are no exact mapping (of names and types) in
-     *         the provided {@code layout} or if the provided {@code type} is not public
-     *         or if the method is otherwise unable to create a segment mapper as
-     *         specified above.
-     * @see #ofInterface(MethodHandles.Lookup, Class, GroupLayout)
-     */
-    // Todo: Remove this factory
-    static <T> SegmentMapper<T> ofInterface(Class<T> type,
-                                            GroupLayout layout) {
-        return ofInterface(MethodHandles.publicLookup(), type, layout);
-    }
-
-    /**
-     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
      *          to the provided interface {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
      *
@@ -613,7 +584,7 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireImplementableInterfaceType(type);
         Objects.requireNonNull(layout);
-        return new SegmentInterfaceMapper<>(lookup, type, layout, 0L, 0);
+        return SegmentInterfaceMapper.create(lookup, type, layout);
     }
 
     /**
@@ -667,7 +638,7 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
-        return new SegmentInterfaceMapper<>(lookup, type, layout, 0L, 0);
+        return new SegmentRecordMapper<>(lookup, type, layout, 0L, 0);
     }
 
 }

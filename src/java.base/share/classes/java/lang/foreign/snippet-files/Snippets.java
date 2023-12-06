@@ -740,7 +740,7 @@ class Snippets {
 
                 MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
 
-                SegmentMapper<Point> mapper = SegmentMapper.ofInterface(Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+                SegmentMapper<Point> mapper = SegmentMapper.ofInterface(MethodHandles.lookup(), Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
 
                 // Creates a new Point interface instance with an external segment
                 Point point = mapper.get(segment); // Point[x=3, y=4]
@@ -784,7 +784,7 @@ class Snippets {
             public static void main(String[] args) {
 
                 SegmentMapper<NarrowedPointAccessor> narrowedPointMapper =
-                        SegmentMapper.ofInterface(PointAccessor.class, POINT)
+                        SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT)
                                 .map(NarrowedPointAccessor.class, NarrowedPointAccessor::fromPointAccessor);
 
                 MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
@@ -820,7 +820,7 @@ class Snippets {
             public static void main(String[] args) {
 
                 SegmentMapper<PointAccessor> mapper =
-                        SegmentMapper.ofInterface(PointAccessor.class, POINT);
+                        SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT);
 
                 try (Arena arena = Arena.ofConfined()){
                     // Creates an interface mapper

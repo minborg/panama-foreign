@@ -273,10 +273,12 @@ final class TestInterfaceMapper {
 
     @Test
     void fail1() {
-                IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
                 SegmentMapper.ofInterface(LOOKUP, Fail1.class, LINE_LAYOUT)
         );
-
+        var message = e.getMessage();
+        assertTrue(message.contains("interface"));
+        assertTrue(message.contains(Fail1.class.getMethods()[0].toString()));
     }
 
     interface Fail2 {
@@ -289,17 +291,21 @@ final class TestInterfaceMapper {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
                 SegmentMapper.ofInterface(LOOKUP, Fail2.class, POINT_LAYOUT)
         );
-
+        var message = e.getMessage();
+        assertTrue(message.contains("Unable to map methods: ["));
+        assertTrue(message.contains(Fail2.class.getMethods()[0].toString()));
     }
 
     void assertToString(Object o,
                         Class<?> clazz, Set<String> fragments) {
         String s = o.toString();
-        assertTrue(s.startsWith(clazz.getSimpleName() + "["));
+        var start = clazz.getSimpleName() + "[";
+        assertTrue(s.startsWith(start), s + " does not start with " + start);
         for (var fragment:fragments) {
             assertTrue(s.contains(fragment), s + " does not contain " + fragment);
         }
-        assertTrue(s.endsWith("]"));
+        var end = "]";
+        assertTrue(s.endsWith(end), s + " does not end with " + end);
     }
 
     //@Test

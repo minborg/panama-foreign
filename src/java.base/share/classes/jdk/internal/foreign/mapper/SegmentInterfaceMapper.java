@@ -30,7 +30,6 @@ import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
-import jdk.internal.classfile.TypeKind;
 
 import java.lang.constant.ClassDesc;
 import java.lang.constant.DirectMethodHandleDesc;
@@ -57,8 +56,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.IntConsumer;
 import java.util.function.ObjIntConsumer;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -94,13 +93,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     private final MethodHandle getHandle;
     private final MethodHandle setHandle;
 
-    // Canonical constructor in which we ignore some of the
-    // input values and derive them internally instead.
-    public SegmentInterfaceMapper(MethodHandles.Lookup lookup,
-                                  Class<T> type,
-                                  GroupLayout layout,
-                                  long offset,
-                                  int depth) {
+    private SegmentInterfaceMapper(MethodHandles.Lookup lookup,
+                                   Class<T> type,
+                                   GroupLayout layout,
+                                   long offset,
+                                   int depth) {
         this.lookup = lookup;
         this.type = type;
         this.layout = layout;
@@ -111,6 +108,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         List<MethodInfo> getStructMethods = mappableGetStructMethods(type, layout);
         assertMappingsCorrect(type, layout, getMethods);
         assertMappingsCorrect(type, layout, setMethods);
+        assertMappingsCorrect(type, layout, getStructMethods);
+        assertTotality(type, concat(getMethods, setMethods, getStructMethods));
         this.implClass = generateClass(getMethods, setMethods, getStructMethods);
         Handles handles = handles();
         this.isExhaustive = handles.isExhaustive();
@@ -243,10 +242,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    List<MethodInfo> allMethods = new ArrayList<>(getMethods);
-                    allMethods.addAll(getStructMethods);
-                    generateToString(cb, classDesc, allMethods);
-
+                    generateToString(cb, classDesc, concat(getMethods, getStructMethods));
                 });
         try {
 
@@ -327,6 +323,22 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         }
     }
 
+    private static void assertTotality(Class<?> type, List<MethodInfo> accessors) {
+        Set<Method> accessorMethods = accessors.stream()
+                .map(MethodInfo::method)
+                .collect(Collectors.toSet());
+
+        var missing = Arrays.stream(type.getMethods())
+                // SegmentBacked methods are handled separately
+                .filter(m -> !isSegmentBacked(type, m))
+                .filter(Predicate.not(accessorMethods::contains))
+                .toList();
+
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException("Unable to map methods: " + missing);
+        }
+
+    }
 
     private static List<MethodInfo> mappableGetMethods(Class<?> type,
                                                        GroupLayout layout) {
@@ -361,6 +373,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         List<Method> methods = candidates(type, 1)
                 .filter(m -> m.getReturnType() == void.class || m.getReturnType() == Void.class)
                 .toList();
+
+        List<Method> interfaceMethods = methods.stream()
+                .filter(m -> m.getParameterTypes()[0].isInterface())
+                .toList();
+        if (!interfaceMethods.isEmpty()) {
+            throw new IllegalArgumentException("Setters cannot take an interface as a parameter: " + interfaceMethods);
+        }
 
         return mappableMethods(methods, layout, m -> m.getParameterTypes()[0]);
     }
@@ -774,4 +793,19 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
+    @SafeVarargs
+    @SuppressWarnings("varargs")
+    private static <T> List<T> concat(List<T> ... other) {
+        return Arrays.stream(other)
+                .reduce(new ArrayList<>(), (a, b) -> {
+                    a.addAll(b);
+                    return a;
+                });
+    }
+
+    public static <T> SegmentInterfaceMapper<T> create(MethodHandles.Lookup lookup,
+                                                       Class<T> type,
+                                                       GroupLayout layout) {
+        return new SegmentInterfaceMapper<>(lookup, type, layout, 0, 0);
+    }
 }

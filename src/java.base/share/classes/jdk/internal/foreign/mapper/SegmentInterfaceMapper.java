@@ -216,7 +216,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //     return (T) mh[x].invokeExact(segment, offset + elementOffset);
                     // }
                     for (MethodInfo interfaceGetter : interfaceGetters) {
-                        generateInterfaceGetter(cb, classDesc, interfaceGetter, boostrapIndex++);
+                        generateInvokeVirtualGetter(cb, classDesc, interfaceGetter, boostrapIndex++);
                     }
 
                     // @Override
@@ -224,12 +224,12 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //     return (T) mh[x].invokeExact(segment, offset + elementOffset);
                     // }
                     for (MethodInfo recordGetter : recordGetters) {
-                        generateRecordGetter(cb, classDesc, recordGetter, boostrapIndex++);
+                        generateInvokeVirtualGetter(cb, classDesc, recordGetter, boostrapIndex++);
                     }
 
                     // Todo: Fix me
                     for (MethodInfo recordSetter : recordSetters) {
-                        // Todo: Fix me
+                        generateRecordSetter(cb, classDesc, recordSetter, boostrapIndex++);
                     }
 
                     // @Override
@@ -271,15 +271,20 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         try {
 
             // Here are the actual pre-computed method handles to be loaded by .ldc()
-            List<MethodHandle> interfaceGetMethodHandles = interfaceGetters.stream()
+            List<MethodHandle> interfaceGetHandles = interfaceGetters.stream()
                     .map(this::interfaceGetMethodHandleFor)
                     .toList();
 
-            List<MethodHandle> recordGetMethodHandles = recordGetters.stream()
+            List<MethodHandle> recordGetHandles = recordGetters.stream()
                     .map(this::recordGetMethodHandleFor)
                     .toList();
 
-            List<MethodHandle> classData = concat(interfaceGetMethodHandles, recordGetMethodHandles);
+            List<MethodHandle> recordSetHandles = recordGetters.stream()
+                    .map(this::recordSetMethodHandleFor)
+                    .toList();
+
+            List<MethodHandle> classData =
+                    concat(interfaceGetHandles, recordGetHandles, recordSetHandles);
 
             @SuppressWarnings("unchecked")
             Class<T> c = (Class<T>) lookup
@@ -536,6 +541,18 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
     }
 
+    private MethodHandle recordSetMethodHandleFor(MethodInfo methodInfo) {
+
+        // Todo: As the offset is zero, we can cache these mappers (per type and layout)
+        SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
+                MapperUtil.castToRecordClass(methodInfo.type),
+                (GroupLayout) methodInfo.layoutInfo().layout(),
+                0, // The actual offset is added later at invocation
+                depth + 1);
+
+        return innerMapper.setHandle();
+    }
+
     private void generateScalarGetter(ClassBuilder cb,
                                       ClassDesc classDesc,
                                       MethodInfo info) {
@@ -582,13 +599,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
-    private void generateInterfaceGetter(ClassBuilder cb,
-                                         ClassDesc classDesc,
-                                         MethodInfo info,
-                                         int boostrapIndex) {
+    private void generateInvokeVirtualGetter(ClassBuilder cb,
+                                             ClassDesc classDesc,
+                                             MethodInfo info,
+                                             int boostrapIndex) {
 
         var name = info.method().getName();
-        var returnDesc = desc(info.type());
+        var returnDesc = info.typeDesc();
 
         DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
                 BSM_CLASS_DATA_AT,
@@ -608,34 +625,31 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         );
     }
 
-    private void generateRecordGetter(ClassBuilder cb,
+    private void generateRecordSetter(ClassBuilder cb,
                                       ClassDesc classDesc,
                                       MethodInfo info,
                                       int boostrapIndex) {
-
-
         var name = info.method().getName();
-        var returnDesc = desc(info.type());
+        var parameterDesc = info.typeDesc();
 
         DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
                 BSM_CLASS_DATA_AT,
                 boostrapIndex
         );
 
-        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
+        cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.ldc(desc)
                             .checkcast(desc(MethodHandle.class)) // MethodHandle
                             .aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
                     offsetBlock(cob, classDesc, info.offset())
-                            .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_Object, MEMORY_SEGMENT_CLASS_DESC, CD_long))
-                            .checkcast(returnDesc)
-                            .areturn();
+                            .aload(1) // Record
+                            .checkcast(desc(Record.class))
+                            .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long, CD_Object))
+                            .return_();
                 }
         );
-
     }
-
 
     // Generate code that calculates "this.offset + layoutOffset"
     private static CodeBuilder offsetBlock(CodeBuilder cob,

@@ -316,9 +316,7 @@ final class TestInterfaceMapper {
         LineRecordAccessor accessor = mapper.get(segment);
 
         Point begin = accessor.begin();
-        System.out.println("begin = " + begin);
         Point end = accessor.end();
-        System.out.println("end = " + end);
 
         assertEquals(3, begin.x());
         assertEquals(4, begin.y());
@@ -331,10 +329,10 @@ final class TestInterfaceMapper {
         accessor.begin(new Point(1, 2));
         accessor.end(new Point(3, 4));
 
-        assertEquals(1, begin.x());
-        assertEquals(2, begin.y());
-        assertEquals(3, end.x());
-        assertEquals(4, end.y());
+        assertEquals(1, accessor.begin().x());
+        assertEquals(2, accessor.begin().y());
+        assertEquals(3, accessor.end().x());
+        assertEquals(4, accessor.end().y());
 
         assertToString(accessor, mapper.type(), Set.of("begin()=Point[x=1, y=2]", "end()=Point[x=3, y=4]"));
     }

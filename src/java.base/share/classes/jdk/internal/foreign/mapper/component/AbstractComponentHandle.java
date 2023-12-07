@@ -42,7 +42,7 @@ import java.lang.reflect.RecordComponent;
 
 abstract sealed class AbstractComponentHandle<T>
         implements ComponentHandle<T>
-        permits RecordGetComponentHandle, InterfaceGetComponentHandle, RecordSetComponentHandle {
+        permits RecordGetComponentHandle, RecordSetComponentHandle {
 
     final MethodHandles.Lookup lookup;
     final Class<T> type;
@@ -102,7 +102,7 @@ abstract sealed class AbstractComponentHandle<T>
         return vl.getClass().getInterfaces()[0].asSubclass(ValueLayout.class);
     }
 
-    <R> SegmentRecordMapper<R> recordMapper(Class<R> componentType,
+    <R extends Record> SegmentRecordMapper<R> recordMapper(Class<R> componentType,
                                             GroupLayout gl,
                                             long byteOffset) {
 

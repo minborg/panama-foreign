@@ -59,7 +59,7 @@ import java.util.stream.IntStream;
  */
 // Records have trusted instance fields.
 @ValueBased
-public record SegmentRecordMapper<T>(
+public record SegmentRecordMapper<T extends Record>(
             @Override MethodHandles.Lookup lookup,
             @Override Class<T> type,
             @Override GroupLayout layout,
@@ -92,7 +92,7 @@ public record SegmentRecordMapper<T>(
                                MethodHandle getHandle,    // Ignored
                                MethodHandle setHandle) {  // Ignored
         this.lookup = lookup;
-        this.type = type;
+        this.type = MapperUtil.requireRecordType(type);
         this.layout = layout;
         this.offset = offset;
         this.depth = depth;
@@ -114,7 +114,7 @@ public record SegmentRecordMapper<T>(
     // Private methods and classes
 
     // This method is using a partially initialized mapper
-    private static <T> Handles handles(SegmentRecordMapper<T> mapper) {
+    private static <T extends Record> Handles handles(SegmentRecordMapper<T> mapper) {
         assertMappingsCorrect(mapper.type(), mapper.layout());
 
         // The types for the constructor/components
@@ -135,8 +135,8 @@ public record SegmentRecordMapper<T>(
     }
 
     // (MemorySegment, long)Object
-    private static <T> MethodHandle computeGetHandle(SegmentRecordMapper<T> mapper,
-                                                     Class<?>[] componentTypes) {
+    private static <T extends Record> MethodHandle computeGetHandle(SegmentRecordMapper<T> mapper,
+                                                                    Class<?>[] componentTypes) {
 
         ComponentHandle<T> getComponentHandle =
                 ComponentHandle.ofGet(mapper.lookup(), mapper.type(), mapper.layout(), mapper.offset());
@@ -179,8 +179,8 @@ public record SegmentRecordMapper<T>(
     }
 
     // (MemorySegment, long, T)void
-    private static <T> MethodHandle computeSetHandle(SegmentRecordMapper<T> mapper,
-                                                     Class<?>[] componentTypes) {
+    private static <T extends Record> MethodHandle computeSetHandle(SegmentRecordMapper<T> mapper,
+                                                                    Class<?>[] componentTypes) {
         // for each component, extracts its value and write to the correct location
 
         ComponentHandle<T> setComponentHandle =

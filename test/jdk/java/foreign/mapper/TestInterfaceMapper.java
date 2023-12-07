@@ -108,6 +108,8 @@ import static java.util.stream.Collectors.joining;
 import static jdk.internal.classfile.Classfile.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+// Todo: check wrapper classes
+
 // Note: the order in which interface methods appears is unspecified.
 final class TestInterfaceMapper {
 
@@ -121,7 +123,7 @@ final class TestInterfaceMapper {
     );
 
     @Test
-    void smokeTest() {
+    void point() {
         SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
@@ -170,7 +172,7 @@ final class TestInterfaceMapper {
     }
 
     @Test
-    void smokeTestMixedBag() {
+    void mixedBag() {
         SegmentMapper<MixedBag> mapper = SegmentMapper.ofInterface(LOOKUP, MixedBag.class, MIXED_LAYOUT);
         try (var arena = Arena.ofConfined()) {
             MemorySegment segment = arena.allocate(MIXED_LAYOUT);
@@ -277,7 +279,8 @@ final class TestInterfaceMapper {
                 SegmentMapper.ofInterface(LOOKUP, Fail1.class, LINE_LAYOUT)
         );
         var message = e.getMessage();
-        assertTrue(message.contains("interface"));
+
+        assertTrue(message.startsWith("Setters cannot take an interface as a parameter: "));
         assertTrue(message.contains(Fail1.class.getMethods()[0].toString()));
     }
 
@@ -294,6 +297,44 @@ final class TestInterfaceMapper {
         var message = e.getMessage();
         assertTrue(message.contains("Unable to map methods: ["));
         assertTrue(message.contains(Fail2.class.getMethods()[0].toString()));
+    }
+
+    public record Point(int x, int y){}
+
+    public interface LineRecordAccessor {
+        Point begin();
+        Point end();
+        void begin(Point begin);
+        void end(Point end);
+    }
+
+    @Test
+    void mapToRecord() {
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+
+        SegmentMapper<LineRecordAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, LineRecordAccessor.class, LINE_LAYOUT);
+        LineRecordAccessor accessor = mapper.get(segment);
+
+        Point begin = accessor.begin();
+        Point end = accessor.end();
+
+        assertEquals(3, begin.x());
+        assertEquals(4, begin.y());
+        assertEquals(6, end.x());
+        assertEquals(8, end.y());
+
+        // Records have a deterministic order
+        assertToString(accessor, mapper.type(), Set.of("begin()=Point[x=3, y=4]", "end()=Point[x=6, y=8]"));
+
+        accessor.begin(new Point(1, 2));
+        accessor.end(new Point(3, 4));
+
+        assertEquals(1, begin.x());
+        assertEquals(2, begin.y());
+        assertEquals(3, end.x());
+        assertEquals(4, end.y());
+
+        assertToString(accessor, mapper.type(), Set.of("begin()=Point[x=1, y=2]", "end()=Point[x=3, y=4]"));
     }
 
     void assertToString(Object o,

@@ -29,6 +29,8 @@
 
 package jdk.internal.foreign.mapper.component;
 
+import jdk.internal.foreign.mapper.MapperUtil;
+
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.PaddingLayout;
@@ -82,7 +84,7 @@ final class RecordGetComponentHandle<T>
                     "A type may not use a component of the same type: " + type + " in " + gl);
         }
         // Simply return the raw MethodHandle of the recursively computed record mapper
-        return recordMapper(recordComponent.getType(), gl, byteOffset)
+        return recordMapper(MapperUtil.castToRecordClass(recordComponent.getType()), gl, byteOffset)
                 .getHandle();
     }
 
@@ -131,7 +133,7 @@ final class RecordGetComponentHandle<T>
             }
             case GroupLayout gl -> {
                 // The "local" byteOffset for the record recordComponent mapper is zero
-                var componentMapper = recordMapper(valueType, gl, 0);
+                var componentMapper = recordMapper(MapperUtil.castToRecordClass(valueType), gl, 0);
 
                 try {
                     var mt = MethodType.methodType(Object.class.arrayType(),

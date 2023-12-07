@@ -65,6 +65,11 @@ public final class MapperUtil {
         return new IllegalArgumentException(type.getName() + " is " + trailingInfo);
     }
 
+    @SuppressWarnings("unchecked")
+    public static <T extends Record> Class<T> castToRecordClass(Class<?> clazz) {
+        return (Class<T>) clazz;
+    }
+
     public static Object evalWithMemorySegmentAndOffset(MethodHandle mh, MemorySegment segment, long offset) {
         try {
             return mh.invokeExact(segment, offset);

@@ -99,18 +99,26 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                    long offset,
                                    int depth) {
         this.lookup = lookup;
-        this.type = type;
+        this.type = MapperUtil.requireImplementableInterfaceType(type);
         this.layout = layout;
         this.offset = offset;
         this.depth = depth;
-        List<MethodInfo> getMethods = mappableGetMethods(type, layout);
-        List<MethodInfo> setMethods = mappableSetMethods(type, layout);
-        List<MethodInfo> getStructMethods = mappableGetStructMethods(type, layout);
-        assertMappingsCorrect(type, layout, getMethods);
-        assertMappingsCorrect(type, layout, setMethods);
-        assertMappingsCorrect(type, layout, getStructMethods);
-        assertTotality(type, concat(getMethods, setMethods, getStructMethods));
-        this.implClass = generateClass(getMethods, setMethods, getStructMethods);
+        List<MethodInfo> scalarGetters = scalarGetters(type, layout);
+        List<MethodInfo> scalarSetters = scalarSetters(type, layout);
+        List<MethodInfo> interfaceGetters = interfaceGetters(type, layout);
+        assertNoInterfaceSetters(type);
+        List<MethodInfo> recordGetters = recordGetters(type, layout);
+        List<MethodInfo> recordSetters = recordSetters(type, layout);
+        List<MethodInfo> allAccessors = concat(
+                scalarGetters, scalarSetters,
+                interfaceGetters,
+                recordGetters, recordSetters);
+        assertMappingsCorrect(type, layout, allAccessors);
+        assertTotality(type, allAccessors);
+        this.implClass = generateClass(
+                scalarGetters, scalarSetters,
+                interfaceGetters,
+                recordGetters, recordSetters);
         Handles handles = handles();
         this.isExhaustive = handles.isExhaustive();
         this.getHandle = handles.getHandle();
@@ -124,9 +132,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return Mapped.of(this, newType, toMapper, fromMapper);
     }
 
-    private Class<T> generateClass(List<MethodInfo> getMethods,
-                                   List<MethodInfo> setMethods,
-                                   List<MethodInfo> getStructMethods) {
+    private Class<T> generateClass(List<MethodInfo> scalarGetters,
+                                   List<MethodInfo> scalarSetters,
+                                   List<MethodInfo> interfaceGetters,
+                                   List<MethodInfo> recordGetters,
+                                   List<MethodInfo> recordSetters) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
         ClassDesc interfaceClassDesc = desc(type);
         ClassLoader loader = type.getClassLoader();
@@ -183,29 +193,43 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                         );
                     }
 
-                    for (MethodInfo method : getMethods) {
+                    for (MethodInfo scalarGetter : scalarGetters) {
                         // @Override
                         // <t> gX() {
                         //     return segment.get(JAVA_t, offset + elementOffset);
                         // }
-                        generateGetter(cb, classDesc, method);
+                        generateScalarGetter(cb, classDesc, scalarGetter);
                     }
 
                     // @Override
                     // void gX(<t> t) {
                     //     segment.get(JAVA_t, offset + elementOffset, t);
                     // }
-                    for (MethodInfo method : setMethods) {
-                        generateSetter(cb, classDesc, method);
+                    for (MethodInfo scalarSetter : scalarSetters) {
+                        generateScalarSetter(cb, classDesc, scalarSetter);
                     }
+
+                    int boostrapIndex = 0;
 
                     // @Override
                     // T gX() {
                     //     return (T) mh[x].invokeExact(segment, offset + elementOffset);
                     // }
-                    for (int i = 0; i < getStructMethods.size(); i++) {
-                        MethodInfo info = getStructMethods.get(i);
-                        generateStructGetter(cb, classDesc, info, i);
+                    for (MethodInfo interfaceGetter : interfaceGetters) {
+                        generateInterfaceGetter(cb, classDesc, interfaceGetter, boostrapIndex++);
+                    }
+
+                    // @Override
+                    // <T extends Record> T gX() {
+                    //     return (T) mh[x].invokeExact(segment, offset + elementOffset);
+                    // }
+                    for (MethodInfo recordGetter : recordGetters) {
+                        generateRecordGetter(cb, classDesc, recordGetter, boostrapIndex++);
+                    }
+
+                    // Todo: Fix me
+                    for (MethodInfo recordSetter : recordSetters) {
+                        // Todo: Fix me
                     }
 
                     // @Override
@@ -242,22 +266,28 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    generateToString(cb, classDesc, concat(getMethods, getStructMethods));
+                    generateToString(cb, classDesc, concat(scalarGetters, interfaceGetters));
                 });
         try {
 
             // Here are the actual pre-computed method handles to be loaded by .ldc()
-            List<MethodHandle> getMethodHandles = getStructMethods.stream()
-                    .map(this::methodHandleFor)
+            List<MethodHandle> interfaceGetMethodHandles = interfaceGetters.stream()
+                    .map(this::interfaceGetMethodHandleFor)
                     .toList();
+
+            List<MethodHandle> recordGetMethodHandles = recordGetters.stream()
+                    .map(this::recordGetMethodHandleFor)
+                    .toList();
+
 
             @SuppressWarnings("unchecked")
             Class<T> c = (Class<T>) lookup
-                    .defineHiddenClassWithClassData(bytes, getMethodHandles, true)
+                    .defineHiddenClassWithClassData(bytes, interfaceGetMethodHandles, true)
                     .lookupClass();
             return c;
         } catch (IllegalAccessException | VerifyError e) {
-            throw new IllegalArgumentException("Unable to define interface mapper proxy class for " + type, e);
+            throw new IllegalArgumentException("Unable to define interface mapper proxy class for " +
+                    type + " using " + layout, e);
         }
     }
 
@@ -267,7 +297,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     private Handles handles() {
 
         // The types for the constructor/components
-        List<MethodInfo> componentTypes = mappableGetMethods(type, layout);
+        List<MethodInfo> componentTypes = scalarGetters(type, layout);
 
         // There is exactly one member layout for each record component
         boolean isExhaustive = layout.memberLayouts().size() == componentTypes.size();
@@ -340,27 +370,63 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
-    private static List<MethodInfo> mappableGetMethods(Class<?> type,
-                                                       GroupLayout layout) {
-        // The types for the components
-        List<Method> methods = candidates(type, 0)
-                .filter(m -> m.getReturnType() != void.class && m.getReturnType() != Void.class)
-                // Todo: check wrapper classes
-                .filter(m -> m.getReturnType().isPrimitive())
+    private static List<MethodInfo> scalarGetters(Class<?> type,
+                                                  GroupLayout layout) {
+        List<Method> methods = getCandidates(type, Class::isPrimitive)
                 .toList();
 
-        return mappableMethods(methods, layout, Method::getReturnType);
+        return mappableGetMethods(methods, layout);
     }
 
-    private static List<MethodInfo> mappableGetStructMethods(Class<?> type,
-                                                             GroupLayout layout) {
-        // The types for the components
-        List<Method> methods = candidates(type, 0)
-                .filter(m -> m.getReturnType() != void.class && m.getReturnType() != Void.class)
-                .filter(m -> m.getReturnType().isInterface())
+    private static List<MethodInfo> interfaceGetters(Class<?> type,
+                                                     GroupLayout layout) {
+        List<Method> methods = getCandidates(type, Class::isInterface)
                 .toList();
 
-        return mappableMethods(methods, layout, Method::getReturnType);
+        var result = mappableGetMethods(methods, layout);
+
+        result.stream()
+                .map(MethodInfo::type)
+                .forEach(MapperUtil::requireImplementableInterfaceType);
+
+        return result;
+    }
+
+    private static void assertNoInterfaceSetters(Class<?> type) {
+        List<Method> methods = setCandidates(type, Class::isInterface)
+                .toList();
+
+        if (!methods.isEmpty()) {
+            throw new IllegalArgumentException("Setters cannot take an interface as a parameter: " + methods);
+        }
+    }
+
+    private static List<MethodInfo> recordGetters(Class<?> type,
+                                                  GroupLayout layout) {
+        List<Method> methods = getCandidates(type, Class::isRecord)
+                .toList();
+
+        var result = mappableGetMethods(methods, layout);
+
+        result.stream()
+                .map(MethodInfo::type)
+                .forEach(MapperUtil::requireRecordType);
+
+        return result;
+    }
+
+    private static List<MethodInfo> recordSetters(Class<?> type,
+                                                  GroupLayout layout) {
+        List<Method> methods = setCandidates(type, Class::isRecord)
+                .toList();
+
+        var result = mappableSetMethods(methods, layout);
+
+        result.stream()
+                .map(MethodInfo::type)
+                .forEach(MapperUtil::requireRecordType);
+
+        return result;
     }
 
     private static boolean isSegmentBacked(Class<?> type, Method method) {
@@ -368,23 +434,26 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 SEGMENT_BACKED_METHODS.contains(method.getName());
     }
 
-    private static List<MethodInfo> mappableSetMethods(Class<?> type,
-                                                       GroupLayout layout) {
-        List<Method> methods = candidates(type, 1)
-                .filter(m -> m.getReturnType() == void.class || m.getReturnType() == Void.class)
+    private static List<MethodInfo> scalarSetters(Class<?> type,
+                                                  GroupLayout layout) {
+        List<Method> methods = setCandidates(type, Class::isPrimitive)
                 .toList();
 
-        List<Method> interfaceMethods = methods.stream()
-                .filter(m -> m.getParameterTypes()[0].isInterface())
-                .toList();
-        if (!interfaceMethods.isEmpty()) {
-            throw new IllegalArgumentException("Setters cannot take an interface as a parameter: " + interfaceMethods);
-        }
 
-        return mappableMethods(methods, layout, m -> m.getParameterTypes()[0]);
+        return mappableSetMethods(methods, layout);
     }
 
-    private static List<MethodInfo> mappableMethods(List<Method> methods,
+    private static List<MethodInfo> mappableGetMethods(List<Method> methods,
+                                                    GroupLayout layout) {
+        return mappableMethods0(methods, layout, Method::getReturnType);
+    }
+
+    private static List<MethodInfo> mappableSetMethods(List<Method> methods,
+                                                    GroupLayout layout) {
+        return mappableMethods0(methods, layout, m -> m.getParameterTypes()[0]);
+    }
+
+    private static List<MethodInfo> mappableMethods0(List<Method> methods,
                                                     GroupLayout layout,
                                                     Function<? super Method, ? extends Class<?>> typeExtractor) {
 
@@ -407,12 +476,10 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                 throw new IllegalArgumentException("The type " + type + " for method " + m +
                                         "does not match " + element);
                             }
-                            yield new MethodInfo(m, desc(type), layoutInfo(vl), offset);
+                            yield new MethodInfo(m, type, desc(type), layoutInfo(vl), offset);
                         }
-                        case GroupLayout gl -> {
-                            MapperUtil.requireImplementableInterfaceType(type);
-                            yield new MethodInfo(m, desc(type), layoutInfo(gl), offset);
-                        }
+                        case GroupLayout gl ->
+                                new MethodInfo(m, type, desc(type), layoutInfo(gl), offset);
                         default -> throw new IllegalArgumentException("Cannot map " + element + " for " + type);
                     };
 
@@ -420,7 +487,21 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .toList();
     }
 
-    private static Stream<Method> candidates(Class<?> type, int paramCount) {
+    private static Stream<Method> setCandidates(Class<?> type, Predicate<Class<?>> parameterTypePredicate) {
+        return candidates0(type, 1)
+                .filter(m -> m.getReturnType() == void.class || m.getReturnType() == Void.class)
+                .filter(m -> parameterTypePredicate.test(m.getParameterTypes()[0]));
+    }
+
+    private static Stream<Method> getCandidates(Class<?> type,
+                                                Predicate<Class<?>> returnTypePredicate) {
+        return candidates0(type, 0)
+                .filter(m -> m.getReturnType() != void.class && m.getReturnType() != Void.class)
+                .filter(m -> returnTypePredicate.test(m.getReturnType()));
+    }
+
+    private static Stream<Method> candidates0(Class<?> type,
+                                              int paramCount) {
         return Arrays.stream(type.getMethods())
                 .filter(m -> m.getParameterCount() == paramCount)
                 .filter(m -> !Modifier.isStatic(m.getModifiers()))
@@ -428,11 +509,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .filter(m -> !m.isDefault());
     }
 
-    private MethodHandle methodHandleFor(MethodInfo methodInfo) {
+    private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo) {
 
         SegmentInterfaceMapper<?> innerMapper = new SegmentInterfaceMapper<>(
                 lookup,
-                methodInfo.method().getReturnType(),
+                methodInfo.type(),
                 (GroupLayout) methodInfo.layoutInfo().layout(),
                 offset + methodInfo.offset(),
                 depth + 1);
@@ -440,12 +521,23 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return innerMapper.getHandle();
     }
 
-    private void generateGetter(ClassBuilder cb,
-                                ClassDesc classDesc,
-                                MethodInfo info) {
+    private MethodHandle recordGetMethodHandleFor(MethodInfo methodInfo) {
+
+        SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
+                MapperUtil.castToRecordClass(methodInfo.type),
+                (GroupLayout) methodInfo.layoutInfo().layout(),
+                offset + methodInfo.offset(),
+                depth + 1);
+
+        return innerMapper.getHandle();
+    }
+
+    private void generateScalarGetter(ClassBuilder cb,
+                                      ClassDesc classDesc,
+                                      MethodInfo info) {
 
         String name = info.method().getName();
-        ClassDesc returnDesc = info.desc();
+        ClassDesc returnDesc = info.typeDesc();
         ClassDesc layoutDesc = info.layoutInfo().desc();
 
         var getDesc = MethodTypeDesc.of(returnDesc, layoutDesc, CD_long);
@@ -462,12 +554,12 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         );
     }
 
-    private void generateSetter(ClassBuilder cb,
-                                ClassDesc classDesc,
-                                MethodInfo info) {
+    private void generateScalarSetter(ClassBuilder cb,
+                                      ClassDesc classDesc,
+                                      MethodInfo info) {
 
         String name = info.method().getName();
-        ClassDesc parameterDesc = info.desc();
+        ClassDesc parameterDesc = info.typeDesc();
         ClassDesc layoutDesc = info.layoutInfo().desc();
 
         var setDesc = MethodTypeDesc.of(CD_void, layoutDesc, CD_long, parameterDesc);
@@ -486,13 +578,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
-    private void generateStructGetter(ClassBuilder cb,
-                                      ClassDesc classDesc,
-                                      MethodInfo info,
-                                      int boostrapIndex) {
+    private void generateInterfaceGetter(ClassBuilder cb,
+                                         ClassDesc classDesc,
+                                         MethodInfo info,
+                                         int boostrapIndex) {
 
         var name = info.method().getName();
-        var returnDesc = desc(info.method().getReturnType());
+        var returnDesc = desc(info.type());
 
         DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
                 BSM_CLASS_DATA_AT,
@@ -512,6 +604,35 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         );
     }
 
+    private void generateRecordGetter(ClassBuilder cb,
+                                      ClassDesc classDesc,
+                                      MethodInfo info,
+                                      int boostrapIndex) {
+
+
+        var name = info.method().getName();
+        var returnDesc = desc(info.type());
+
+        DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
+                BSM_CLASS_DATA_AT,
+                boostrapIndex
+        );
+
+        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
+                    cob.ldc(desc)
+                            .checkcast(desc(MethodHandle.class)) // MethodHandle
+                            .aload(0)
+                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
+                    offsetBlock(cob, classDesc, info.offset())
+                            .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_Object, MEMORY_SEGMENT_CLASS_DESC, CD_long))
+                            .checkcast(returnDesc)
+                            .areturn();
+                }
+        );
+
+    }
+
+
     // Generate code that calculates "this.offset + layoutOffset"
     private static CodeBuilder offsetBlock(CodeBuilder cob,
                                            ClassDesc classDesc,
@@ -527,7 +648,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
     record MethodInfo(Method method,
-                      ClassDesc desc,
+                      Class<?> type,
+                      ClassDesc typeDesc,
                       LayoutInfo layoutInfo,
                       long offset) {
     }
@@ -574,7 +696,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private static List<ClassDesc> classDescs(List<MethodInfo> methods) {
         return methods.stream()
-                .map(MethodInfo::desc)
+                .map(MethodInfo::typeDesc)
                 .toList();
     }
 
@@ -609,10 +731,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .orElseThrow();
     }
 
-    private static String mangleFieldName(Class<?> clazz) {
-        return "$" + clazz.toString().replaceAll("\\.", "_") + "_Factory$";
-    }
-
     @Override
     public MethodHandles.Lookup lookup() {
         return lookup;
@@ -626,18 +744,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     @Override
     public GroupLayout layout() {
         return layout;
-    }
-
-    public long offset() {
-        return offset;
-    }
-
-    public int depth() {
-        return depth;
-    }
-
-    public Class<T> implClass() {
-        return implClass;
     }
 
     @Override

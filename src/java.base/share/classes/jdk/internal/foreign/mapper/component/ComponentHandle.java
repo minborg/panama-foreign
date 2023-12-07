@@ -44,7 +44,7 @@ import static jdk.internal.foreign.layout.MemoryLayoutUtil.requireNonNegative;
  * Interface to model the resolving of get and set method handles.
  */
 public sealed interface ComponentHandle<T>
-        permits AbstractComponentHandle, RecordGetComponentHandle, InterfaceGetComponentHandle, RecordSetComponentHandle {
+        permits AbstractComponentHandle, RecordGetComponentHandle, RecordSetComponentHandle {
 
     MethodHandle handle(RecordComponent recordComponent);
 

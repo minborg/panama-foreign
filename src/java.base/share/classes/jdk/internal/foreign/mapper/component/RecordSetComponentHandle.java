@@ -29,6 +29,8 @@
 
 package jdk.internal.foreign.mapper.component;
 
+import jdk.internal.foreign.mapper.MapperUtil;
+
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.PaddingLayout;
@@ -93,7 +95,7 @@ final class RecordSetComponentHandle<T>
         extractor = extractor.asType(extractor.type().changeReturnType(Object.class));
 
         // (MemorySegment, long, T)
-        MethodHandle mh = recordMapper(recordComponent.getType(), gl, byteOffset)
+        MethodHandle mh = recordMapper(MapperUtil.castToRecordClass(recordComponent.getType()), gl, byteOffset)
                 .setHandle();
 
         // (MemorySegment, long, T) -> (MemorySegment, long, x)
@@ -156,7 +158,7 @@ final class RecordSetComponentHandle<T>
             case GroupLayout gl when containerType == ContainerType.ARRAY -> {
                 Class<?> valueType = recordComponentType.getComponentType();
                 // The "local" byteOffset for the record recordComponent mapper is zero
-                var componentMapper = recordMapper(valueType, gl, 0);
+                var componentMapper = recordMapper(MapperUtil.castToRecordClass(valueType), gl, 0);
                 try {
                     var mt = MethodType.methodType(void.class,
                             MemorySegment.class, GroupLayout.class, long.class, MethodHandle.class, Object[].class);
@@ -182,7 +184,7 @@ final class RecordSetComponentHandle<T>
             case GroupLayout gl -> {
                 Class<?> valueType = firstGenericType(recordComponent);
                 // The "local" byteOffset for the record recordComponent mapper is zero
-                var componentMapper = recordMapper(valueType, gl, 0);
+                var componentMapper = recordMapper(MapperUtil.castToRecordClass(valueType), gl, 0);
                 try {
                     var mt = MethodType.methodType(void.class,
                             MemorySegment.class, GroupLayout.class, long.class, MethodHandle.class, List.class);

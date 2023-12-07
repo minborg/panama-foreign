@@ -266,7 +266,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    generateToString(cb, classDesc, concat(scalarGetters, interfaceGetters));
+                    generateToString(cb, classDesc, concat(scalarGetters, interfaceGetters, recordGetters));
                 });
         try {
 
@@ -279,10 +279,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     .map(this::recordGetMethodHandleFor)
                     .toList();
 
+            List<MethodHandle> classData = concat(interfaceGetMethodHandles, recordGetMethodHandles);
 
             @SuppressWarnings("unchecked")
             Class<T> c = (Class<T>) lookup
-                    .defineHiddenClassWithClassData(bytes, interfaceGetMethodHandles, true)
+                    .defineHiddenClassWithClassData(bytes, classData, true)
                     .lookupClass();
             return c;
         } catch (IllegalAccessException | VerifyError e) {
@@ -511,11 +512,12 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo) {
 
+        // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentInterfaceMapper<?> innerMapper = new SegmentInterfaceMapper<>(
                 lookup,
                 methodInfo.type(),
                 (GroupLayout) methodInfo.layoutInfo().layout(),
-                offset + methodInfo.offset(),
+                0, // The actual offset is added later at invocation
                 depth + 1);
 
         return innerMapper.getHandle();
@@ -523,13 +525,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private MethodHandle recordGetMethodHandleFor(MethodInfo methodInfo) {
 
+        // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
                 MapperUtil.castToRecordClass(methodInfo.type),
                 (GroupLayout) methodInfo.layoutInfo().layout(),
-                offset + methodInfo.offset(),
+                0, // The actual offset is added later at invocation
                 depth + 1);
 
-        return innerMapper.getHandle();
+        return innerMapper.getHandle()
+                .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
     }
 
     private void generateScalarGetter(ClassBuilder cb,

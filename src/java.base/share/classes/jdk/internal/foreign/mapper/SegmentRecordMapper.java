@@ -58,6 +58,7 @@ import java.util.stream.IntStream;
  * @param <T>          mapper type
  */
 // Records have trusted instance fields.
+// Todo: Make this a regular class
 @ValueBased
 public record SegmentRecordMapper<T extends Record>(
             @Override MethodHandles.Lookup lookup,

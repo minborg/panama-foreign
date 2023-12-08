@@ -1,6 +1,7 @@
 package java.lang.foreign.mapper;
 
 import jdk.internal.foreign.mapper.MapperUtil;
+import jdk.internal.foreign.mapper.SegmentBacked;
 import jdk.internal.foreign.mapper.SegmentInterfaceMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper;
 
@@ -10,6 +11,8 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -69,7 +72,7 @@ import java.util.stream.Stream;
  *     <td style="text-align:center;">Lazy</td>
  *     <td style="text-align:center;">Wrap the source segment into a new interface instance</td>
  *     <td style="text-align:center;">Copy the relevant values from the initial source segment into the target segment</td>
- *     <td style="text-align:center;">If instance of <code>SegmentBacked</code></td></tr>
+ *     <td style="text-align:center;">via <code>SegmentMapper::segment</code></td></tr>
  * </tbody>
  * </table></blockquote>
 
@@ -191,17 +194,14 @@ import java.util.stream.Stream;
  *
  * <h2 id="segment-exposure">Backing segment exposure</h2>
  *
- * Interfaces that are used in conjunction with segment mappers can elect to implement
- * the {@linkplain SegmentBacked} interface. Mappers reflecting such interfaces will
- * automatically connect the {@linkplain SegmentBacked#segment() segment()} method to
- * the backing segment. This is useful when modelling structs that are passed and/or
- * received by native calls:
+ * Implementations of interfaces that are obtained via segment mappers can be made to
+ * reveal the underlying memory segment and memory segment offset. This is useful when
+ * modelling structs that are passed and/or received by native calls:
  * <p>
  * {@snippet lang = java:
  * static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
  *
- * // Automatically adds a segment() method that connects to the backing segment
- * public interface PointAccessor extends SegmentBacked {
+ * public interface PointAccessor {
  *     int x();
  *     void x(int x);
  *     int y();
@@ -225,7 +225,7 @@ import java.util.stream.Stream;
  *         point.y(4);
  *
  *         // Pass the backing internal segment to a native method
- *         double distance = nativeDistance(point.segment()); // 5
+ *         double distance = nativeDistance(SegmentMapper.segment(point).orElseThrow()); // 5
  *     }
  *
  * }
@@ -639,6 +639,34 @@ public interface SegmentMapper<T> {
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
         return new SegmentRecordMapper<>(lookup, type, layout, 0L, 0);
+    }
+
+    /**
+     * {@return the backing segment of the provided {@code source},
+     *          or, if no backing segment exists, {@linkplain Optional#empty()}}
+     * <p>
+     * Interfaces obtained from segment mappers have backing segments. Records obtained
+     * from segment mappers do not.
+     *
+     * @param source from which to extract the backing segment
+     */
+    static Optional<MemorySegment> segment(Object source) {
+        Objects.requireNonNull(source);
+        return SegmentBacked.segment(source);
+    }
+
+    /**
+     * {@return the offset in the backing segment of the provided {@code source},
+     *          or, if no backing segment exists, {@linkplain OptionalLong#empty()}}
+     * <p>
+     * Interfaces obtained from segment mappers have backing segments. Records obtained
+     * from segment mappers do not.
+     *
+     * @param source from which to extract the backing segment
+     */
+    static OptionalLong offset(Object source) {
+        Objects.requireNonNull(source);
+        return SegmentBacked.offset(source);
     }
 
 }

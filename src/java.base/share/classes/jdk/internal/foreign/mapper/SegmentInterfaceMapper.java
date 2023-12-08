@@ -40,7 +40,6 @@ import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.lang.foreign.mapper.SegmentBacked;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -72,16 +71,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
 
-    private static final Set<String> SEGMENT_BACKED_METHODS =
-            Arrays.stream(SegmentBacked.class.getMethods())
-                    .map(Method::getName)
-                    .collect(Collectors.toSet());
-
     private static final ClassDesc VALUE_LAYOUTS_CLASS_DESC = desc(ValueLayout.class);
     private static final ClassDesc MEMORY_SEGMENT_CLASS_DESC = desc(MemorySegment.class);
 
-    static final String SEGMENT_FIELD_NAME = "$segment$";
-    static final String OFFSET_FIELD_NAME = "$offset$";
+    static final String SEGMENT_FIELD_NAME = "segment";
+    static final String OFFSET_FIELD_NAME = "offset";
 
     private final MethodHandles.Lookup lookup;
     private final Class<T> type;
@@ -169,29 +163,24 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                 .return_();
                     });
 
-                    // If the interface implements SegmentBacked then we need to add those methods
-                    if (SegmentBacked.class.isAssignableFrom(type)) {
 
-                        // @Override
-                        // MemorySegment segment() {
-                        //     return segment;
-                        // }
-                        cb.withMethodBody("segment", MethodTypeDesc.of(MEMORY_SEGMENT_CLASS_DESC), ACC_PUBLIC, cob ->
-                                cob.aload(0)
-                                        .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                                        .areturn()
-                        );
+                    // MemorySegment $_$_$sEgMeNt$_$_$() {
+                    //     return segment;
+                    // }
+                    cb.withMethodBody("$_$_$sEgMeNt$_$_$", MethodTypeDesc.of(MEMORY_SEGMENT_CLASS_DESC), ACC_PUBLIC, cob ->
+                            cob.aload(0)
+                                    .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
+                                    .areturn()
+                    );
 
-                        // @Override
-                        // long offset() {
-                        //     return offset;
-                        // }
-                        cb.withMethodBody("offset", MethodTypeDesc.of(CD_long), ACC_PUBLIC, cob ->
-                                cob.aload(0)
-                                        .getfield(classDesc, OFFSET_FIELD_NAME, CD_long)
-                                        .lreturn()
-                        );
-                    }
+                    // long offset() {
+                    //     return offset;
+                    // }
+                    cb.withMethodBody("$_$_$oFfSeT$_$_$", MethodTypeDesc.of(CD_long), ACC_PUBLIC, cob ->
+                            cob.aload(0)
+                                    .getfield(classDesc, OFFSET_FIELD_NAME, CD_long)
+                                    .lreturn()
+                    );
 
                     for (MethodInfo scalarGetter : scalarGetters) {
                         // @Override
@@ -365,8 +354,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .collect(Collectors.toSet());
 
         var missing = Arrays.stream(type.getMethods())
-                // SegmentBacked methods are handled separately
-                .filter(m -> !isSegmentBacked(type, m))
                 .filter(Predicate.not(accessorMethods::contains))
                 .toList();
 
@@ -433,11 +420,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .forEach(MapperUtil::requireRecordType);
 
         return result;
-    }
-
-    private static boolean isSegmentBacked(Class<?> type, Method method) {
-        return SegmentBacked.class.isAssignableFrom(type) &&
-                SEGMENT_BACKED_METHODS.contains(method.getName());
     }
 
     private static List<MethodInfo> scalarSetters(Class<?> type,
@@ -511,7 +493,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return Arrays.stream(type.getMethods())
                 .filter(m -> m.getParameterCount() == paramCount)
                 .filter(m -> !Modifier.isStatic(m.getModifiers()))
-                .filter(m -> !isSegmentBacked(type, m))
                 .filter(m -> !m.isDefault());
     }
 

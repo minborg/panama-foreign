@@ -33,7 +33,6 @@ import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
-import java.lang.foreign.mapper.SegmentBacked;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.StructLayout;
@@ -804,7 +803,7 @@ class Snippets {
 
             static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
 
-            public interface PointAccessor extends SegmentBacked {
+            public interface PointAccessor {
                 int x();
                 void x(int x);
                 int y();
@@ -829,7 +828,7 @@ class Snippets {
                     point.y(4);
 
                     // Pass the backing internal segment to a native method
-                    double distance = nativeDistance(point.segment()); // 5
+                    double distance = nativeDistance(SegmentMapper.segment(point).orElseThrow()); // 5
                 }
 
             }

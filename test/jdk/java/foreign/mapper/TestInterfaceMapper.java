@@ -84,7 +84,6 @@ import java.lang.constant.MethodTypeDesc;
 import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
-import java.lang.foreign.mapper.SegmentBacked;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.foreign.mapper.SegmentMapper;
@@ -141,6 +140,17 @@ final class TestInterfaceMapper {
             assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
             assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
         }
+    }
+
+    @Test
+    void segmentBacked() {
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PointAccessor.class, POINT_LAYOUT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        long offset = POINT_LAYOUT.byteSize();
+        PointAccessor accessor = mapper.get(segment, offset);
+
+        assertSame(SegmentMapper.segment(accessor).orElseThrow(), segment);
+        assertEquals(SegmentMapper.offset(accessor).orElseThrow(), offset);
     }
 
     GroupLayout MIXED_LAYOUT = MemoryLayout.structLayout(
@@ -688,7 +698,7 @@ final class TestInterfaceMapper {
             System.out.println("accessor.hashCode() = " + accessor.hashCode());
             System.out.println("accessor.equals(\"A\") = " + accessor.equals("A"));
             System.out.println("accessor.equals(accessor) = " + accessor.equals(accessor));
-            print(accessor.segment()); // .asSlice(accessor.offset())
+            print(SegmentMapper.segment(accessor).orElseThrow()); // .asSlice(accessor.offset())
 
             PointAccessor accessor2 = new PointAccessorImpl(segment, 0L);
             System.out.println("accessor2 = " + accessor2);
@@ -1006,7 +1016,7 @@ final class TestInterfaceMapper {
         return sb.toString();
     }
 
-    public interface PointAccessor extends SegmentBacked {
+    public interface PointAccessor {
         int x();
         int y();
         void x(int x);
@@ -1024,13 +1034,11 @@ final class TestInterfaceMapper {
             this.offset = offset;
         }
 
-        @Override
-        public MemorySegment segment() {
+        public MemorySegment $segment$() {
             return segment;
         }
 
-        @Override
-        public long offset() {
+        public long $offset$() {
             return offset;
         }
 

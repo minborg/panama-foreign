@@ -30,6 +30,7 @@ import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
+import jdk.internal.org.objectweb.asm.tree.analysis.Value;
 
 import java.lang.constant.ClassDesc;
 import java.lang.constant.DirectMethodHandleDesc;
@@ -39,6 +40,7 @@ import java.lang.constant.MethodTypeDesc;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
@@ -47,8 +49,10 @@ import java.lang.invoke.MethodType;
 import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -58,10 +62,12 @@ import java.util.function.Function;
 import java.util.function.ObjIntConsumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static java.lang.constant.ConstantDescs.*;
 import static jdk.internal.classfile.Classfile.*;
+import static jdk.internal.foreign.mapper.SegmentInterfaceMapper.ParameterTypes.*;
 
 /**
  * A record mapper that is matching components of an interface with elements in a GroupLayout.
@@ -103,20 +109,89 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         assertNoInterfaceSetters(type);
         List<MethodInfo> recordGetters = recordGetters(type, layout);
         List<MethodInfo> recordSetters = recordSetters(type, layout);
+        List<MethodInfo> arrayInterfaceGetters = arrayInterfaceGetters(type, layout);
+
         List<MethodInfo> allAccessors = concat(
                 scalarGetters, scalarSetters,
                 interfaceGetters,
-                recordGetters, recordSetters);
+                recordGetters, recordSetters,
+                arrayInterfaceGetters);
         assertMappingsCorrect(type, layout, allAccessors);
         assertTotality(type, allAccessors);
         this.implClass = generateClass(
                 scalarGetters, scalarSetters,
                 interfaceGetters,
-                recordGetters, recordSetters);
+                recordGetters, recordSetters,
+                arrayInterfaceGetters);
         Handles handles = handles();
         this.isExhaustive = handles.isExhaustive();
         this.getHandle = handles.getHandle();
         this.setHandle = handles.setHandle();
+    }
+
+    @Override
+    public MethodHandles.Lookup lookup() {
+        return lookup;
+    }
+
+    @Override
+    public Class<T> type() {
+        return type;
+    }
+
+    @Override
+    public GroupLayout layout() {
+        return layout;
+    }
+
+    @Override
+    public boolean isExhaustive() {
+        return isExhaustive;
+    }
+
+    @Override
+    public MethodHandle getHandle() {
+        return getHandle;
+    }
+
+    @Override
+    public MethodHandle setHandle() {
+        return setHandle;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == this) return true;
+        if (obj == null || obj.getClass() != this.getClass()) return false;
+        var that = (SegmentInterfaceMapper<?>) obj;
+        return Objects.equals(this.lookup, that.lookup) &&
+                Objects.equals(this.type, that.type) &&
+                Objects.equals(this.layout, that.layout) &&
+                this.offset == that.offset &&
+                this.depth == that.depth &&
+                Objects.equals(this.implClass, that.implClass) &&
+                this.isExhaustive == that.isExhaustive &&
+                Objects.equals(this.getHandle, that.getHandle) &&
+                Objects.equals(this.setHandle, that.setHandle);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(lookup, type, layout, offset, depth, implClass, isExhaustive, getHandle, setHandle);
+    }
+
+    @Override
+    public String toString() {
+        return "SegmentInterfaceMapper[" +
+                "lookup=" + lookup + ", " +
+                "type=" + type + ", " +
+                "layout=" + layout + ", " +
+                "offset=" + offset + ", " +
+                "depth=" + depth + ", " +
+                "implClass=" + implClass + ", " +
+                "isExhaustive=" + isExhaustive + ", " +
+                "getHandle=" + getHandle + ", " +
+                "setHandle=" + setHandle + ']';
     }
 
     @Override
@@ -130,7 +205,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                    List<MethodInfo> scalarSetters,
                                    List<MethodInfo> interfaceGetters,
                                    List<MethodInfo> recordGetters,
-                                   List<MethodInfo> recordSetters) {
+                                   List<MethodInfo> recordSetters,
+                                   List<MethodInfo> arrayInterfaceGetters) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
         ClassDesc interfaceClassDesc = desc(type);
         ClassLoader loader = type.getClassLoader();
@@ -173,7 +249,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                     .areturn()
                     );
 
-                    // long offset() {
+                    // long $_$_$oFfSeT$_$_$() {
                     //     return offset;
                     // }
                     cb.withMethodBody("$_$_$oFfSeT$_$_$", MethodTypeDesc.of(CD_long), ACC_PUBLIC, cob ->
@@ -216,9 +292,21 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                         generateInvokeVirtualGetter(cb, classDesc, recordGetter, boostrapIndex++);
                     }
 
-                    // Todo: Fix me
+                    // @Override
+                    // <T extends Record> void gX(T t) {
+                    //     mh[x].invokeExact(segment, offset + elementOffset, t);
+                    // }
                     for (MethodInfo recordSetter : recordSetters) {
                         generateRecordSetter(cb, classDesc, recordSetter, boostrapIndex++);
+                    }
+
+                    // @Override
+                    // <T extends Record> T gX(long c1, long c2, ..., long cN) {
+                    //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
+                    //     return (T) mh[x].invokeExact(segment, offset + elementOffset + indexOffset);
+                    // }
+                    for (MethodInfo arrayInterfaceGetter : arrayInterfaceGetters) {
+                        generateInvokeVirtualGetter(cb, classDesc, arrayInterfaceGetter, boostrapIndex++);
                     }
 
                     // @Override
@@ -261,7 +349,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
             // Here are the actual pre-computed method handles to be loaded by .ldc()
             List<MethodHandle> interfaceGetHandles = interfaceGetters.stream()
-                    .map(this::interfaceGetMethodHandleFor)
+                    .map(mi -> interfaceGetMethodHandleFor(mi, (GroupLayout) mi.layoutInfo().layout()))
                     .toList();
 
             List<MethodHandle> recordGetHandles = recordGetters.stream()
@@ -272,8 +360,14 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     .map(this::recordSetMethodHandleFor)
                     .toList();
 
+            List<MethodHandle> arrayInterfaceSetHandles = arrayInterfaceGetters.stream()
+                    .map(mi -> interfaceGetMethodHandleFor(mi, (GroupLayout) mi.layoutInfo().arrayInfo().orElseThrow().elementLayout()))
+                    .toList();
+
             List<MethodHandle> classData =
-                    concat(interfaceGetHandles, recordGetHandles, recordSetHandles);
+                    concat(interfaceGetHandles,
+                            recordGetHandles, recordSetHandles,
+                            arrayInterfaceSetHandles);
 
             @SuppressWarnings("unchecked")
             Class<T> c = (Class<T>) lookup
@@ -365,28 +459,16 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private static List<MethodInfo> scalarGetters(Class<?> type,
                                                   GroupLayout layout) {
-        List<Method> methods = getCandidates(type, Class::isPrimitive)
-                .toList();
-
-        return mappableGetMethods(methods, layout);
+        return mappableGetMethods(getCandidates(type, GETTER, Class::isPrimitive), layout);
     }
 
     private static List<MethodInfo> interfaceGetters(Class<?> type,
                                                      GroupLayout layout) {
-        List<Method> methods = getCandidates(type, Class::isInterface)
-                .toList();
-
-        var result = mappableGetMethods(methods, layout);
-
-        result.stream()
-                .map(MethodInfo::type)
-                .forEach(MapperUtil::requireImplementableInterfaceType);
-
-        return result;
+        return mappableGetMethods(getCandidates(type, GETTER, Class::isInterface), layout);
     }
 
     private static void assertNoInterfaceSetters(Class<?> type) {
-        List<Method> methods = setCandidates(type, Class::isInterface)
+        List<Method> methods = setCandidates(type, SETTER, Class::isInterface)
                 .toList();
 
         if (!methods.isEmpty()) {
@@ -396,56 +478,41 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private static List<MethodInfo> recordGetters(Class<?> type,
                                                   GroupLayout layout) {
-        List<Method> methods = getCandidates(type, Class::isRecord)
-                .toList();
+        return mappableGetMethods(getCandidates(type, GETTER, Class::isRecord), layout);
+    }
 
-        var result = mappableGetMethods(methods, layout);
+    private static List<MethodInfo> arrayInterfaceGetters(Class<?> type,
+                                                          GroupLayout layout) {
+        List<Method> methods = getCandidates(type, ARRAY, Class::isInterface).toList();
 
-        result.stream()
-                .map(MethodInfo::type)
-                .forEach(MapperUtil::requireRecordType);
-
-        return result;
+        return mappableGetMethods(methods.stream(), layout);
     }
 
     private static List<MethodInfo> recordSetters(Class<?> type,
                                                   GroupLayout layout) {
-        List<Method> methods = setCandidates(type, Class::isRecord)
-                .toList();
-
-        var result = mappableSetMethods(methods, layout);
-
-        result.stream()
-                .map(MethodInfo::type)
-                .forEach(MapperUtil::requireRecordType);
-
-        return result;
+        return mappableSetMethods(setCandidates(type, SETTER, Class::isRecord), layout);
     }
 
     private static List<MethodInfo> scalarSetters(Class<?> type,
                                                   GroupLayout layout) {
-        List<Method> methods = setCandidates(type, Class::isPrimitive)
-                .toList();
-
-
-        return mappableSetMethods(methods, layout);
+        return mappableSetMethods(setCandidates(type, SETTER, Class::isPrimitive), layout);
     }
 
-    private static List<MethodInfo> mappableGetMethods(List<Method> methods,
-                                                    GroupLayout layout) {
+    private static List<MethodInfo> mappableGetMethods(Stream<Method> methods,
+                                                       GroupLayout layout) {
         return mappableMethods0(methods, layout, Method::getReturnType);
     }
 
-    private static List<MethodInfo> mappableSetMethods(List<Method> methods,
-                                                    GroupLayout layout) {
+    private static List<MethodInfo> mappableSetMethods(Stream<Method> methods,
+                                                       GroupLayout layout) {
         return mappableMethods0(methods, layout, m -> m.getParameterTypes()[0]);
     }
 
-    private static List<MethodInfo> mappableMethods0(List<Method> methods,
+    private static List<MethodInfo> mappableMethods0(Stream<Method> methods,
                                                     GroupLayout layout,
                                                     Function<? super Method, ? extends Class<?>> typeExtractor) {
 
-        return methods.stream()
+        return methods
                 .map(m -> {
                     var type = typeExtractor.apply(m);
                     var elementPath = MemoryLayout.PathElement.groupElement(m.getName());
@@ -464,10 +531,21 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                 throw new IllegalArgumentException("The type " + type + " for method " + m +
                                         "does not match " + element);
                             }
-                            yield new MethodInfo(m, type, desc(type), layoutInfo(vl), offset);
+                            yield new MethodInfo(m, type, LayoutInfo.of(vl), offset);
                         }
                         case GroupLayout gl ->
-                                new MethodInfo(m, type, desc(type), layoutInfo(gl), offset);
+                                new MethodInfo(m, type, LayoutInfo.of(gl), offset);
+                        case SequenceLayout sl -> {
+                            MethodInfo info = new MethodInfo(m, type, LayoutInfo.of(sl), offset);
+                            int noDimensions = info.layoutInfo().arrayInfo().orElseThrow().dimensions().size();
+                            if (m.getParameterCount() != noDimensions) {
+                                throw new IllegalArgumentException(
+                                        "Sequence layout has a dimension of " + noDimensions +
+                                                " and so, the  method parameter count does not" +
+                                                " match for: " + m);
+                            }
+                            yield info;
+                        }
                         default -> throw new IllegalArgumentException("Cannot map " + element + " for " + type);
                     };
 
@@ -475,34 +553,57 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .toList();
     }
 
-    private static Stream<Method> setCandidates(Class<?> type, Predicate<Class<?>> parameterTypePredicate) {
-        return candidates0(type, 1)
+    private static Stream<Method> setCandidates(Class<?> type,
+                                                ParameterTypes parameterTypes,
+                                                Predicate<Class<?>> parameterTypePredicate) {
+        return candidates0(type, parameterTypes)
                 .filter(m -> m.getReturnType() == void.class || m.getReturnType() == Void.class)
                 .filter(m -> parameterTypePredicate.test(m.getParameterTypes()[0]));
     }
 
     private static Stream<Method> getCandidates(Class<?> type,
+                                                ParameterTypes parameterTypes,
                                                 Predicate<Class<?>> returnTypePredicate) {
-        return candidates0(type, 0)
+        return candidates0(type, parameterTypes)
                 .filter(m -> m.getReturnType() != void.class && m.getReturnType() != Void.class)
                 .filter(m -> returnTypePredicate.test(m.getReturnType()));
     }
 
+    enum ParameterTypes {
+        GETTER(m -> m.getParameterCount() == 0),
+        SETTER(m -> m.getParameterCount() == 1),
+        ARRAY(m -> m.getParameterCount() >= 1 && Arrays.stream(m.getParameters())
+                .map(Parameter::getType)
+                .allMatch(t -> t.equals(long.class)));
+
+        private final Predicate<Method> predicate;
+
+        ParameterTypes(Predicate<Method> predicate) {
+            this.predicate = predicate;
+        }
+
+        Predicate<Method> predicate() {
+            return predicate;
+        }
+
+    }
+
     private static Stream<Method> candidates0(Class<?> type,
-                                              int paramCount) {
+                                              ParameterTypes parameterTypes) {
         return Arrays.stream(type.getMethods())
-                .filter(m -> m.getParameterCount() == paramCount)
+                .filter(parameterTypes.predicate())
                 .filter(m -> !Modifier.isStatic(m.getModifiers()))
                 .filter(m -> !m.isDefault());
     }
 
-    private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo) {
+    private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo,
+                                                     GroupLayout groupLayout) {
 
         // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentInterfaceMapper<?> innerMapper = new SegmentInterfaceMapper<>(
                 lookup,
                 methodInfo.type(),
-                (GroupLayout) methodInfo.layoutInfo().layout(),
+                groupLayout,
                 0, // The actual offset is added later at invocation
                 depth + 1);
 
@@ -539,15 +640,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                       MethodInfo info) {
 
         String name = info.method().getName();
-        ClassDesc returnDesc = info.typeDesc();
-        ClassDesc layoutDesc = info.layoutInfo().desc();
+        ClassDesc returnDesc = desc(info.type());
+        ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
 
-        var getDesc = MethodTypeDesc.of(returnDesc, layoutDesc, CD_long);
+        var getDesc = MethodTypeDesc.of(returnDesc, scalarInfo.valueLayoutDesc(), CD_long);
 
         cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc);
+                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
                     offsetBlock(cob, classDesc, info.offset())
                             .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "get", getDesc);
                     // ireturn(), dreturn() etc.
@@ -561,15 +662,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                       MethodInfo info) {
 
         String name = info.method().getName();
-        ClassDesc parameterDesc = info.typeDesc();
-        ClassDesc layoutDesc = info.layoutInfo().desc();
+        ClassDesc parameterDesc = desc(info.type());
+        ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
 
-        var setDesc = MethodTypeDesc.of(CD_void, layoutDesc, CD_long, parameterDesc);
+        var setDesc = MethodTypeDesc.of(CD_void, scalarInfo.valueLayoutDesc(), CD_long, parameterDesc);
 
         cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, info.layoutInfo().name(), layoutDesc);
+                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
                     offsetBlock(cob, classDesc, info.offset());
                     // iload, dload, etc.
                     info.layoutInfo().paramOp().accept(cob, 1);
@@ -586,19 +687,32 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                              int boostrapIndex) {
 
         var name = info.method().getName();
-        var returnDesc = info.typeDesc();
+        var returnDesc = desc(info.type());
 
         DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
                 BSM_CLASS_DATA_AT,
                 boostrapIndex
         );
 
-        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
+        // If it is an array, there is a number of long parameters
+        List<ClassDesc> parameterDesc = info.layoutInfo().arrayInfo()
+                .map(ai -> ai.dimensions().stream().map(_ -> CD_long).toList())
+                .orElse(Collections.emptyList());
+
+        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.ldc(desc)
                             .checkcast(desc(MethodHandle.class)) // MethodHandle
                             .aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
-                    offsetBlock(cob, classDesc, info.offset())
+
+                    offsetBlock(cob, classDesc, info.offset());
+
+                    // Is this an array accessor?
+                    info.layoutInfo().arrayInfo().ifPresent(
+                            ai -> reduceArrayIndexes(cob, ai)
+                    );
+
+                    cob
                             .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_Object, MEMORY_SEGMENT_CLASS_DESC, CD_long))
                             .checkcast(returnDesc)
                             .areturn();
@@ -606,12 +720,44 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         );
     }
 
+
+
+    // Example:
+    //   The dimensions are [3, 4] and the element byte size is 8 bytes
+    //   reduce(2, 3) -> 2 * 4 * 8 + 3 * 8 = 88
+    // public static long reduce(long i1, long i2) {
+    //     long offset = Objects.checkIndex(i1, 3) * (8 * 4) +
+    //     Objects.checkIndex(i2, 4) * 8;
+    //     return offset;
+    // }
+    void reduceArrayIndexes(CodeBuilder cob,
+                            ArrayInfo arrayInfo) {
+        long elementByteSize = arrayInfo.elementLayout().byteSize();
+        // Check parameters and push scaled offsets on the stack
+        for (int i = 0; i < arrayInfo.dimensions().size(); i++) {
+            long dimension = arrayInfo.dimensions().get(i);
+            long factor = arrayInfo.dimensions.stream()
+                    .skip(i + 1)
+                    .reduce(elementByteSize, Math::multiplyExact);
+
+            cob.lload(i * 2)
+                    .ldc(dimension)
+                    .invokestatic(desc(Objects.class), "checkIndex", MethodTypeDesc.of(CD_long, CD_long, CD_long))
+                    .ldc(factor)
+                    .lmul();
+        }
+        // Sum their values (including the value that existed *before* this method was invoked)
+        for (int i = 0; i < arrayInfo.dimensions().size(); i++) {
+            cob.ladd();
+        }
+    }
+
     private void generateRecordSetter(ClassBuilder cb,
                                       ClassDesc classDesc,
                                       MethodInfo info,
                                       int boostrapIndex) {
         var name = info.method().getName();
-        var parameterDesc = info.typeDesc();
+        var parameterDesc = desc(info.type());
 
         DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
                 BSM_CLASS_DATA_AT,
@@ -648,7 +794,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     record MethodInfo(Method method,
                       Class<?> type,
-                      ClassDesc typeDesc,
                       LayoutInfo layoutInfo,
                       long offset) {
     }
@@ -695,104 +840,84 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private static List<ClassDesc> classDescs(List<MethodInfo> methods) {
         return methods.stream()
-                .map(MethodInfo::typeDesc)
+                .map(MethodInfo::type)
+                .map(SegmentInterfaceMapper::desc)
                 .toList();
     }
 
     record LayoutInfo(MemoryLayout layout,
-                      String name,
-                      ClassDesc desc,
+                      Optional<ScalarInfo> scalarInfo,
+                      Optional<ArrayInfo> arrayInfo,
                       Consumer<CodeBuilder> returnOp,
                       ObjIntConsumer<CodeBuilder> paramOp) {
+
+
+        private static LayoutInfo of(ValueLayout layout) {
+            return switch (layout) {
+                // Todo: Remove boolean?
+                case ValueLayout.OfBoolean bo ->
+                        LayoutInfo.ofScalar(bo, "JAVA_BOOLEAN", ValueLayout.OfBoolean.class, CodeBuilder::ireturn, CodeBuilder::iload);
+                case ValueLayout.OfByte by ->
+                        LayoutInfo.ofScalar(by, "JAVA_BYTE", ValueLayout.OfByte.class, CodeBuilder::ireturn, CodeBuilder::iload);
+                case ValueLayout.OfShort sh ->
+                        LayoutInfo.ofScalar(sh, "JAVA_SHORT", ValueLayout.OfShort.class, CodeBuilder::ireturn, CodeBuilder::iload);
+                case ValueLayout.OfChar ch ->
+                        LayoutInfo.ofScalar(ch, "JAVA_CHAR", ValueLayout.OfChar.class, CodeBuilder::ireturn, CodeBuilder::iload);
+                case ValueLayout.OfInt in ->
+                        LayoutInfo.ofScalar(in, "JAVA_INT", ValueLayout.OfInt.class, CodeBuilder::ireturn, CodeBuilder::iload);
+                case ValueLayout.OfFloat fl ->
+                        LayoutInfo.ofScalar(fl, "JAVA_FLOAT", ValueLayout.OfFloat.class, CodeBuilder::freturn, CodeBuilder::fload);
+                case ValueLayout.OfLong lo ->
+                        LayoutInfo.ofScalar(lo, "JAVA_LONG", ValueLayout.OfLong.class, CodeBuilder::lreturn, CodeBuilder::lload);
+                case ValueLayout.OfDouble db ->
+                        LayoutInfo.ofScalar(db, "JAVA_DOUBLE", ValueLayout.OfDouble.class, CodeBuilder::dreturn, CodeBuilder::dload);
+                default ->
+                        throw new IllegalArgumentException("Unable to map to a LayoutInfo: " + layout);
+            };
+        }
+
+        static LayoutInfo of(GroupLayout layout) {
+            return new LayoutInfo(layout, Optional.empty(), Optional.empty(), CodeBuilder::areturn, CodeBuilder::aload);
+        }
+
+        static LayoutInfo of(SequenceLayout layout) {
+            return new LayoutInfo(layout, Optional.empty(), Optional.of(ArrayInfo.of(layout)), CodeBuilder::areturn, CodeBuilder::aload);
+        }
+
+        private static <T extends ValueLayout> LayoutInfo ofScalar(T layout,
+                                                                   String memberName,
+                                                                   Class<T> layoutType,
+                                                                   Consumer<CodeBuilder> returnOp,
+                                                                   ObjIntConsumer<CodeBuilder> paramOp) {
+            return new LayoutInfo(layout, Optional.of(new ScalarInfo(memberName, desc(layoutType))), Optional.empty(), returnOp, paramOp);
+        }
+
     }
 
-    private static LayoutInfo layoutInfo(ValueLayout layout) {
-        return switch (layout) {
-            // Todo: Remove boolean?
-            case ValueLayout.OfBoolean _ -> new LayoutInfo(layout, "JAVA_BOOLEAN", desc(ValueLayout.OfBoolean.class), CodeBuilder::ireturn, CodeBuilder::iload);
-            case ValueLayout.OfByte _ -> new LayoutInfo(layout, "JAVA_BYTE", desc(ValueLayout.OfByte.class), CodeBuilder::ireturn, CodeBuilder::iload);
-            case ValueLayout.OfShort _ -> new LayoutInfo(layout, "JAVA_SHORT", desc(ValueLayout.OfShort.class), CodeBuilder::ireturn, CodeBuilder::iload);
-            case ValueLayout.OfChar _ -> new LayoutInfo(layout, "JAVA_CHAR", desc(ValueLayout.OfChar.class), CodeBuilder::ireturn, CodeBuilder::iload);
-            case ValueLayout.OfInt _ -> new LayoutInfo(layout, "JAVA_INT", desc(ValueLayout.OfInt.class), CodeBuilder::ireturn, CodeBuilder::iload);
-            case ValueLayout.OfFloat _ -> new LayoutInfo(layout, "JAVA_FLOAT", desc(ValueLayout.OfFloat.class), CodeBuilder::freturn, CodeBuilder::fload);
-            case ValueLayout.OfLong _ -> new LayoutInfo(layout, "JAVA_LONG", desc(ValueLayout.OfLong.class), CodeBuilder::lreturn, CodeBuilder::lload);
-            case ValueLayout.OfDouble _ -> new LayoutInfo(layout, "JAVA_DOUBLE", desc(ValueLayout.OfDouble.class), CodeBuilder::dreturn, CodeBuilder::dload);
-            default -> throw new IllegalArgumentException("Unable to map to a LayoutInfo: " + layout);
-        };
-    }
+    record ScalarInfo(String memberName,
+                      ClassDesc valueLayoutDesc ){}
 
-    private static LayoutInfo layoutInfo(GroupLayout layout) {
-        return new LayoutInfo(layout, null, null, CodeBuilder::areturn, CodeBuilder::aload);
+    record ArrayInfo(MemoryLayout elementLayout,
+                     List<Long> dimensions) {
+
+        static ArrayInfo of(SequenceLayout layout) {
+            return recurse(new ArrayInfo(layout, new ArrayList<>()));
+        }
+
+        private static ArrayInfo recurse(ArrayInfo info) {
+            if (!(info.elementLayout instanceof SequenceLayout sl)) {
+                // We are done. Create an immutable record
+                return new ArrayInfo(info.elementLayout(), List.copyOf(info.dimensions()));
+            }
+            info.dimensions().add(sl.elementCount());
+            return recurse(new ArrayInfo(sl.elementLayout(), info.dimensions()));
+        }
+
     }
 
     private static ClassDesc desc(Class<?> clazz) {
         return clazz.describeConstable()
                 .orElseThrow();
-    }
-
-    @Override
-    public MethodHandles.Lookup lookup() {
-        return lookup;
-    }
-
-    @Override
-    public Class<T> type() {
-        return type;
-    }
-
-    @Override
-    public GroupLayout layout() {
-        return layout;
-    }
-
-    @Override
-    public boolean isExhaustive() {
-        return isExhaustive;
-    }
-
-    @Override
-    public MethodHandle getHandle() {
-        return getHandle;
-    }
-
-    @Override
-    public MethodHandle setHandle() {
-        return setHandle;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (obj == this) return true;
-        if (obj == null || obj.getClass() != this.getClass()) return false;
-        var that = (SegmentInterfaceMapper<?>) obj;
-        return Objects.equals(this.lookup, that.lookup) &&
-                Objects.equals(this.type, that.type) &&
-                Objects.equals(this.layout, that.layout) &&
-                this.offset == that.offset &&
-                this.depth == that.depth &&
-                Objects.equals(this.implClass, that.implClass) &&
-                this.isExhaustive == that.isExhaustive &&
-                Objects.equals(this.getHandle, that.getHandle) &&
-                Objects.equals(this.setHandle, that.setHandle);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(lookup, type, layout, offset, depth, implClass, isExhaustive, getHandle, setHandle);
-    }
-
-    @Override
-    public String toString() {
-        return "SegmentInterfaceMapper[" +
-                "lookup=" + lookup + ", " +
-                "type=" + type + ", " +
-                "layout=" + layout + ", " +
-                "offset=" + offset + ", " +
-                "depth=" + depth + ", " +
-                "implClass=" + implClass + ", " +
-                "isExhaustive=" + isExhaustive + ", " +
-                "getHandle=" + getHandle + ", " +
-                "setHandle=" + setHandle + ']';
     }
 
     /**

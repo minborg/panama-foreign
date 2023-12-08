@@ -85,6 +85,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
@@ -98,6 +99,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HexFormat;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -165,19 +167,31 @@ final class TestInterfaceMapper {
 
     interface MixedBag {
         byte b();
+
         short s();
+
         char c();
+
         int i();
+
         float f();
+
         long l();
+
         double d();
 
         void b(byte b);
+
         void s(short s);
+
         void c(char c);
+
         void i(int i);
+
         void f(float f);
+
         void l(long l);
+
         void d(double d);
     }
 
@@ -228,9 +242,18 @@ final class TestInterfaceMapper {
             POINT_LAYOUT.withName("end")
     );
 
-    interface XAccessor { int x();}
-    interface YAccessor { int y();}
-    interface XYAccessor extends XAccessor, YAccessor {};
+    interface XAccessor {
+        int x();
+    }
+
+    interface YAccessor {
+        int y();
+    }
+
+    interface XYAccessor extends XAccessor, YAccessor {
+    }
+
+    ;
 
     @Test
     void xyAccessor() {
@@ -244,6 +267,7 @@ final class TestInterfaceMapper {
 
     interface LineAccessor {
         PointAccessor begin();
+
         PointAccessor end();
     }
 
@@ -309,12 +333,16 @@ final class TestInterfaceMapper {
         assertTrue(message.contains(Fail2.class.getMethods()[0].toString()));
     }
 
-    public record Point(int x, int y){}
+    public record Point(int x, int y) {
+    }
 
     public interface LineRecordAccessor {
         Point begin();
+
         Point end();
+
         void begin(Point begin);
+
         void end(Point end);
     }
 
@@ -347,12 +375,37 @@ final class TestInterfaceMapper {
         assertToString(accessor, mapper.type(), Set.of("begin()=Point[x=1, y=2]", "end()=Point[x=3, y=4]"));
     }
 
+    public interface PolygonAccessor {
+        PointAccessor point(long index);
+    }
+
+    @Test
+    void polygonAccessor() {
+        GroupLayout triangleLayout = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("point")
+        );
+        MemorySegment segment = MemorySegment.ofArray(new int[]{1, 10, 2, 11, 3, 9});
+        SegmentMapper<PolygonAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PolygonAccessor.class, triangleLayout);
+        PolygonAccessor accessor = mapper.get(segment, 0);
+
+        PointAccessor p0 = accessor.point(0);
+        PointAccessor p1 = accessor.point(1);
+        PointAccessor p2 = accessor.point(2);
+
+        assertEquals(1, p0.x());
+        assertEquals(10, p0.y());
+        assertEquals(2, p1.x());
+        assertEquals(11, p1.y());
+        assertEquals(3, p2.x());
+        assertEquals(9, p2.y());
+    }
+
     void assertToString(Object o,
                         Class<?> clazz, Set<String> fragments) {
         String s = o.toString();
         var start = clazz.getSimpleName() + "[";
         assertTrue(s.startsWith(start), s + " does not start with " + start);
-        for (var fragment:fragments) {
+        for (var fragment : fragments) {
             assertTrue(s.contains(fragment), s + " does not contain " + fragment);
         }
         var end = "]";
@@ -387,7 +440,7 @@ final class TestInterfaceMapper {
             //cb.withInterfaces(cb.constantPool().classEntry(interfaceClassDesc));
             cb.withInterfaceSymbols(interfaceClassDesc);
             // private final MemorySegment segment;
-            cb.withField("segment", memorySegmentClassDesc,ACC_PRIVATE | ACC_FINAL);
+            cb.withField("segment", memorySegmentClassDesc, ACC_PRIVATE | ACC_FINAL);
             // private final long offset;
             cb.withField("offset", CD_long, ACC_PRIVATE | ACC_FINAL);
 
@@ -414,17 +467,17 @@ final class TestInterfaceMapper {
             //      offset
             cb.withMethodBody(ConstantDescs.INIT_NAME, MethodTypeDesc.of(CD_void, memorySegmentClassDesc, CD_long), Classfile.ACC_PUBLIC, cob ->
                     cob.aload(0)
-                    // Call Record's constructor
-                    .invokespecial(recordClassDesc, ConstantDescs.INIT_NAME, ConstantDescs.MTD_void, false)
-                    // Set "segment"
-                    .aload(0)
-                    .aload(1)
-                    .putfield(genClassDesc, "segment", memorySegmentClassDesc)
-                    // Set "offset"
-                    .aload(0)
-                    .lload(2)
-                    .putfield(genClassDesc, "offset", CD_long)
-                    .return_());
+                            // Call Record's constructor
+                            .invokespecial(recordClassDesc, ConstantDescs.INIT_NAME, ConstantDescs.MTD_void, false)
+                            // Set "segment"
+                            .aload(0)
+                            .aload(1)
+                            .putfield(genClassDesc, "segment", memorySegmentClassDesc)
+                            // Set "offset"
+                            .aload(0)
+                            .lload(2)
+                            .putfield(genClassDesc, "offset", CD_long)
+                            .return_());
 
             //    public int x();
             //    descriptor: ()I
@@ -681,7 +734,7 @@ final class TestInterfaceMapper {
 
             MethodHandles.Lookup lookup = MethodHandles.lookup().defineHiddenClass(bytes, true);
             @SuppressWarnings("unchecked")
-            Class<PointAccessor> c = (Class<PointAccessor>)lookup.lookupClass();
+            Class<PointAccessor> c = (Class<PointAccessor>) lookup.lookupClass();
 
             MethodHandle ctor = MethodHandles.lookup().findConstructor(c, MethodType.methodType(void.class, MemorySegment.class, long.class));
             ctor = ctor.asType(ctor.type().changeReturnType(PointAccessor.class));
@@ -738,7 +791,7 @@ final class TestInterfaceMapper {
         System.out.println(hex);
     }
 
-    static ClassDesc desc(Class<?> clazz ) {
+    static ClassDesc desc(Class<?> clazz) {
         return clazz.describeConstable().orElseThrow();
     }
 
@@ -765,7 +818,7 @@ final class TestInterfaceMapper {
 
         System.out.println("Constant pool:");
         ConstantPool cp = cm.constantPool();
-        for (PoolEntry pe:cp) {
+        for (PoolEntry pe : cp) {
             String msg = render(pe);
             String index = String.format("#%d", pe.index());
             System.out.format("%5s = %s%n", index, msg);
@@ -857,17 +910,17 @@ final class TestInterfaceMapper {
 
     static String render(PoolEntry pe) {
         return switch (pe) {
-            case DoubleEntry de  -> render("Double", de.doubleValue() + "D");
-            case FloatEntry fe   -> render("Float", fe.floatValue() + "F");
+            case DoubleEntry de -> render("Double", de.doubleValue() + "D");
+            case FloatEntry fe -> render("Float", fe.floatValue() + "F");
             case IntegerEntry ie -> render("Integer", ie.intValue() + "");
-            case LongEntry le    -> render("Long", le.longValue() + "L");
-            case Utf8Entry u     -> render("Utf8", u.stringValue());
+            case LongEntry le -> render("Long", le.longValue() + "L");
+            case Utf8Entry u -> render("Utf8", u.stringValue());
             // case AnnotationConstantValueEntry _ -> "Annotation";
 
             case DynamicConstantPoolEntry _ -> "Dynamic Constant";
 
-            case ClassEntry ce   -> renderConstantPool("Class", "#" + ce.name().index(), ce.toString());
-            case StringEntry s   -> renderConstantPool("String", "#" + s.utf8().index(), s.toString());
+            case ClassEntry ce -> renderConstantPool("Class", "#" + ce.name().index(), ce.toString());
+            case StringEntry s -> renderConstantPool("String", "#" + s.utf8().index(), s.toString());
             case MethodHandleEntry mhe ->
                     renderConstantPool("MethodHandle", mhe.kind() + ":#" + mhe.reference().index(), mhe.toString());
             case LoadableConstantEntry lc -> "Loadable Constant " + lc.getClass();
@@ -875,7 +928,8 @@ final class TestInterfaceMapper {
             case FieldRefEntry fr ->
                     renderConstantPool("FieldRef", "#" + fr.owner().index() + ".#" + fr.nameAndType().index(), fr.toString());
 
-            case InterfaceMethodRefEntry imr -> renderConstantPool("InterfaceMethodRef", "#"+imr.owner().index()+".#"+imr.nameAndType().index(), imr.toString());
+            case InterfaceMethodRefEntry imr ->
+                    renderConstantPool("InterfaceMethodRef", "#" + imr.owner().index() + ".#" + imr.nameAndType().index(), imr.toString());
 
             case MethodRefEntry mr ->
                     renderConstantPool("Methodref", "#" + mr.owner().index() + ".#" + mr.nameAndType().index(), mr.toString());
@@ -904,7 +958,7 @@ final class TestInterfaceMapper {
     static String render(CodeModel cm) {
         int pos = 0;
         StringBuilder sb = new StringBuilder();
-        for (CodeElement ce: cm.elementList()) {
+        for (CodeElement ce : cm.elementList()) {
             switch (ce) {
                 case Instruction i -> {
                     String line = pos + ":";
@@ -918,6 +972,7 @@ final class TestInterfaceMapper {
         }
         return sb.toString();
     }
+
     static String render(String type,
                          String additionalParams) {
         return renderConstantPool(type, additionalParams, "");
@@ -981,7 +1036,7 @@ final class TestInterfaceMapper {
 
             // 7: ldc2_w        #25                 // long 4l
             case AbstractInstruction.BoundLoadConstantInstruction bl ->
-                    renderInstruction(bl.opcode().toString().toLowerCase(), "#"+bl.constantEntry().index(), bl.typeKind()+" "+bl.constantValue());
+                    renderInstruction(bl.opcode().toString().toLowerCase(), "#" + bl.constantEntry().index(), bl.typeKind() + " " + bl.constantValue());
 
             default -> element.getClass().getName() + " : " + element.toString();
         };
@@ -1018,8 +1073,11 @@ final class TestInterfaceMapper {
 
     public interface PointAccessor {
         int x();
+
         int y();
+
         void x(int x);
+
         void y(int y);
     }
 
@@ -1062,7 +1120,7 @@ final class TestInterfaceMapper {
             segment.set(JAVA_INT, offset + 4, y);
         }
 
-       @Override
+        @Override
         public int hashCode() {
             return System.identityHashCode(this);
         }
@@ -1076,8 +1134,35 @@ final class TestInterfaceMapper {
         public String toString() {
             return "PointAccessor[x()=" + x() + ", y()=" + y() + "]";
         }
+
+        // dim 3, 4
+        // reduce(2, 3) -> 3 * 8 + 2 * 8 * 4
+        public static long reduce(long i1, long i2) {
+            long offset = Objects.checkIndex(i1, 3) * (8 * 4) +
+                    Objects.checkIndex(i2, 4) * 8;
+            return offset;
+        }
+
+        /*
+         0: lload_0
+         1: ldc2_w        #52                 // long 3l
+         4: invokestatic  #54                 // Method java/util/Objects.checkIndex:(JJ)J
+         7: ldc2_w        #60                 // long 32l
+        10: lmul
+        11: lload_2
+        12: ldc2_w        #29                 // long 4l
+        15: invokestatic  #54                 // Method java/util/Objects.checkIndex:(JJ)J
+        18: ldc2_w        #62                 // long 8l
+        21: lmul
+        22: ladd
+        23: lstore        4
+        25: lload         4
+        27: lreturn
+         */
+
     }
 
+}
 /*
 WITH OFFSET
 
@@ -1358,6 +1443,3 @@ InnerClasses:
   public static #84= #47 of #64;          // PointAccessor=class TestInterfaceMapper$PointAccessor of class TestInterfaceMapper
   public static final #89= #85 of #87;    // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles
  */
-
-
-}

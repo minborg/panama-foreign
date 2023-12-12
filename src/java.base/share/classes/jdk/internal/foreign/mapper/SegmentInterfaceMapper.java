@@ -30,8 +30,8 @@ import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
-import jdk.internal.org.objectweb.asm.tree.analysis.Value;
 
+import java.io.IOException;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.DirectMethodHandleDesc;
 import java.lang.constant.DynamicCallSiteDesc;
@@ -50,10 +50,14 @@ import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -62,7 +66,6 @@ import java.util.function.Function;
 import java.util.function.ObjIntConsumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static java.lang.constant.ConstantDescs.*;
@@ -343,7 +346,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    generateToString(cb, classDesc, concat(scalarGetters, interfaceGetters, recordGetters));
+                    generateToString(cb, classDesc, concat(scalarGetters, interfaceGetters, recordGetters, arrayInterfaceGetters));
                 });
         try {
 
@@ -368,6 +371,16 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     concat(interfaceGetHandles,
                             recordGetHandles, recordSetHandles,
                             arrayInterfaceSetHandles);
+
+            if (MapperUtil.isDebug()) {
+                Path path = Path.of( classDesc.displayName() + ".class");
+                try {
+                    Files.write(path, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+                    System.out.println("Wrote class file " + path.toAbsolutePath());
+                } catch (IOException e) {
+                    System.out.println("Unable to write class file: " + path.toAbsolutePath() + " " + e.getMessage());
+                }
+            }
 
             @SuppressWarnings("unchecked")
             Class<T> c = (Class<T>) lookup
@@ -740,7 +753,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     .skip(i + 1)
                     .reduce(elementByteSize, Math::multiplyExact);
 
-            cob.lload(i * 2)
+            cob.lload(1 + i * 2)
                     .ldc(dimension)
                     .invokestatic(desc(Objects.class), "checkIndex", MethodTypeDesc.of(CD_long, CD_long, CD_long))
                     .ldc(factor)
@@ -800,11 +813,28 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private void generateToString(ClassBuilder cb,
                                   ClassDesc classDesc,
-                                  List<MethodInfo> getMethods) {
+                                  List<MethodInfo> getters) {
+
+        // We want the components to appear in the order reported by Class::getMethods
+        // So, we first construct a map that we can use to lookup MethodInfo objects
+        Map<Method, MethodInfo> methods = getters.stream()
+                .collect(Collectors.toMap(MethodInfo::method, Function.identity()));
+        List<MethodInfo> sortedGetters = Arrays.stream(type.getMethods())
+                .map(methods::get)
+                .filter(Objects::nonNull) // Unmapped methods discarded (e.g. static methods)
+                .toList();
+
         // Foo[g0()=\u0001, g1()=\u0001, ...]
-        var recipe = getMethods.stream()
-                .map(m -> String.format("%s()=\u0001", m.method().getName()))
+        var recipe = sortedGetters.stream()
+                .map(m -> m.layoutInfo().arrayInfo()
+                        .map(ai -> String.format("%s()=%s%s", m.method().getName(), m.type().getSimpleName(), ai.dimensions()))
+                        .orElse(String.format("%s()=\u0001", m.method().getName()))
+                )
                 .collect(Collectors.joining(", ", type.getSimpleName() + "[", "]"));
+
+        List<MethodInfo> nonArrayGetters = sortedGetters.stream()
+                .filter(i -> i.layoutInfo().arrayInfo.isEmpty())
+                .toList();
 
         DirectMethodHandleDesc bootstrap = ofCallsiteBootstrap(
                 desc(StringConcatFactory.class),
@@ -813,7 +843,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 CD_String, CD_Object.arrayType()
         );
 
-        List<ClassDesc> getDescriptions = classDescs(getMethods);
+        List<ClassDesc> getDescriptions = classDescs(nonArrayGetters);
 
         DynamicCallSiteDesc desc = DynamicCallSiteDesc.of(
                 bootstrap,
@@ -826,8 +856,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 MethodTypeDesc.of(CD_String),
                 ACC_PUBLIC | ACC_FINAL,
                 cob -> {
-                    for (int i = 0; i < getMethods.size(); i++) {
-                        var name = getMethods.get(i).method().getName();
+                    for (int i = 0; i < nonArrayGetters.size(); i++) {
+                        var name = nonArrayGetters.get(i).method().getName();
                         cob.aload(0);
                         // Method gi:()?
                         cob.invokevirtual(classDesc, name, MethodTypeDesc.of(getDescriptions.get(i)));

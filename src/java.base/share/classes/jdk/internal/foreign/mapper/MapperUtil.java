@@ -25,6 +25,8 @@
 
 package jdk.internal.foreign.mapper;
 
+import sun.security.action.GetPropertyAction;
+
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.util.Objects;
@@ -32,6 +34,13 @@ import java.util.Objects;
 public final class MapperUtil {
 
     private MapperUtil() {
+    }
+
+    private static final String DEBUG =
+            GetPropertyAction.privilegedGetProperty("java.lang.foreign.mapper.debug", "");
+
+    public static boolean isDebug() {
+        return !DEBUG.isEmpty();
     }
 
     public static <T> Class<T> requireImplementableInterfaceType(Class<T> type) {

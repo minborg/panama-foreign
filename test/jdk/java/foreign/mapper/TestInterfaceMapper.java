@@ -28,7 +28,7 @@
  *          java.base/jdk.internal.classfile.constantpool
  *          java.base/jdk.internal.classfile.instruction
  *          java.base/jdk.internal.classfile.impl
- * @run junit/othervm --enable-preview TestInterfaceMapper
+ * @run junit/othervm -Djava.lang.foreign.mapper.debug=true TestInterfaceMapper
  */
 
 import jdk.internal.classfile.AccessFlags;
@@ -99,6 +99,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -122,6 +123,10 @@ final class TestInterfaceMapper {
             JAVA_INT.withName("x"),
             JAVA_INT.withName("y")
     );
+
+/*    static {
+        System.getProperty("java.lang.foreign.mapper.debug", "true");
+    }*/
 
     @Test
     void point() {
@@ -253,8 +258,6 @@ final class TestInterfaceMapper {
     interface XYAccessor extends XAccessor, YAccessor {
     }
 
-    ;
-
     @Test
     void xyAccessor() {
         SegmentMapper<XYAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, XYAccessor.class, POINT_LAYOUT);
@@ -376,21 +379,21 @@ final class TestInterfaceMapper {
     }
 
     public interface PolygonAccessor {
-        PointAccessor point(long index);
+        PointAccessor points(long index);
     }
 
     @Test
-    void polygonAccessor() {
+    void triangle() {
         GroupLayout triangleLayout = MemoryLayout.structLayout(
-                MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("point")
+                MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
         );
         MemorySegment segment = MemorySegment.ofArray(new int[]{1, 10, 2, 11, 3, 9});
         SegmentMapper<PolygonAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PolygonAccessor.class, triangleLayout);
         PolygonAccessor accessor = mapper.get(segment, 0);
 
-        PointAccessor p0 = accessor.point(0);
-        PointAccessor p1 = accessor.point(1);
-        PointAccessor p2 = accessor.point(2);
+        PointAccessor p0 = accessor.points(0);
+        PointAccessor p1 = accessor.points(1);
+        PointAccessor p2 = accessor.points(2);
 
         assertEquals(1, p0.x());
         assertEquals(10, p0.y());
@@ -398,6 +401,83 @@ final class TestInterfaceMapper {
         assertEquals(11, p1.y());
         assertEquals(3, p2.x());
         assertEquals(9, p2.y());
+
+        assertEquals("PolygonAccessor[points()=PointAccessor[3]]", accessor.toString());
+    }
+
+    public interface PolygonAccessor2Dim {
+        PointAccessor points(long i, long j);
+    }
+
+    @Test
+    void multiDim() {
+        GroupLayout triangleLayout = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(4,
+                        MemoryLayout.sequenceLayout(3, POINT_LAYOUT)
+                ).withName("points")
+        );
+        MemorySegment segment = MemorySegment.ofArray(new int[]{
+                1, 10,  2, 11,  3, 9,
+                2, 11,  3, 12,  4, 10,
+                3, 12,  4, 13,  5, 11,
+                4, 14,  5, 14,  6, 12
+        });
+        SegmentMapper<PolygonAccessor2Dim> mapper = SegmentMapper.ofInterface(LOOKUP, PolygonAccessor2Dim.class, triangleLayout);
+        PolygonAccessor2Dim accessor = mapper.get(segment, 0);
+
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 3; j++) {
+                PointAccessor p = accessor.points(i, j);
+                int index = 2 * 3 * i + 2 * j;
+                int expectedX = segment.getAtIndex(JAVA_INT, index);
+                int expectedY = segment.getAtIndex(JAVA_INT, index + 1);
+                assertEquals(expectedX, p.x());
+                assertEquals(expectedY, p.y());
+            }
+        }
+
+        assertEquals("PolygonAccessor2Dim[points()=PointAccessor[4, 3]]", accessor.toString());
+    }
+
+
+    interface IntHolder {
+        int value();
+    }
+
+    private static final class MyClass implements IntHolder {
+
+        private final int value;
+
+        public MyClass(int value) {
+            this.value = value;
+        }
+
+        @Override
+        public int value() {
+            return value;
+        }
+    }
+
+    @Test
+    void getByteCode() throws Throwable {
+        try (var stream = TestInterfaceMapper.class.getResourceAsStream("TestInterfaceMapper$MyClass.class")) {
+            byte[] bytes = stream.readAllBytes();
+/*            ClassModel cm = Classfile.of().parse(bytes);
+            javap(cm);
+            //fail("There is " + bytes.length + " bytes!");*/
+
+            MethodHandles.Lookup lookup = MethodHandles.lookup().defineHiddenClass(bytes, true);
+            @SuppressWarnings("unchecked")
+            Class<MyClass> c = (Class<MyClass>) lookup.lookupClass();
+
+            MethodHandle ctor = MethodHandles.lookup().findConstructor(c, MethodType.methodType(void.class, int.class));
+            ctor = ctor.asType(ctor.type().changeReturnType(IntHolder.class));
+
+            IntHolder intHolder = (IntHolder) ctor.invokeExact(42);
+
+            System.out.println(intHolder.value());
+            fail();
+        }
     }
 
     void assertToString(Object o,
@@ -1137,7 +1217,7 @@ final class TestInterfaceMapper {
 
         // dim 3, 4
         // reduce(2, 3) -> 3 * 8 + 2 * 8 * 4
-        public static long reduce(long i1, long i2) {
+        public long reduce(long i1, long i2) {
             long offset = Objects.checkIndex(i1, 3) * (8 * 4) +
                     Objects.checkIndex(i2, 4) * 8;
             return offset;

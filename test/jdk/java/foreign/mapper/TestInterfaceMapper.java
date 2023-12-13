@@ -383,7 +383,7 @@ final class TestInterfaceMapper {
     }
 
     @Test
-    void triangle() {
+    void triangleInterface() {
         GroupLayout triangleLayout = MemoryLayout.structLayout(
                 MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
         );
@@ -410,7 +410,7 @@ final class TestInterfaceMapper {
     }
 
     @Test
-    void multiDim() {
+    void multiDimInterface() {
         GroupLayout triangleLayout = MemoryLayout.structLayout(
                 MemoryLayout.sequenceLayout(4,
                         MemoryLayout.sequenceLayout(3, POINT_LAYOUT)
@@ -439,6 +439,32 @@ final class TestInterfaceMapper {
         assertEquals("PolygonAccessor2Dim[points()=PointAccessor[4, 3]]", accessor.toString());
     }
 
+    public interface PolygonRecordAccessor {
+        Point points(long index);
+    }
+
+    @Test
+    void triangleRecord() {
+        GroupLayout triangleLayout = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
+        );
+        MemorySegment segment = MemorySegment.ofArray(new int[]{1, 10, 2, 11, 3, 9});
+        SegmentMapper<PolygonRecordAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PolygonRecordAccessor.class, triangleLayout);
+        PolygonRecordAccessor accessor = mapper.get(segment, 0);
+
+        Point p0 = accessor.points(0);
+        Point p1 = accessor.points(1);
+        Point p2 = accessor.points(2);
+
+        assertEquals(1, p0.x());
+        assertEquals(10, p0.y());
+        assertEquals(2, p1.x());
+        assertEquals(11, p1.y());
+        assertEquals(3, p2.x());
+        assertEquals(9, p2.y());
+
+        assertEquals("PolygonRecordAccessor[points()=Point[3]]", accessor.toString());
+    }
 
     interface IntHolder {
         int value();
@@ -476,7 +502,6 @@ final class TestInterfaceMapper {
             IntHolder intHolder = (IntHolder) ctor.invokeExact(42);
 
             System.out.println(intHolder.value());
-            fail();
         }
     }
 

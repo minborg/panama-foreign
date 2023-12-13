@@ -60,6 +60,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.SequencedCollection;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -106,6 +107,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.layout = layout;
         this.offset = offset;
         this.depth = depth;
+        // Todo: Add an enum key and keep these lists in a map.
+        // Todo: We might have an array of scalar values
         List<MethodInfo> scalarGetters = scalarGetters(type, layout);
         List<MethodInfo> scalarSetters = scalarSetters(type, layout);
         List<MethodInfo> interfaceGetters = interfaceGetters(type, layout);
@@ -113,19 +116,22 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         List<MethodInfo> recordGetters = recordGetters(type, layout);
         List<MethodInfo> recordSetters = recordSetters(type, layout);
         List<MethodInfo> arrayInterfaceGetters = arrayInterfaceGetters(type, layout);
+        List<MethodInfo> arrayRecordGetters = arrayRecordGetters(type, layout);
 
         List<MethodInfo> allAccessors = concat(
                 scalarGetters, scalarSetters,
                 interfaceGetters,
                 recordGetters, recordSetters,
-                arrayInterfaceGetters);
+                arrayInterfaceGetters,
+                arrayRecordGetters);
         assertMappingsCorrect(type, layout, allAccessors);
         assertTotality(type, allAccessors);
         this.implClass = generateClass(
                 scalarGetters, scalarSetters,
                 interfaceGetters,
                 recordGetters, recordSetters,
-                arrayInterfaceGetters);
+                arrayInterfaceGetters,
+                arrayRecordGetters);
         Handles handles = handles();
         this.isExhaustive = handles.isExhaustive();
         this.getHandle = handles.getHandle();
@@ -209,7 +215,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                    List<MethodInfo> interfaceGetters,
                                    List<MethodInfo> recordGetters,
                                    List<MethodInfo> recordSetters,
-                                   List<MethodInfo> arrayInterfaceGetters) {
+                                   List<MethodInfo> arrayInterfaceGetters,
+                                   List<MethodInfo> arrayRecordGetters) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
         ClassDesc interfaceClassDesc = desc(type);
         ClassLoader loader = type.getClassLoader();
@@ -313,6 +320,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     }
 
                     // @Override
+                    // <T extends Record> T gX(long c1, long c2, ..., long cN) {
+                    //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
+                    //     return (T) mh[x].invokeExact(segment, offset + elementOffset + indexOffset);
+                    // }
+                    for (MethodInfo arrayRecordGetter : arrayRecordGetters) {
+                        generateInvokeVirtualGetter(cb, classDesc, arrayRecordGetter, boostrapIndex++);
+                    }
+
+                    // @Override
                     // int hashCode() {
                     //     return System.identityHashCode(this);
                     // }
@@ -346,13 +362,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    generateToString(cb, classDesc, concat(scalarGetters, interfaceGetters, recordGetters, arrayInterfaceGetters));
+                    generateToString(cb, classDesc, concat(scalarGetters, interfaceGetters, recordGetters, arrayInterfaceGetters, arrayRecordGetters));
                 });
         try {
 
+            // Todo: These handles can be de-duplicated
+
             // Here are the actual pre-computed method handles to be loaded by .ldc()
             List<MethodHandle> interfaceGetHandles = interfaceGetters.stream()
-                    .map(mi -> interfaceGetMethodHandleFor(mi, (GroupLayout) mi.layoutInfo().layout()))
+                    .map(this::interfaceGetMethodHandleFor)
                     .toList();
 
             List<MethodHandle> recordGetHandles = recordGetters.stream()
@@ -363,14 +381,19 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     .map(this::recordSetMethodHandleFor)
                     .toList();
 
-            List<MethodHandle> arrayInterfaceSetHandles = arrayInterfaceGetters.stream()
-                    .map(mi -> interfaceGetMethodHandleFor(mi, (GroupLayout) mi.layoutInfo().arrayInfo().orElseThrow().elementLayout()))
+            List<MethodHandle> arrayInterfaceGetHandles = arrayInterfaceGetters.stream()
+                    .map(this::interfaceGetMethodHandleFor)
+                    .toList();
+
+            List<MethodHandle> arrayRecordGetHandles = arrayRecordGetters.stream()
+                    .map(this::recordGetMethodHandleFor)
                     .toList();
 
             List<MethodHandle> classData =
                     concat(interfaceGetHandles,
                             recordGetHandles, recordSetHandles,
-                            arrayInterfaceSetHandles);
+                            arrayInterfaceGetHandles,
+                            arrayRecordGetHandles);
 
             if (MapperUtil.isDebug()) {
                 Path path = Path.of( classDesc.displayName() + ".class");
@@ -496,9 +519,12 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private static List<MethodInfo> arrayInterfaceGetters(Class<?> type,
                                                           GroupLayout layout) {
-        List<Method> methods = getCandidates(type, ARRAY, Class::isInterface).toList();
+        return mappableGetMethods(getCandidates(type, ARRAY, Class::isInterface), layout);
+    }
 
-        return mappableGetMethods(methods.stream(), layout);
+    private static List<MethodInfo> arrayRecordGetters(Class<?> type,
+                                                          GroupLayout layout) {
+        return mappableGetMethods(getCandidates(type, ARRAY, Class::isRecord), layout);
     }
 
     private static List<MethodInfo> recordSetters(Class<?> type,
@@ -544,12 +570,12 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                 throw new IllegalArgumentException("The type " + type + " for method " + m +
                                         "does not match " + element);
                             }
-                            yield new MethodInfo(m, type, LayoutInfo.of(vl), offset);
+                            yield new MethodInfo(null, m, type, LayoutInfo.of(vl), offset);
                         }
                         case GroupLayout gl ->
-                                new MethodInfo(m, type, LayoutInfo.of(gl), offset);
+                                new MethodInfo(null, m, type, LayoutInfo.of(gl), offset);
                         case SequenceLayout sl -> {
-                            MethodInfo info = new MethodInfo(m, type, LayoutInfo.of(sl), offset);
+                            MethodInfo info = new MethodInfo(null, m, type, LayoutInfo.of(sl), offset);
                             int noDimensions = info.layoutInfo().arrayInfo().orElseThrow().dimensions().size();
                             if (m.getParameterCount() != noDimensions) {
                                 throw new IllegalArgumentException(
@@ -609,8 +635,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .filter(m -> !m.isDefault());
     }
 
-    private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo,
-                                                     GroupLayout groupLayout) {
+    private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo) {
+
+        GroupLayout groupLayout = (GroupLayout) methodInfo.layoutInfo().arrayInfo()
+                .map(ArrayInfo::elementLayout)
+                .orElse(methodInfo.layoutInfo().layout());
 
         // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentInterfaceMapper<?> innerMapper = new SegmentInterfaceMapper<>(
@@ -625,10 +654,14 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private MethodHandle recordGetMethodHandleFor(MethodInfo methodInfo) {
 
+        GroupLayout groupLayout = (GroupLayout) methodInfo.layoutInfo().arrayInfo()
+                .map(ArrayInfo::elementLayout)
+                .orElse(methodInfo.layoutInfo().layout());
+
         // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
                 MapperUtil.castToRecordClass(methodInfo.type),
-                (GroupLayout) methodInfo.layoutInfo().layout(),
+                groupLayout,
                 0, // The actual offset is added later at invocation
                 depth + 1);
 
@@ -805,10 +838,64 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return cob;
     }
 
-    record MethodInfo(Method method,
+    record MethodInfo(Key key,
+                      Method method,
                       Class<?> type,
                       LayoutInfo layoutInfo,
                       long offset) {
+
+        enum Cardinality {SCALAR, ARRAY}
+        enum ValueType {VALUE, INTERFACE, RECORD}
+        enum AccessorType {GETTER, SETTER}
+        enum Key {
+            SCALAR_VALUE_GETTER(Cardinality.SCALAR, ValueType.VALUE, AccessorType.GETTER),
+            SCALAR_VALUE_SETTER(Cardinality.SCALAR, ValueType.VALUE, AccessorType.SETTER),
+            SCALAR_INTERFACE_GETTER(Cardinality.SCALAR, ValueType.INTERFACE, AccessorType.GETTER),
+            SCALAR_INTERFACE_SETTER(Cardinality.SCALAR, ValueType.INTERFACE, AccessorType.SETTER),
+            SCALAR_RECORD_GETTER(Cardinality.SCALAR, ValueType.RECORD, AccessorType.GETTER),
+            SCALAR_RECORD_SETTER(Cardinality.SCALAR, ValueType.RECORD, AccessorType.SETTER),
+            ARRAY_VALUE_GETTER(Cardinality.ARRAY, ValueType.VALUE, AccessorType.GETTER),
+            ARRAY_VALUE_SETTER(Cardinality.ARRAY, ValueType.VALUE, AccessorType.SETTER),
+            ARRAY_INTERFACE_GETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.GETTER),
+            ARRAY_INTERFACE_SETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.SETTER),
+            ARRAY_RECORD_GETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.GETTER),
+            ARRAY_RECORD_SETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.SETTER);
+
+            private final Cardinality cardinality;
+            private final ValueType valueType;
+            private final AccessorType accessorType;
+
+            Key(Cardinality cardinality, ValueType valueType, AccessorType accessorType) {
+                this.cardinality = cardinality;
+                this.valueType = valueType;
+                this.accessorType = accessorType;
+            }
+
+            public Cardinality cardinality() {
+                return cardinality;
+            }
+
+            public ValueType valueType() {
+                return valueType;
+            }
+
+            public AccessorType accessorType() {
+                return accessorType;
+            }
+
+            public static Key of(Cardinality cardinality,
+                                 ValueType valueType,
+                                 AccessorType accessorType) {
+
+                for (Key k : Key.values()) {
+                    if (k.cardinality == cardinality && valueType == k.valueType && accessorType == k.accessorType) {
+                        return k;
+                    }
+                }
+                throw new InternalError("Should not reach here");
+            }
+        }
+
     }
 
     private void generateToString(ClassBuilder cb,

@@ -28,7 +28,7 @@
  *          java.base/jdk.internal.classfile.constantpool
  *          java.base/jdk.internal.classfile.instruction
  *          java.base/jdk.internal.classfile.impl
- * @run junit/othervm -Djava.lang.foreign.mapper.debug=true TestInterfaceMapper
+ * @run junit/othervm -Djava.lang.foreign.mapper.debug= TestInterfaceMapper
  */
 
 import jdk.internal.classfile.AccessFlags;
@@ -85,7 +85,6 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
@@ -99,7 +98,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -332,8 +330,8 @@ final class TestInterfaceMapper {
                 SegmentMapper.ofInterface(LOOKUP, Fail2.class, POINT_LAYOUT)
         );
         var message = e.getMessage();
-        assertTrue(message.contains("Unable to map methods: ["));
-        assertTrue(message.contains(Fail2.class.getMethods()[0].toString()));
+        assertTrue(message.contains("Object"), message);
+        assertTrue(message.contains(Fail2.class.getMethods()[0].toString()), message);
     }
 
     public record Point(int x, int y) {

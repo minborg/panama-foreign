@@ -30,6 +30,10 @@ import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
+import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.AccessorType;
+import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.Cardinality;
+import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.Key;
+import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.ValueType;
 
 import java.io.IOException;
 import java.lang.constant.ClassDesc;
@@ -49,7 +53,6 @@ import java.lang.invoke.MethodType;
 import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.lang.reflect.Parameter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -60,7 +63,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.SequencedCollection;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -71,7 +73,6 @@ import java.util.stream.Stream;
 
 import static java.lang.constant.ConstantDescs.*;
 import static jdk.internal.classfile.Classfile.*;
-import static jdk.internal.foreign.mapper.SegmentInterfaceMapper.ParameterTypes.*;
 
 /**
  * A record mapper that is matching components of an interface with elements in a GroupLayout.
@@ -109,30 +110,38 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.depth = depth;
         // Todo: Add an enum key and keep these lists in a map.
         // Todo: We might have an array of scalar values
-        List<MethodInfo> scalarGetters = scalarGetters(type, layout);
-        List<MethodInfo> scalarSetters = scalarSetters(type, layout);
-        List<MethodInfo> interfaceGetters = interfaceGetters(type, layout);
-        assertNoInterfaceSetters(type);
-        List<MethodInfo> recordGetters = recordGetters(type, layout);
-        List<MethodInfo> recordSetters = recordSetters(type, layout);
-        List<MethodInfo> arrayInterfaceGetters = arrayInterfaceGetters(type, layout);
-        List<MethodInfo> arrayRecordGetters = arrayRecordGetters(type, layout);
+        Map<Key, List<MethodInfo>> accessors = methodInfoMap();
 
-        List<MethodInfo> allAccessors = concat(
-                scalarGetters, scalarSetters,
-                interfaceGetters,
-                recordGetters, recordSetters,
-                arrayInterfaceGetters,
-                arrayRecordGetters);
-        assertMappingsCorrect(type, layout, allAccessors);
-        assertTotality(type, allAccessors);
+        System.out.println("*** Accessors for " + type.getName());
+        accessors.entrySet()
+                .forEach(System.out::println);
+        System.out.println();
+
+        List<MethodInfo> scalarGetters = getOrEmpty(accessors, Key.SCALAR_VALUE_GETTER);
+        List<MethodInfo> scalarSetters = getOrEmpty(accessors, Key.SCALAR_VALUE_SETTER);
+        List<MethodInfo> interfaceGetters = getOrEmpty(accessors, Key.SCALAR_INTERFACE_GETTER);
+        List<MethodInfo> interfaceSetters = getOrEmpty(accessors, Key.SCALAR_INTERFACE_SETTER);
+        if (!interfaceSetters.isEmpty()) {
+            throw new IllegalArgumentException("Setters cannot take an interface as a parameter: " + interfaceSetters);
+        }
+        List<MethodInfo> recordGetters = getOrEmpty(accessors, Key.SCALAR_RECORD_GETTER);
+        List<MethodInfo> recordSetters = getOrEmpty(accessors, Key.SCALAR_RECORD_SETTER);
+        List<MethodInfo> arrayInterfaceGetters = getOrEmpty(accessors, Key.ARRAY_INTERFACE_GETTER);
+        List<MethodInfo> arrayInterfaceSetters = getOrEmpty(accessors, Key.ARRAY_INTERFACE_SETTER);
+        if (!arrayInterfaceSetters.isEmpty()) {
+            throw new IllegalArgumentException("Array setters cannot take an interface as a parameter: " + interfaceSetters);
+        }
+        List<MethodInfo> arrayRecordGetters = getOrEmpty(accessors, Key.ARRAY_RECORD_GETTER);
+
+        assertMappingsCorrect(type, layout, accessors);
+
         this.implClass = generateClass(
                 scalarGetters, scalarSetters,
                 interfaceGetters,
                 recordGetters, recordSetters,
                 arrayInterfaceGetters,
                 arrayRecordGetters);
-        Handles handles = handles();
+        Handles handles = handles(accessors);
         this.isExhaustive = handles.isExhaustive();
         this.getHandle = handles.getHandle();
         this.setHandle = handles.setHandle();
@@ -418,26 +427,38 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     // Private methods and classes
 
-    // This method is using a partially initialized mapper
-    private Handles handles() {
+    static List<MethodInfo> getOrEmpty(Map<Key, List<MethodInfo>> map, Key key) {
+        return map.getOrDefault(key, Collections.emptyList());
+    }
 
-        // The types for the constructor/components
-        List<MethodInfo> componentTypes = scalarGetters(type, layout);
+    static Stream<MethodInfo> getOrEmpty(Map<Key, List<MethodInfo>> map, Set<Key> set) {
+        return set.stream()
+                .map(map::get)
+                .filter(Objects::nonNull)
+                .flatMap(List::stream);
+    }
+
+    // This method is using a partially initialized mapper
+    private Handles handles(Map<Key, List<MethodInfo>> accessors) {
+
+        int mappedMethods = accessors.values().stream()
+                .mapToInt(List::size)
+                .sum();
 
         // There is exactly one member layout for each record component
-        boolean isExhaustive = layout.memberLayouts().size() == componentTypes.size();
+        boolean isExhaustive = layout.memberLayouts().size() == mappedMethods;
 
         // (MemorySegment, long)Object
-        MethodHandle getHandle = computeGetHandle(componentTypes);
+        MethodHandle getHandle = computeGetHandle();
 
         // (MemorySegment, long, T)void
-        MethodHandle setHandle = computeSetHandle(componentTypes);
+        MethodHandle setHandle = computeSetHandle();
 
         return new Handles(isExhaustive, getHandle, setHandle);
     }
 
     // (MemorySegment, long)Object
-    private MethodHandle computeGetHandle(List<MethodInfo> componentMethods) {
+    private MethodHandle computeGetHandle() {
         try {
             // (MemorySegment, long)void
             var ctor = lookup.findConstructor(implClass, MethodType.methodType(void.class, MemorySegment.class, long.class));
@@ -450,21 +471,23 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
     // (MemorySegment, long, T)void
-    private MethodHandle computeSetHandle(List<MethodInfo> componentMethods) {
+    private MethodHandle computeSetHandle() {
         // Todo: Fix me
         return null;
     }
 
     private static void assertMappingsCorrect(Class<?> type,
                                               GroupLayout layout,
-                                              List<MethodInfo> methods) {
+                                              Map<Key, List<MethodInfo>> accessors) {
         var nameMappingCounts = layout.memberLayouts().stream()
                 .map(MemoryLayout::name)
                 .flatMap(Optional::stream)
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
 
+        List<MethodInfo> allMethods = getOrEmpty(accessors, Set.of(Key.values())).toList();
+
         // Make sure we have all components distinctly mapped
-        for (MethodInfo component : methods) {
+        for (MethodInfo component : allMethods) {
             String name = component.method().getName();
             switch (nameMappingCounts.getOrDefault(name, 0L).intValue()) {
                 case 0 -> throw new IllegalArgumentException("No mapping for " +
@@ -476,10 +499,9 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                         " in layout " + layout);
             }
         }
-    }
 
-    private static void assertTotality(Class<?> type, List<MethodInfo> accessors) {
-        Set<Method> accessorMethods = accessors.stream()
+        // Make sure all methods of the type are mapped (totality)
+        Set<Method> accessorMethods = allMethods.stream()
                 .map(MethodInfo::method)
                 .collect(Collectors.toSet());
 
@@ -493,146 +515,74 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
-    private static List<MethodInfo> scalarGetters(Class<?> type,
-                                                  GroupLayout layout) {
-        return mappableGetMethods(getCandidates(type, GETTER, Class::isPrimitive), layout);
-    }
-
-    private static List<MethodInfo> interfaceGetters(Class<?> type,
-                                                     GroupLayout layout) {
-        return mappableGetMethods(getCandidates(type, GETTER, Class::isInterface), layout);
-    }
-
-    private static void assertNoInterfaceSetters(Class<?> type) {
-        List<Method> methods = setCandidates(type, SETTER, Class::isInterface)
-                .toList();
-
-        if (!methods.isEmpty()) {
-            throw new IllegalArgumentException("Setters cannot take an interface as a parameter: " + methods);
-        }
-    }
-
-    private static List<MethodInfo> recordGetters(Class<?> type,
-                                                  GroupLayout layout) {
-        return mappableGetMethods(getCandidates(type, GETTER, Class::isRecord), layout);
-    }
-
-    private static List<MethodInfo> arrayInterfaceGetters(Class<?> type,
-                                                          GroupLayout layout) {
-        return mappableGetMethods(getCandidates(type, ARRAY, Class::isInterface), layout);
-    }
-
-    private static List<MethodInfo> arrayRecordGetters(Class<?> type,
-                                                          GroupLayout layout) {
-        return mappableGetMethods(getCandidates(type, ARRAY, Class::isRecord), layout);
-    }
-
-    private static List<MethodInfo> recordSetters(Class<?> type,
-                                                  GroupLayout layout) {
-        return mappableSetMethods(setCandidates(type, SETTER, Class::isRecord), layout);
-    }
-
-    private static List<MethodInfo> scalarSetters(Class<?> type,
-                                                  GroupLayout layout) {
-        return mappableSetMethods(setCandidates(type, SETTER, Class::isPrimitive), layout);
-    }
-
-    private static List<MethodInfo> mappableGetMethods(Stream<Method> methods,
-                                                       GroupLayout layout) {
-        return mappableMethods0(methods, layout, Method::getReturnType);
-    }
-
-    private static List<MethodInfo> mappableSetMethods(Stream<Method> methods,
-                                                       GroupLayout layout) {
-        return mappableMethods0(methods, layout, m -> m.getParameterTypes()[0]);
-    }
-
-    private static List<MethodInfo> mappableMethods0(Stream<Method> methods,
-                                                    GroupLayout layout,
-                                                    Function<? super Method, ? extends Class<?>> typeExtractor) {
-
-        return methods
-                .map(m -> {
-                    var type = typeExtractor.apply(m);
-                    var elementPath = MemoryLayout.PathElement.groupElement(m.getName());
-
-                    MemoryLayout element;
-                    try {
-                        element = layout.select(elementPath);
-                    } catch (IllegalArgumentException i) {
-                        throw new IllegalArgumentException("Unable to resolve '" + m + "' in " + layout, i);
-                    }
-                    var offset = layout.byteOffset(elementPath);
-
-                    return switch (element) {
-                        case ValueLayout vl -> {
-                            if (!type.equals(vl.carrier())) {
-                                throw new IllegalArgumentException("The type " + type + " for method " + m +
-                                        "does not match " + element);
-                            }
-                            yield new MethodInfo(null, m, type, LayoutInfo.of(vl), offset);
-                        }
-                        case GroupLayout gl ->
-                                new MethodInfo(null, m, type, LayoutInfo.of(gl), offset);
-                        case SequenceLayout sl -> {
-                            MethodInfo info = new MethodInfo(null, m, type, LayoutInfo.of(sl), offset);
-                            int noDimensions = info.layoutInfo().arrayInfo().orElseThrow().dimensions().size();
-                            if (m.getParameterCount() != noDimensions) {
-                                throw new IllegalArgumentException(
-                                        "Sequence layout has a dimension of " + noDimensions +
-                                                " and so, the  method parameter count does not" +
-                                                " match for: " + m);
-                            }
-                            yield info;
-                        }
-                        default -> throw new IllegalArgumentException("Cannot map " + element + " for " + type);
-                    };
-
-                })
-                .toList();
-    }
-
-    private static Stream<Method> setCandidates(Class<?> type,
-                                                ParameterTypes parameterTypes,
-                                                Predicate<Class<?>> parameterTypePredicate) {
-        return candidates0(type, parameterTypes)
-                .filter(m -> m.getReturnType() == void.class || m.getReturnType() == Void.class)
-                .filter(m -> parameterTypePredicate.test(m.getParameterTypes()[0]));
-    }
-
-    private static Stream<Method> getCandidates(Class<?> type,
-                                                ParameterTypes parameterTypes,
-                                                Predicate<Class<?>> returnTypePredicate) {
-        return candidates0(type, parameterTypes)
-                .filter(m -> m.getReturnType() != void.class && m.getReturnType() != Void.class)
-                .filter(m -> returnTypePredicate.test(m.getReturnType()));
-    }
-
-    enum ParameterTypes {
-        GETTER(m -> m.getParameterCount() == 0),
-        SETTER(m -> m.getParameterCount() == 1),
-        ARRAY(m -> m.getParameterCount() >= 1 && Arrays.stream(m.getParameters())
-                .map(Parameter::getType)
-                .allMatch(t -> t.equals(long.class)));
-
-        private final Predicate<Method> predicate;
-
-        ParameterTypes(Predicate<Method> predicate) {
-            this.predicate = predicate;
-        }
-
-        Predicate<Method> predicate() {
-            return predicate;
-        }
-
-    }
-
-    private static Stream<Method> candidates0(Class<?> type,
-                                              ParameterTypes parameterTypes) {
+    private Map<Key, List<MethodInfo>> methodInfoMap() {
         return Arrays.stream(type.getMethods())
-                .filter(parameterTypes.predicate())
                 .filter(m -> !Modifier.isStatic(m.getModifiers()))
-                .filter(m -> !m.isDefault());
+                .filter(m -> !m.isDefault())
+                .map(this::methodInfo)
+                .collect(Collectors.groupingBy(MethodInfo::key));
+    }
+
+    private MethodInfo methodInfo(Method method) {
+
+        AccessorType accessorType = isGetter(method)
+                ? AccessorType.GETTER
+                : AccessorType.SETTER;
+
+        Class<?> targetType = (accessorType == AccessorType.GETTER)
+                ? method.getReturnType()
+                : method.getParameterTypes()[method.getParameterCount() - 1]; // Last parameter
+
+        ValueType valueType;
+        if (targetType.isPrimitive() || targetType.equals(MemorySegment.class)) {
+            valueType = ValueType.VALUE;
+        } else if (targetType.isInterface()) {
+            valueType = ValueType.INTERFACE;
+        } else if (targetType.isRecord()) {
+            valueType = ValueType.RECORD;
+        } else {
+            throw new IllegalArgumentException("Type " + targetType + " is neither a primitive value, an interface nor a record: " + method);
+        }
+
+        var elementPath = MemoryLayout.PathElement.groupElement(method.getName());
+        MemoryLayout element;
+        try {
+            element = layout.select(elementPath);
+        } catch (IllegalArgumentException iae) {
+            throw new IllegalArgumentException("Unable to resolve '" + method + "' in " + layout, iae);
+        }
+        var offset = layout.byteOffset(elementPath);
+
+        return switch (element) {
+            case ValueLayout vl -> {
+                if (!targetType.equals(vl.carrier())) {
+                    throw new IllegalArgumentException("The type " + targetType + " for method " + method +
+                            "does not match " + element);
+                }
+                yield new MethodInfo(Key.of(Cardinality.SCALAR, valueType, accessorType),
+                        method, targetType, LayoutInfo.of(vl), offset);
+            }
+            case GroupLayout gl ->
+                    new MethodInfo(Key.of(Cardinality.SCALAR, valueType, accessorType),
+                            method, targetType, LayoutInfo.of(gl), offset);
+            case SequenceLayout sl -> {
+                MethodInfo info = new MethodInfo(Key.of(Cardinality.ARRAY, valueType, accessorType)
+                        , method, targetType, LayoutInfo.of(sl), offset);
+                int noDimensions = info.layoutInfo().arrayInfo().orElseThrow().dimensions().size();
+                if (method.getParameterCount() != noDimensions) {
+                    throw new IllegalArgumentException(
+                            "Sequence layout has a dimension of " + noDimensions +
+                                    " and so, the  method parameter count does not" +
+                                    " match for: " + method);
+                }
+                yield info;
+            }
+            default -> throw new IllegalArgumentException("Cannot map " + element + " for " + type);
+        };
+    }
+
+    static boolean isGetter(Method method) {
+        return method.getReturnType() != void.class;
     }
 
     private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo) {

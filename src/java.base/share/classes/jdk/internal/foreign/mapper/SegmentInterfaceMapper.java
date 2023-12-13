@@ -289,6 +289,10 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     getOrEmpty(accessors, Key.SCALAR_VALUE_SETTER)
                             .forEach(a -> generateScalarSetter(cb, classDesc, a));
 
+                    getOrEmpty(accessors, Key.ARRAY_VALUE_GETTER)
+                            .forEach(a -> generateScalarGetter(cb, classDesc, a));
+
+
                     for (int i = 0; i < virtualMethods.size(); i++) {
                         MethodInfo a = virtualMethods.get(i);
                         switch (a.key().accessorType()) {
@@ -600,11 +604,23 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
         var getDesc = MethodTypeDesc.of(returnDesc, scalarInfo.valueLayoutDesc(), CD_long);
 
-        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc), ACC_PUBLIC, cob -> {
+        // If it is an array, there is a number of long parameters
+        List<ClassDesc> parameterDesc = info.layoutInfo().arrayInfo()
+                .map(ai -> ai.dimensions().stream().map(_ -> CD_long).toList())
+                .orElse(Collections.emptyList());
+
+        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
                             .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
-                    offsetBlock(cob, classDesc, info.offset())
+                    offsetBlock(cob, classDesc, info.offset());
+
+                    // Is this an array accessor?
+                    info.layoutInfo().arrayInfo().ifPresent(
+                            ai -> reduceArrayIndexes(cob, ai)
+                    );
+
+                    cob
                             .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "get", getDesc);
                     // ireturn(), dreturn() etc.
                     info.layoutInfo().returnOp().accept(cob);
@@ -920,7 +936,16 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         }
 
         static LayoutInfo of(SequenceLayout layout) {
-            return new LayoutInfo(layout, Optional.empty(), Optional.of(ArrayInfo.of(layout)), CodeBuilder::areturn, CodeBuilder::aload);
+            ArrayInfo arrayInfo = ArrayInfo.of(layout);
+            LayoutInfo elementLayoutInfo = (arrayInfo.elementLayout() instanceof ValueLayout vl)
+                    ? of(vl)
+                    : null;
+            Optional<ScalarInfo> scalarInfo = Optional.ofNullable(elementLayoutInfo)
+                    .flatMap(li -> li.scalarInfo);
+            return scalarInfo
+                    .map(_ -> new LayoutInfo(layout, scalarInfo, Optional.of(arrayInfo), elementLayoutInfo.returnOp(), elementLayoutInfo.paramOp())
+                    ).orElse(new LayoutInfo(layout, scalarInfo, Optional.of(arrayInfo), CodeBuilder::areturn, CodeBuilder::aload));
+
         }
 
         private static <T extends ValueLayout> LayoutInfo ofScalar(T layout,

@@ -540,9 +540,9 @@ final class TestInterfaceMapper {
             assertEquals((short) 32767, accessor.s(1, 1));
             assertEquals((byte) 127, accessor.b(1, 1));
 
-            Set<String> set = Arrays.stream("i()=13, b()=127, s()=32767, c()=B, f()=3.1415, l()=42, d()=123.4".split(", "))
+            Set<String> set = Arrays.stream("[i()=int[2, 3], b()=byte[2, 3], s()=short[2, 3], c()=char[2, 3], f()=float[2, 3], l()=long[2, 3], d()=double[2, 3]".split(", "))
                     .collect(Collectors.toSet());
-            assertToString(accessor, MixedBag.class, set);
+            assertToString(accessor, MixedBagArray.class, set);
 
             accessor.b(1, 1, (byte) (accessor.b(1, 1) - 1));
             accessor.s(1, 1, (short) (accessor.s(1, 1) - 1));

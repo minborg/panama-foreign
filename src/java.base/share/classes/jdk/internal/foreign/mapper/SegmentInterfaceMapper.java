@@ -108,39 +108,19 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.layout = layout;
         this.offset = offset;
         this.depth = depth;
-        // Todo: Add an enum key and keep these lists in a map.
         // Todo: We might have an array of scalar values
         Map<Key, List<MethodInfo>> accessors = methodInfoMap();
 
-        System.out.println("*** Accessors for " + type.getName());
-        accessors.entrySet()
-                .forEach(System.out::println);
-        System.out.println();
-
-        List<MethodInfo> scalarGetters = getOrEmpty(accessors, Key.SCALAR_VALUE_GETTER);
-        List<MethodInfo> scalarSetters = getOrEmpty(accessors, Key.SCALAR_VALUE_SETTER);
-        List<MethodInfo> interfaceGetters = getOrEmpty(accessors, Key.SCALAR_INTERFACE_GETTER);
         List<MethodInfo> interfaceSetters = getOrEmpty(accessors, Key.SCALAR_INTERFACE_SETTER);
         if (!interfaceSetters.isEmpty()) {
             throw new IllegalArgumentException("Setters cannot take an interface as a parameter: " + interfaceSetters);
         }
-        List<MethodInfo> recordGetters = getOrEmpty(accessors, Key.SCALAR_RECORD_GETTER);
-        List<MethodInfo> recordSetters = getOrEmpty(accessors, Key.SCALAR_RECORD_SETTER);
-        List<MethodInfo> arrayInterfaceGetters = getOrEmpty(accessors, Key.ARRAY_INTERFACE_GETTER);
         List<MethodInfo> arrayInterfaceSetters = getOrEmpty(accessors, Key.ARRAY_INTERFACE_SETTER);
         if (!arrayInterfaceSetters.isEmpty()) {
             throw new IllegalArgumentException("Array setters cannot take an interface as a parameter: " + interfaceSetters);
         }
-        List<MethodInfo> arrayRecordGetters = getOrEmpty(accessors, Key.ARRAY_RECORD_GETTER);
-
-        assertMappingsCorrect(type, layout, accessors);
-
-        this.implClass = generateClass(
-                scalarGetters, scalarSetters,
-                interfaceGetters,
-                recordGetters, recordSetters,
-                arrayInterfaceGetters,
-                arrayRecordGetters);
+        assertMappingsCorrectAndTotal(type, layout, accessors);
+        this.implClass = generateClass(accessors);
         Handles handles = handles(accessors);
         this.isExhaustive = handles.isExhaustive();
         this.getHandle = handles.getHandle();
@@ -178,27 +158,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
     @Override
-    public boolean equals(Object obj) {
-        if (obj == this) return true;
-        if (obj == null || obj.getClass() != this.getClass()) return false;
-        var that = (SegmentInterfaceMapper<?>) obj;
-        return Objects.equals(this.lookup, that.lookup) &&
-                Objects.equals(this.type, that.type) &&
-                Objects.equals(this.layout, that.layout) &&
-                this.offset == that.offset &&
-                this.depth == that.depth &&
-                Objects.equals(this.implClass, that.implClass) &&
-                this.isExhaustive == that.isExhaustive &&
-                Objects.equals(this.getHandle, that.getHandle) &&
-                Objects.equals(this.setHandle, that.setHandle);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(lookup, type, layout, offset, depth, implClass, isExhaustive, getHandle, setHandle);
-    }
-
-    @Override
     public String toString() {
         return "SegmentInterfaceMapper[" +
                 "lookup=" + lookup + ", " +
@@ -219,16 +178,16 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return Mapped.of(this, newType, toMapper, fromMapper);
     }
 
-    private Class<T> generateClass(List<MethodInfo> scalarGetters,
-                                   List<MethodInfo> scalarSetters,
-                                   List<MethodInfo> interfaceGetters,
-                                   List<MethodInfo> recordGetters,
-                                   List<MethodInfo> recordSetters,
-                                   List<MethodInfo> arrayInterfaceGetters,
-                                   List<MethodInfo> arrayRecordGetters) {
+    private Class<T> generateClass(Map<Key, List<MethodInfo>> accessors) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
         ClassDesc interfaceClassDesc = desc(type);
         ClassLoader loader = type.getClassLoader();
+
+        // We need to materialize these methods so that order is preserved
+        List<MethodInfo> virtualMethods = accessors.values().stream()
+                .flatMap(List::stream)
+                .filter(mi -> mi.key.valueType().isVirtual())
+                .toList();
 
         byte[] bytes = of(ClassHierarchyResolverOption.of(ClassHierarchyResolver.ofClassLoading(loader)))
                 .build(classDesc, cb -> {
@@ -277,64 +236,36 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                     .lreturn()
                     );
 
-                    for (MethodInfo scalarGetter : scalarGetters) {
-                        // @Override
-                        // <t> gX() {
-                        //     return segment.get(JAVA_t, offset + elementOffset);
-                        // }
-                        generateScalarGetter(cb, classDesc, scalarGetter);
-                    }
+
+                    // @Override
+                    // <t> gX() {
+                    //     return segment.get(JAVA_t, offset + elementOffset);
+                    // }
+                    getOrEmpty(accessors, Key.SCALAR_VALUE_GETTER)
+                            .forEach(a -> generateScalarGetter(cb, classDesc, a));
 
                     // @Override
                     // void gX(<t> t) {
                     //     segment.get(JAVA_t, offset + elementOffset, t);
                     // }
-                    for (MethodInfo scalarSetter : scalarSetters) {
-                        generateScalarSetter(cb, classDesc, scalarSetter);
-                    }
+                    getOrEmpty(accessors, Key.SCALAR_VALUE_SETTER)
+                            .forEach(a -> generateScalarSetter(cb, classDesc, a));
 
-                    int boostrapIndex = 0;
-
-                    // @Override
-                    // T gX() {
-                    //     return (T) mh[x].invokeExact(segment, offset + elementOffset);
-                    // }
-                    for (MethodInfo interfaceGetter : interfaceGetters) {
-                        generateInvokeVirtualGetter(cb, classDesc, interfaceGetter, boostrapIndex++);
-                    }
-
-                    // @Override
-                    // <T extends Record> T gX() {
-                    //     return (T) mh[x].invokeExact(segment, offset + elementOffset);
-                    // }
-                    for (MethodInfo recordGetter : recordGetters) {
-                        generateInvokeVirtualGetter(cb, classDesc, recordGetter, boostrapIndex++);
-                    }
-
-                    // @Override
-                    // <T extends Record> void gX(T t) {
-                    //     mh[x].invokeExact(segment, offset + elementOffset, t);
-                    // }
-                    for (MethodInfo recordSetter : recordSetters) {
-                        generateRecordSetter(cb, classDesc, recordSetter, boostrapIndex++);
-                    }
-
-                    // @Override
-                    // <T extends Record> T gX(long c1, long c2, ..., long cN) {
-                    //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
-                    //     return (T) mh[x].invokeExact(segment, offset + elementOffset + indexOffset);
-                    // }
-                    for (MethodInfo arrayInterfaceGetter : arrayInterfaceGetters) {
-                        generateInvokeVirtualGetter(cb, classDesc, arrayInterfaceGetter, boostrapIndex++);
-                    }
-
-                    // @Override
-                    // <T extends Record> T gX(long c1, long c2, ..., long cN) {
-                    //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
-                    //     return (T) mh[x].invokeExact(segment, offset + elementOffset + indexOffset);
-                    // }
-                    for (MethodInfo arrayRecordGetter : arrayRecordGetters) {
-                        generateInvokeVirtualGetter(cb, classDesc, arrayRecordGetter, boostrapIndex++);
+                    for (int i = 0; i < virtualMethods.size(); i++) {
+                        MethodInfo a = virtualMethods.get(i);
+                        switch (a.key().accessorType()) {
+                            // @Override
+                            // <T extends Record> T gX(long c1, long c2, ..., long cN) {
+                            //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
+                            //     return (T) mh[x].invokeExact(segment, offset + elementOffset + indexOffset);
+                            // }
+                            case GETTER -> generateInvokeVirtualGetter(cb, classDesc, a, i);
+                            // @Override
+                            // <T extends Record> void gX(T t) {
+                            //     mh[x].invokeExact(segment, offset + elementOffset, t);
+                            // }
+                            case SETTER -> generateRecordSetter(cb, classDesc, a, i);
+                        }
                     }
 
                     // @Override
@@ -371,38 +302,26 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    generateToString(cb, classDesc, concat(scalarGetters, interfaceGetters, recordGetters, arrayInterfaceGetters, arrayRecordGetters));
+                    List<MethodInfo> getters = accessors.values().stream()
+                            .flatMap(List::stream)
+                            .filter(mi -> mi.key().accessorType()==AccessorType.GETTER)
+                            .toList();
+                    generateToString(cb, classDesc, getters);
                 });
         try {
 
             // Todo: These handles can be de-duplicated
 
-            // Here are the actual pre-computed method handles to be loaded by .ldc()
-            List<MethodHandle> interfaceGetHandles = interfaceGetters.stream()
-                    .map(this::interfaceGetMethodHandleFor)
-                    .toList();
-
-            List<MethodHandle> recordGetHandles = recordGetters.stream()
-                    .map(this::recordGetMethodHandleFor)
-                    .toList();
-
-            List<MethodHandle> recordSetHandles = recordGetters.stream()
-                    .map(this::recordSetMethodHandleFor)
-                    .toList();
-
-            List<MethodHandle> arrayInterfaceGetHandles = arrayInterfaceGetters.stream()
-                    .map(this::interfaceGetMethodHandleFor)
-                    .toList();
-
-            List<MethodHandle> arrayRecordGetHandles = arrayRecordGetters.stream()
-                    .map(this::recordGetMethodHandleFor)
-                    .toList();
-
-            List<MethodHandle> classData =
-                    concat(interfaceGetHandles,
-                            recordGetHandles, recordSetHandles,
-                            arrayInterfaceGetHandles,
-                            arrayRecordGetHandles);
+            List<MethodHandle> classData = virtualMethods.stream()
+                    .map(a -> switch (a.key()) {
+                                case SCALAR_INTERFACE_GETTER,
+                                     ARRAY_INTERFACE_GETTER -> interfaceGetMethodHandleFor(a);
+                                case SCALAR_RECORD_GETTER,
+                                     ARRAY_RECORD_GETTER    -> recordGetMethodHandleFor(a);
+                                case SCALAR_RECORD_SETTER   -> recordSetMethodHandleFor(a);
+                                default -> throw new InternalError("Should not reach here " + a);
+                            }
+                    ).toList();
 
             if (MapperUtil.isDebug()) {
                 Path path = Path.of( classDesc.displayName() + ".class");
@@ -476,9 +395,9 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return null;
     }
 
-    private static void assertMappingsCorrect(Class<?> type,
-                                              GroupLayout layout,
-                                              Map<Key, List<MethodInfo>> accessors) {
+    private static void assertMappingsCorrectAndTotal(Class<?> type,
+                                                      GroupLayout layout,
+                                                      Map<Key, List<MethodInfo>> accessors) {
         var nameMappingCounts = layout.memberLayouts().stream()
                 .map(MemoryLayout::name)
                 .flatMap(Optional::stream)
@@ -795,8 +714,23 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                       long offset) {
 
         enum Cardinality {SCALAR, ARRAY}
-        enum ValueType {VALUE, INTERFACE, RECORD}
+
+        enum ValueType {
+            VALUE(false), INTERFACE(true), RECORD(true);
+
+            private final boolean virtual;
+
+            ValueType(boolean virtual) {
+                this.virtual = virtual;
+            }
+
+            public boolean isVirtual() {
+                return virtual;
+            }
+        }
+
         enum AccessorType {GETTER, SETTER}
+
         enum Key {
             SCALAR_VALUE_GETTER(Cardinality.SCALAR, ValueType.VALUE, AccessorType.GETTER),
             SCALAR_VALUE_SETTER(Cardinality.SCALAR, ValueType.VALUE, AccessorType.SETTER),

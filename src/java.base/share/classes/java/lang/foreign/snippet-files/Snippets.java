@@ -828,7 +828,7 @@ class Snippets {
                     point.y(4);
 
                     // Pass the backing internal segment to a native method
-                    double distance = nativeDistance(SegmentMapper.segment(point).orElseThrow()); // 5
+                    double distance = nativeDistance(mapper.segment(point).orElseThrow()); // 5
                 }
 
             }

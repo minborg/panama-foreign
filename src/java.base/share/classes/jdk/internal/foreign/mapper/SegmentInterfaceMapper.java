@@ -63,6 +63,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -87,6 +88,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     static final String SEGMENT_FIELD_NAME = "segment";
     static final String OFFSET_FIELD_NAME = "offset";
+    public static final String SECRET_SEGMENT_METHOD_NAME = "$_$_$sEgMeNt$_$_$";
+    public static final String SECRET_OFFSET_METHOD_NAME = "$_$_$oFfSeT$_$_$";
 
     private final MethodHandles.Lookup lookup;
     private final Class<T> type;
@@ -97,6 +100,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     private final boolean isExhaustive;
     private final MethodHandle getHandle;
     private final MethodHandle setHandle;
+    private final MethodHandle segmentGetHandle;
+    private final MethodHandle offsetGetHandle;
 
     private SegmentInterfaceMapper(MethodHandles.Lookup lookup,
                                    Class<T> type,
@@ -109,15 +114,12 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.offset = offset;
         this.depth = depth;
         // Todo: We might have an array of scalar values
-        Map<Key, List<MethodInfo>> accessors = methodInfoMap();
+        Map<Key, List<MethodInfo>> accessors = accessors();
 
-        List<MethodInfo> interfaceSetters = getOrEmpty(accessors, Key.SCALAR_INTERFACE_SETTER);
+        List<MethodInfo> interfaceSetters = getOrEmpty(accessors, Set.of(Key.SCALAR_INTERFACE_SETTER, Key.ARRAY_INTERFACE_SETTER))
+                .toList();
         if (!interfaceSetters.isEmpty()) {
             throw new IllegalArgumentException("Setters cannot take an interface as a parameter: " + interfaceSetters);
-        }
-        List<MethodInfo> arrayInterfaceSetters = getOrEmpty(accessors, Key.ARRAY_INTERFACE_SETTER);
-        if (!arrayInterfaceSetters.isEmpty()) {
-            throw new IllegalArgumentException("Array setters cannot take an interface as a parameter: " + interfaceSetters);
         }
         assertMappingsCorrectAndTotal(type, layout, accessors);
         this.implClass = generateClass(accessors);
@@ -125,6 +127,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.isExhaustive = handles.isExhaustive();
         this.getHandle = handles.getHandle();
         this.setHandle = handles.setHandle();
+
+        try {
+            this.segmentGetHandle = lookup.unreflect(implClass.getMethod(SECRET_SEGMENT_METHOD_NAME))
+                    .asType(MethodType.methodType(MemorySegment.class, Object.class));
+            this.offsetGetHandle = lookup.unreflect(implClass.getMethod(SECRET_OFFSET_METHOD_NAME))
+                    .asType(MethodType.methodType(long.class, Object.class));;
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -155,6 +166,33 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     @Override
     public MethodHandle setHandle() {
         return setHandle;
+    }
+
+    @Override
+    public Optional<MemorySegment> segment(T source) {
+        if (isImplClass(source)) {
+            try {
+                return Optional.of((MemorySegment) segmentGetHandle.invokeExact(source));
+            } catch (Throwable _) {
+            }
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public OptionalLong offset(T source) {
+        if (isImplClass(source)) {
+            try {
+                return OptionalLong.of((long) offsetGetHandle.invokeExact(source));
+            } catch (Throwable _) {
+            }
+        }
+        return OptionalLong.empty();
+    }
+
+    boolean isImplClass(T source) {
+        // Implicit null check of source
+        return implClass == source.getClass();
     }
 
     @Override
@@ -221,7 +259,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     // MemorySegment $_$_$sEgMeNt$_$_$() {
                     //     return segment;
                     // }
-                    cb.withMethodBody("$_$_$sEgMeNt$_$_$", MethodTypeDesc.of(MEMORY_SEGMENT_CLASS_DESC), ACC_PUBLIC, cob ->
+                    cb.withMethodBody(SECRET_SEGMENT_METHOD_NAME, MethodTypeDesc.of(MEMORY_SEGMENT_CLASS_DESC), ACC_PUBLIC, cob ->
                             cob.aload(0)
                                     .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
                                     .areturn()
@@ -230,7 +268,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     // long $_$_$oFfSeT$_$_$() {
                     //     return offset;
                     // }
-                    cb.withMethodBody("$_$_$oFfSeT$_$_$", MethodTypeDesc.of(CD_long), ACC_PUBLIC, cob ->
+                    cb.withMethodBody(SECRET_OFFSET_METHOD_NAME, MethodTypeDesc.of(CD_long), ACC_PUBLIC, cob ->
                             cob.aload(0)
                                     .getfield(classDesc, OFFSET_FIELD_NAME, CD_long)
                                     .lreturn()
@@ -434,7 +472,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
-    private Map<Key, List<MethodInfo>> methodInfoMap() {
+    private Map<Key, List<MethodInfo>> accessors() {
         return Arrays.stream(type.getMethods())
                 .filter(m -> !Modifier.isStatic(m.getModifiers()))
                 .filter(m -> !m.isDefault())
@@ -488,10 +526,12 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 MethodInfo info = new MethodInfo(Key.of(Cardinality.ARRAY, valueType, accessorType)
                         , method, targetType, LayoutInfo.of(sl), offset);
                 int noDimensions = info.layoutInfo().arrayInfo().orElseThrow().dimensions().size();
-                if (method.getParameterCount() != noDimensions) {
+                // The last parameter for a setter is the new value
+                int expectedParameterIndexCount = method.getParameterCount() - (accessorType == AccessorType.SETTER ? 1 : 0);
+                if (expectedParameterIndexCount != noDimensions) {
                     throw new IllegalArgumentException(
                             "Sequence layout has a dimension of " + noDimensions +
-                                    " and so, the  method parameter count does not" +
+                                    " and so, the method parameter count does not" +
                                     " match for: " + method);
                 }
                 yield info;
@@ -634,8 +674,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 }
         );
     }
-
-
 
     // Example:
     //   The dimensions are [3, 4] and the element byte size is 8 bytes

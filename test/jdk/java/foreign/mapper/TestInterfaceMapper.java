@@ -109,6 +109,7 @@ import static jdk.internal.classfile.Classfile.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 // Todo: check wrapper classes
+// Todo: Check the SegmentMapper::map operation
 
 // Note: the order in which interface methods appears is unspecified.
 final class TestInterfaceMapper {
@@ -121,10 +122,6 @@ final class TestInterfaceMapper {
             JAVA_INT.withName("x"),
             JAVA_INT.withName("y")
     );
-
-/*    static {
-        System.getProperty("java.lang.foreign.mapper.debug", "true");
-    }*/
 
     @Test
     void point() {
@@ -154,8 +151,8 @@ final class TestInterfaceMapper {
         long offset = POINT_LAYOUT.byteSize();
         PointAccessor accessor = mapper.get(segment, offset);
 
-        assertSame(SegmentMapper.segment(accessor).orElseThrow(), segment);
-        assertEquals(SegmentMapper.offset(accessor).orElseThrow(), offset);
+        assertSame(mapper.segment(accessor).orElseThrow(), segment);
+        assertEquals(mapper.offset(accessor).orElseThrow(), offset);
     }
 
     GroupLayout MIXED_LAYOUT = MemoryLayout.structLayout(
@@ -464,42 +461,100 @@ final class TestInterfaceMapper {
         assertEquals("PolygonRecordAccessor[points()=Point[3]]", accessor.toString());
     }
 
-    interface IntHolder {
-        int value();
+    interface MixedBagArray {
+        byte b(long i, long j);
+
+        short s(long i, long j);
+
+        char c(long i, long j);
+
+        int i(long i, long j);
+
+        float f(long i, long j);
+
+        long l(long i, long j);
+
+        double d(long i, long j);
+
+        void b(long i, long j, byte b);
+
+        void s(long i, long j, short s);
+
+        void c(long i, long j, char c);
+
+        void i(long i, long j, int value);
+
+        void f(long i, long j, float f);
+
+        void l(long i, long j, long l);
+
+        void d(long i, long j, double d);
     }
 
-    private static final class MyClass implements IntHolder {
-
-        private final int value;
-
-        public MyClass(int value) {
-            this.value = value;
-        }
-
-        @Override
-        public int value() {
-            return value;
-        }
-    }
+    GroupLayout MIXED_LAYOUT_ARRAY = MemoryLayout.structLayout(
+            MemoryLayout.sequenceLayout(2,
+                            MemoryLayout.sequenceLayout(3, JAVA_LONG))
+                    .withName("l"),
+            MemoryLayout.sequenceLayout(2,
+                            MemoryLayout.sequenceLayout(3, JAVA_DOUBLE))
+                    .withName("d"),
+            MemoryLayout.sequenceLayout(2,
+                            MemoryLayout.sequenceLayout(3, JAVA_INT))
+                    .withName("i"),
+            MemoryLayout.sequenceLayout(2,
+                            MemoryLayout.sequenceLayout(3, JAVA_FLOAT))
+                    .withName("f"),
+            MemoryLayout.sequenceLayout(2,
+                            MemoryLayout.sequenceLayout(3, JAVA_CHAR))
+                    .withName("c"),
+            MemoryLayout.sequenceLayout(2,
+                            MemoryLayout.sequenceLayout(3, JAVA_SHORT))
+                    .withName("s"),
+            MemoryLayout.sequenceLayout(2,
+                            MemoryLayout.sequenceLayout(3, JAVA_BYTE))
+                    .withName("b")
+    );
 
     @Test
-    void getByteCode() throws Throwable {
-        try (var stream = TestInterfaceMapper.class.getResourceAsStream("TestInterfaceMapper$MyClass.class")) {
-            byte[] bytes = stream.readAllBytes();
-/*            ClassModel cm = Classfile.of().parse(bytes);
-            javap(cm);
-            //fail("There is " + bytes.length + " bytes!");*/
+    void mixedBagArray() {
+        SegmentMapper<MixedBagArray> mapper = SegmentMapper.ofInterface(LOOKUP, MixedBagArray.class, MIXED_LAYOUT_ARRAY);
+        try (var arena = Arena.ofConfined()) {
+            MemorySegment segment = arena.allocate(MIXED_LAYOUT_ARRAY);
 
-            MethodHandles.Lookup lookup = MethodHandles.lookup().defineHiddenClass(bytes, true);
-            @SuppressWarnings("unchecked")
-            Class<MyClass> c = (Class<MyClass>) lookup.lookupClass();
+            PathElement one = PathElement.sequenceElement(1);
+            MIXED_LAYOUT_ARRAY.varHandle(PathElement.groupElement("l"), one, one).set(segment, 0L, 42L);
+            MIXED_LAYOUT_ARRAY.varHandle(PathElement.groupElement("d"), one, one).set(segment, 0L, 123.45d);
+            MIXED_LAYOUT_ARRAY.varHandle(PathElement.groupElement("i"), one, one).set(segment, 0L, 13);
+            MIXED_LAYOUT_ARRAY.varHandle(PathElement.groupElement("f"), one, one).set(segment, 0L, 3.1415f);
+            MIXED_LAYOUT_ARRAY.varHandle(PathElement.groupElement("c"), one, one).set(segment, 0L, 'B');
+            MIXED_LAYOUT_ARRAY.varHandle(PathElement.groupElement("s"), one, one).set(segment, 0L, (short) 32767);
+            MIXED_LAYOUT_ARRAY.varHandle(PathElement.groupElement("b"), one, one).set(segment, 0L, (byte) 127);
 
-            MethodHandle ctor = MethodHandles.lookup().findConstructor(c, MethodType.methodType(void.class, int.class));
-            ctor = ctor.asType(ctor.type().changeReturnType(IntHolder.class));
+            MixedBagArray accessor = mapper.get(segment);
 
-            IntHolder intHolder = (IntHolder) ctor.invokeExact(42);
+            assertEquals(42L, accessor.l(1, 1));
+            assertEquals(123.45d, accessor.d(1, 1), EPSILON);
+            assertEquals(13, accessor.i(1, 1));
+            assertEquals(3.1415f, accessor.f(1, 1), EPSILON);
+            assertEquals('B', accessor.c(1, 1));
+            assertEquals((short) 32767, accessor.s(1, 1));
+            assertEquals((byte) 127, accessor.b(1, 1));
 
-            System.out.println(intHolder.value());
+            Set<String> set = Arrays.stream("i()=13, b()=127, s()=32767, c()=B, f()=3.1415, l()=42, d()=123.4".split(", "))
+                    .collect(Collectors.toSet());
+            assertToString(accessor, MixedBag.class, set);
+
+            accessor.b(1, 1, (byte) (accessor.b(1, 1) - 1));
+            accessor.s(1, 1, (short) (accessor.s(1, 1) - 1));
+            accessor.c(1, 1, (char) (accessor.c(1, 1) - 1));
+            accessor.i(1, 1, accessor.i(1, 1) - 1);
+            accessor.f(1, 1, accessor.f(1, 1) - 1);
+            accessor.l(1, 1, accessor.l(1, 1) - 1);
+            accessor.d(1, 1, accessor.d(1, 1) - 1);
+
+            Set<String> set2 = Arrays.stream("i()=12, b()=126, s()=32766, c()=A, f()=2.1415, l()=41, d()=122.4".split(", "))
+                    .collect(Collectors.toSet());
+            assertToString(accessor, mapper.type(), set2);
         }
     }
 
@@ -854,7 +909,6 @@ final class TestInterfaceMapper {
             System.out.println("accessor.hashCode() = " + accessor.hashCode());
             System.out.println("accessor.equals(\"A\") = " + accessor.equals("A"));
             System.out.println("accessor.equals(accessor) = " + accessor.equals(accessor));
-            print(SegmentMapper.segment(accessor).orElseThrow()); // .asSlice(accessor.offset())
 
             PointAccessor accessor2 = new PointAccessorImpl(segment, 0L);
             System.out.println("accessor2 = " + accessor2);

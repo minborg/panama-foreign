@@ -1,7 +1,6 @@
 package java.lang.foreign.mapper;
 
 import jdk.internal.foreign.mapper.MapperUtil;
-import jdk.internal.foreign.mapper.SegmentBacked;
 import jdk.internal.foreign.mapper.SegmentInterfaceMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper;
 
@@ -225,7 +224,7 @@ import java.util.stream.Stream;
  *         point.y(4);
  *
  *         // Pass the backing internal segment to a native method
- *         double distance = nativeDistance(SegmentMapper.segment(point).orElseThrow()); // 5
+ *         double distance = nativeDistance(mapper.segment(point).orElseThrow()); // 5
  *     }
  *
  * }
@@ -650,9 +649,9 @@ public interface SegmentMapper<T> {
      *
      * @param source from which to extract the backing segment
      */
-    static Optional<MemorySegment> segment(Object source) {
+    default Optional<MemorySegment> segment(T source) {
         Objects.requireNonNull(source);
-        return SegmentBacked.segment(source);
+        return Optional.empty();
     }
 
     /**
@@ -664,9 +663,9 @@ public interface SegmentMapper<T> {
      *
      * @param source from which to extract the backing segment
      */
-    static OptionalLong offset(Object source) {
+    default OptionalLong offset(T source) {
         Objects.requireNonNull(source);
-        return SegmentBacked.offset(source);
+        return OptionalLong.empty();
     }
 
 }

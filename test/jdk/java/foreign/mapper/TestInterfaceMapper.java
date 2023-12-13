@@ -305,6 +305,15 @@ final class TestInterfaceMapper {
         void begin(PointAccessor pointAccessor);
     }
 
+    // It would be dangerous to accept a class like this in Fail1::begin
+    final static class MyPointAccessor implements PointAccessor {
+        @Override public int x() { return 0; }
+        @Override public int y() { return 0; }
+        @Override public void x(int x) { }
+        @Override public void y(int y) { }
+    }
+    // It would also be dangerous to provide an interface mapped to *another* segment or offset.
+
     @Test
     void fail1() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
@@ -544,6 +553,7 @@ final class TestInterfaceMapper {
                     .collect(Collectors.toSet());
             assertToString(accessor, MixedBagArray.class, set);
 
+            // Decrease every (1, 1) value by one
             accessor.b(1, 1, (byte) (accessor.b(1, 1) - 1));
             accessor.s(1, 1, (short) (accessor.s(1, 1) - 1));
             accessor.c(1, 1, (char) (accessor.c(1, 1) - 1));
@@ -552,9 +562,13 @@ final class TestInterfaceMapper {
             accessor.l(1, 1, accessor.l(1, 1) - 1);
             accessor.d(1, 1, accessor.d(1, 1) - 1);
 
-            Set<String> set2 = Arrays.stream("i()=12, b()=126, s()=32766, c()=A, f()=2.1415, l()=41, d()=122.4".split(", "))
-                    .collect(Collectors.toSet());
-            assertToString(accessor, mapper.type(), set2);
+            assertEquals(41L, accessor.l(1, 1));
+            assertEquals(122.45d, accessor.d(1, 1), EPSILON);
+            assertEquals(12, accessor.i(1, 1));
+            assertEquals(2.1415f, accessor.f(1, 1), EPSILON);
+            assertEquals('A', accessor.c(1, 1));
+            assertEquals((short) 32766, accessor.s(1, 1));
+            assertEquals((byte) 126, accessor.b(1, 1));
         }
     }
 

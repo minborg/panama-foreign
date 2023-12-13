@@ -276,22 +276,20 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
 
                     // @Override
-                    // <t> gX() {
-                    //     return segment.get(JAVA_t, offset + elementOffset);
+                    // <t> gX(c1, c2, ..., cN) {
+                    //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
+                    //     return segment.get(JAVA_t, offset + elementOffset + indexOffset);
                     // }
-                    getOrEmpty(accessors, Key.SCALAR_VALUE_GETTER)
-                            .forEach(a -> generateScalarGetter(cb, classDesc, a));
+                    getOrEmpty(accessors, Set.of(Key.SCALAR_VALUE_GETTER, Key.ARRAY_VALUE_GETTER))
+                            .forEach(a -> generateValueGetter(cb, classDesc, a));
 
                     // @Override
-                    // void gX(<t> t) {
-                    //     segment.get(JAVA_t, offset + elementOffset, t);
+                    // void gX(c1, c2, ..., cN, <t> t) {
+                    //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
+                    //     segment.set(JAVA_t, offset + elementOffset + indexOffset, t);
                     // }
-                    getOrEmpty(accessors, Key.SCALAR_VALUE_SETTER)
-                            .forEach(a -> generateScalarSetter(cb, classDesc, a));
-
-                    getOrEmpty(accessors, Key.ARRAY_VALUE_GETTER)
-                            .forEach(a -> generateScalarGetter(cb, classDesc, a));
-
+                    getOrEmpty(accessors, Set.of(Key.SCALAR_VALUE_SETTER, Key.ARRAY_VALUE_SETTER))
+                            .forEach(a -> generateValueSetter(cb, classDesc, a));
 
                     for (int i = 0; i < virtualMethods.size(); i++) {
                         MethodInfo a = virtualMethods.get(i);
@@ -594,9 +592,9 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return innerMapper.setHandle();
     }
 
-    private void generateScalarGetter(ClassBuilder cb,
-                                      ClassDesc classDesc,
-                                      MethodInfo info) {
+    private void generateValueGetter(ClassBuilder cb,
+                                     ClassDesc classDesc,
+                                     MethodInfo info) {
 
         String name = info.method().getName();
         ClassDesc returnDesc = desc(info.type());
@@ -628,23 +626,35 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         );
     }
 
-    private void generateScalarSetter(ClassBuilder cb,
-                                      ClassDesc classDesc,
-                                      MethodInfo info) {
+    private void generateValueSetter(ClassBuilder cb,
+                                     ClassDesc classDesc,
+                                     MethodInfo info) {
 
         String name = info.method().getName();
-        ClassDesc parameterDesc = desc(info.type());
+
+        // If it is an array, there is a number of long parameters
+        List<ClassDesc> parameterDesc = info.layoutInfo().arrayInfo()
+                .map(ai -> Stream.concat(ai.dimensions().stream().map(_ -> CD_long), Stream.of(desc(info.type()))).toList())
+                .orElse(List.of(desc(info.type())));
+
         ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
 
-        var setDesc = MethodTypeDesc.of(CD_void, scalarInfo.valueLayoutDesc(), CD_long, parameterDesc);
+        var setDesc = MethodTypeDesc.of(CD_void, scalarInfo.valueLayoutDesc(), CD_long, desc(info.type()));
 
         cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
                             .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
                     offsetBlock(cob, classDesc, info.offset());
+
+                    // Is this an array accessor?
+                    info.layoutInfo().arrayInfo().ifPresent(
+                            ai -> reduceArrayIndexes(cob, ai)
+                    );
+
+                    int valueSlotNo = (parameterDesc.size() - 1) * 2 + 1;
                     // iload, dload, etc.
-                    info.layoutInfo().paramOp().accept(cob, 1);
+                    info.layoutInfo().paramOp().accept(cob, valueSlotNo);
                     cob.invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "set", setDesc)
                             .return_();
                 }
@@ -789,15 +799,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
             SCALAR_VALUE_GETTER(Cardinality.SCALAR, ValueType.VALUE, AccessorType.GETTER),
             SCALAR_VALUE_SETTER(Cardinality.SCALAR, ValueType.VALUE, AccessorType.SETTER),
             SCALAR_INTERFACE_GETTER(Cardinality.SCALAR, ValueType.INTERFACE, AccessorType.GETTER),
-            SCALAR_INTERFACE_SETTER(Cardinality.SCALAR, ValueType.INTERFACE, AccessorType.SETTER),
+            SCALAR_INTERFACE_SETTER(Cardinality.SCALAR, ValueType.INTERFACE, AccessorType.SETTER), // Unavailable
             SCALAR_RECORD_GETTER(Cardinality.SCALAR, ValueType.RECORD, AccessorType.GETTER),
             SCALAR_RECORD_SETTER(Cardinality.SCALAR, ValueType.RECORD, AccessorType.SETTER),
             ARRAY_VALUE_GETTER(Cardinality.ARRAY, ValueType.VALUE, AccessorType.GETTER),
             ARRAY_VALUE_SETTER(Cardinality.ARRAY, ValueType.VALUE, AccessorType.SETTER),
             ARRAY_INTERFACE_GETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.GETTER),
-            ARRAY_INTERFACE_SETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.SETTER),
+            ARRAY_INTERFACE_SETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.SETTER),   // Unavailable
             ARRAY_RECORD_GETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.GETTER),
-            ARRAY_RECORD_SETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.SETTER);
+            ARRAY_RECORD_SETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.SETTER);         // Todo
 
             private final Cardinality cardinality;
             private final ValueType valueType;

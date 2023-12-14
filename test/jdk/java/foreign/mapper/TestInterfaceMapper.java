@@ -572,6 +572,41 @@ final class TestInterfaceMapper {
         }
     }
 
+
+    public interface PointRecord2Dim {
+        Point points(long i, long j);
+    }
+
+    @Test
+    void arrayOfRecords() {
+        GroupLayout triangleLayout = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(4,
+                        MemoryLayout.sequenceLayout(3, POINT_LAYOUT)
+                ).withName("points")
+        );
+        MemorySegment segment = MemorySegment.ofArray(new int[]{
+                1, 10,  2, 11,  3, 9,
+                2, 11,  3, 12,  4, 10,
+                3, 12,  4, 13,  5, 11,
+                4, 14,  5, 14,  6, 12
+        });
+        SegmentMapper<PointRecord2Dim> mapper = SegmentMapper.ofInterface(LOOKUP, PointRecord2Dim.class, triangleLayout);
+        PointRecord2Dim accessor = mapper.get(segment, 0);
+
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 3; j++) {
+                Point p = accessor.points(i, j);
+                int index = 2 * 3 * i + 2 * j;
+                int expectedX = segment.getAtIndex(JAVA_INT, index);
+                int expectedY = segment.getAtIndex(JAVA_INT, index + 1);
+                assertEquals(expectedX, p.x());
+                assertEquals(expectedY, p.y());
+            }
+        }
+
+        assertEquals("PointRecord2Dim[points()=Point[4, 3]]", accessor.toString());
+    }
+
     void assertToString(Object o,
                         Class<?> clazz, Set<String> fragments) {
         String s = o.toString();
@@ -1191,7 +1226,7 @@ final class TestInterfaceMapper {
         //Object o = element.
 
         return switch (element) {
-            case NopInstruction nop -> "nop";
+            case NopInstruction _ -> "nop";
             case LoadInstruction li -> render(li);
             case FieldInstruction fi ->
                     renderInstruction("putfield", "#" + fi.field().index(), fi.field().name().stringValue() + ":" + fi.field().type().stringValue());

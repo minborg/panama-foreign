@@ -673,6 +673,114 @@ class Snippets {
 
     static class SegmentMapperSnippets {
 
+        static class Before1 {
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            static final VarHandle X_HANDLE = POINT.varHandle(PathElement.groupElement("x"));
+            static final VarHandle Y_HANDLE = POINT.varHandle(PathElement.groupElement("y"));
+
+            public static void main(String[] args) {
+                MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
+                X_HANDLE.set(segment, 8, 6);
+                Y_HANDLE.set(segment, 8, 8);
+                String str = String.format("Point[x=%d, y=%d]", (int)X_HANDLE.get(segment, 8), (int)Y_HANDLE.get(segment, 8));
+                // Point[x=6, y=8]
+            }
+        }
+
+        static class Before2 {
+
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            record Point(int x, int y) {
+
+                static final VarHandle X_HANDLE = POINT.varHandle(PathElement.groupElement("x"));
+                static final VarHandle Y_HANDLE = POINT.varHandle(PathElement.groupElement("y"));
+
+                static Point get(MemorySegment segment, long offset) {
+                    return new Point((int) X_HANDLE.get(segment, offset), (int) Y_HANDLE.get(segment, offset));
+                }
+
+                static void set(MemorySegment segment, long offset, Point point) {
+                    X_HANDLE.set(segment, offset, point.x());
+                    Y_HANDLE.set(segment, offset, point.y());
+                }
+
+            }
+
+            public static void main(String[] args) {
+                MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
+                Point point = Point.get(segment, 0);
+                System.out.println(point); // Point[x=3, y=4]
+                Point.set(segment, 8, new Point(6, 8)); // segment = {3, 4, 6, 8}
+            }
+
+        }
+
+        static class Before3 {
+
+            static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
+
+            static final
+
+            class Point {
+
+                static final VarHandle X_HANDLE = POINT.varHandle(PathElement.groupElement("x"));
+                static final VarHandle Y_HANDLE = POINT.varHandle(PathElement.groupElement("y"));
+
+                private final MemorySegment segment;
+                private final long offset;
+
+                public Point(MemorySegment segment, long offset) {
+                    this.segment = segment;
+                    this.offset = offset;
+                }
+
+                int x() {
+                    return (int) X_HANDLE.get(segment, offset);
+                }
+
+                int y() {
+                    return (int) Y_HANDLE.get(segment, offset);
+                }
+
+                void x(int x) {
+                    X_HANDLE.set(segment, offset, x);
+                }
+
+                void Y(int x) {
+                    Y_HANDLE.set(segment, offset, x);
+                }
+
+                @Override
+                public boolean equals(Object o) {
+                    if (this == o) return true;
+                    return o instanceof Point p &&
+                            x() == p.x() &&
+                            y() == p.y();
+                }
+
+                @Override
+                public int hashCode() {
+                    return Objects.hash(x(), y());
+                }
+
+                @Override
+                public String toString() {
+                    return "Point[x=" + x() + ", y=" + y() + "]";
+                }
+            }
+
+            public static void main(String[] args) {
+                MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
+                Point point = new Point(segment, 8);
+                point.x(6);
+                point.x(8);
+                System.out.println(point); // "Point[x=6, y=8]";
+            }
+
+        }
+
         static class RecordDemo {
             static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
 
@@ -725,7 +833,7 @@ class Snippets {
             }
         }
 
-        static class ExternalDemo {
+        static class InterfaceDemo {
             static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
 
             public interface Point {

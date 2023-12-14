@@ -435,6 +435,18 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return null;
     }
 
+    void set0(MemorySegment segment, long offset, T t) {
+        MemorySegment srcSegment = segment(t)
+                .orElseThrow(SegmentInterfaceMapper::notImplType);
+        long srcOffset = offset(t)
+                .orElseThrow(SegmentInterfaceMapper::notImplType);
+        MemorySegment.copy(srcSegment, srcOffset, segment, offset, layout().byteSize());
+    }
+
+    static IllegalArgumentException notImplType() {
+        return new IllegalArgumentException("The provided object of type T is not created by this mapper.");
+    }
+
     private static void assertMappingsCorrectAndTotal(Class<?> type,
                                                       GroupLayout layout,
                                                       Map<Key, List<MethodInfo>> accessors) {

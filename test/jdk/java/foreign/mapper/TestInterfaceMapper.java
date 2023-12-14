@@ -125,31 +125,31 @@ final class TestInterfaceMapper {
 
     @Test
     void point() {
-        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
-        {
-            assertEquals(6, accessor.x());
-            assertEquals(8, accessor.y());
-            assertToString(accessor, PointAccessor.class, Set.of("x()=6", "y()=8"));
-        }
+        BaseTest.PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+
+        assertEquals(6, accessor.x());
+        assertEquals(8, accessor.y());
+        assertToString(accessor, BaseTest.PointAccessor.class, Set.of("x()=6", "y()=8"));
+
         accessor.x(1);
         accessor.y(2);
-        {
-            assertEquals(1, accessor.x());
-            assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
-            assertEquals(2, accessor.y());
-            assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
-            assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
-        }
+
+        assertEquals(1, accessor.x());
+        assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
+        assertEquals(2, accessor.y());
+        assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
+        assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
+
     }
 
     @Test
     void segmentBacked() {
-        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         long offset = POINT_LAYOUT.byteSize();
-        PointAccessor accessor = mapper.get(segment, offset);
+        BaseTest.PointAccessor accessor = mapper.get(segment, offset);
 
         assertSame(mapper.segment(accessor).orElseThrow(), segment);
         assertEquals(mapper.offset(accessor).orElseThrow(), offset);
@@ -264,9 +264,9 @@ final class TestInterfaceMapper {
     }
 
     interface LineAccessor {
-        PointAccessor begin();
+        BaseTest.PointAccessor begin();
 
-        PointAccessor end();
+        BaseTest.PointAccessor end();
     }
 
     @Test
@@ -302,11 +302,11 @@ final class TestInterfaceMapper {
 
     interface Fail1 {
         // Setters of accessor not allowed
-        void begin(PointAccessor pointAccessor);
+        void begin(BaseTest.PointAccessor pointAccessor);
     }
 
     // It would be dangerous to accept a class like this in Fail1::begin
-    final static class MyPointAccessor implements PointAccessor {
+    final static class MyPointAccessor implements BaseTest.PointAccessor {
         @Override public int x() { return 0; }
         @Override public int y() { return 0; }
         @Override public void x(int x) { }
@@ -383,7 +383,7 @@ final class TestInterfaceMapper {
     }
 
     public interface PolygonAccessor {
-        PointAccessor points(long index);
+        BaseTest.PointAccessor points(long index);
     }
 
     @Test
@@ -395,9 +395,9 @@ final class TestInterfaceMapper {
         SegmentMapper<PolygonAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PolygonAccessor.class, triangleLayout);
         PolygonAccessor accessor = mapper.get(segment, 0);
 
-        PointAccessor p0 = accessor.points(0);
-        PointAccessor p1 = accessor.points(1);
-        PointAccessor p2 = accessor.points(2);
+        BaseTest.PointAccessor p0 = accessor.points(0);
+        BaseTest.PointAccessor p1 = accessor.points(1);
+        BaseTest.PointAccessor p2 = accessor.points(2);
 
         assertEquals(1, p0.x());
         assertEquals(10, p0.y());
@@ -410,7 +410,7 @@ final class TestInterfaceMapper {
     }
 
     public interface PolygonAccessor2Dim {
-        PointAccessor points(long i, long j);
+        BaseTest.PointAccessor points(long i, long j);
     }
 
     @Test
@@ -431,7 +431,7 @@ final class TestInterfaceMapper {
 
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 3; j++) {
-                PointAccessor p = accessor.points(i, j);
+                BaseTest.PointAccessor p = accessor.points(i, j);
                 int index = 2 * 3 * i + 2 * j;
                 int expectedX = segment.getAtIndex(JAVA_INT, index);
                 int expectedY = segment.getAtIndex(JAVA_INT, index + 1);
@@ -607,6 +607,113 @@ final class TestInterfaceMapper {
         assertEquals("PointRecord2Dim[points()=Point[4, 3]]", accessor.toString());
     }
 
+    static final class LongPointAccessor {
+
+        private final BaseTest.PointAccessor pointAccessor;
+
+        public LongPointAccessor(BaseTest.PointAccessor pointAccessor) {
+            this.pointAccessor = pointAccessor;
+        }
+
+        public long x() {
+            return pointAccessor.x();
+        }
+
+        public long y() {
+            return pointAccessor.y();
+        }
+
+        public void x(long x) {
+            pointAccessor.x(Math.toIntExact(x));
+        }
+
+        public void y(long y) {
+            pointAccessor.y(Math.toIntExact(y));
+        }
+
+        @Override
+        public String toString() {
+            return "LongPointAccessor[" +
+                    "x()=" + x() +
+                    "y()=" + y() +
+                    ']';
+        }
+    }
+
+    @Test
+    void map() {
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+
+        SegmentMapper<LongPointAccessor> longMapper = mapper.map(LongPointAccessor.class, LongPointAccessor::new);
+        LongPointAccessor accessor = longMapper.get(segment, POINT_LAYOUT.byteSize());
+
+        assertEquals(6L, accessor.x());
+        assertEquals(8L, accessor.y());
+
+        accessor.x(1L);
+        accessor.y(2L);
+
+        assertEquals(1L, accessor.x());
+        assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
+        assertEquals(2L, accessor.y());
+        assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
+        assertToString(accessor, LongPointAccessor.class, Set.of("x()=1", "y()=2"));
+    }
+
+    static final class PointAccessorImpl implements BaseTest.PointAccessor {
+
+        private final LongPointAccessor longPointAccessor;
+
+        public PointAccessorImpl(LongPointAccessor longPointAccessor) {
+            this.longPointAccessor = longPointAccessor;
+        }
+
+        public int x() {
+            return Math.toIntExact(longPointAccessor.x());
+        }
+
+        public int y() {
+            return Math.toIntExact(longPointAccessor.y());
+        }
+
+        public void x(int x) {
+            longPointAccessor.x(x);
+        }
+
+        public void y(int y) {
+            longPointAccessor.y(Math.toIntExact(y));
+        }
+
+        @Override
+        public String toString() {
+            return "PointAccessor[" +
+                    "x()=" + x() +
+                    "y()=" + y() +
+                    ']';
+        }
+    }
+
+    @Test
+    void map2() {
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+
+        SegmentMapper<LongPointAccessor> longMapper = mapper.map(LongPointAccessor.class, LongPointAccessor::new, PointAccessorImpl::new);
+        LongPointAccessor accessor = longMapper.get(segment, POINT_LAYOUT.byteSize());
+
+        // Todo: how to test?
+
+        // longMapper.set(segment, accessor); // Does not make sense...
+    }
+
+
+    @Test
+    void set() {
+
+
+    }
+
     void assertToString(Object o,
                         Class<?> clazz, Set<String> fragments) {
         String s = o.toString();
@@ -631,7 +738,7 @@ final class TestInterfaceMapper {
     void fromModel() throws IOException {
 
         ClassDesc genClassDesc = ClassDesc.of("SomeName");
-        ClassDesc interfaceClassDesc = ClassDesc.of(PointAccessor.class.getName());
+        ClassDesc interfaceClassDesc = ClassDesc.of(BaseTest.PointAccessor.class.getName());
         ClassDesc recordClassDesc = ClassDesc.of(Record.class.getName());
         ClassDesc valueLayoutsClassDesc = ClassDesc.of(ValueLayout.class.getName());
         ClassDesc memorySegmentClassDesc = ClassDesc.of(MemorySegment.class.getName());
@@ -941,13 +1048,13 @@ final class TestInterfaceMapper {
 
             MethodHandles.Lookup lookup = MethodHandles.lookup().defineHiddenClass(bytes, true);
             @SuppressWarnings("unchecked")
-            Class<PointAccessor> c = (Class<PointAccessor>) lookup.lookupClass();
+            Class<BaseTest.PointAccessor> c = (Class<BaseTest.PointAccessor>) lookup.lookupClass();
 
             MethodHandle ctor = MethodHandles.lookup().findConstructor(c, MethodType.methodType(void.class, MemorySegment.class, long.class));
-            ctor = ctor.asType(ctor.type().changeReturnType(PointAccessor.class));
+            ctor = ctor.asType(ctor.type().changeReturnType(BaseTest.PointAccessor.class));
 
             var segment = MemorySegment.ofArray(new int[]{3, 4});
-            PointAccessor accessor = (PointAccessor) ctor.invokeExact(segment, 0L);
+            BaseTest.PointAccessor accessor = (BaseTest.PointAccessor) ctor.invokeExact(segment, 0L);
             int x = accessor.x();
             System.out.println("x = " + x);
             int y = accessor.y();
@@ -959,7 +1066,7 @@ final class TestInterfaceMapper {
             System.out.println("accessor.equals(\"A\") = " + accessor.equals("A"));
             System.out.println("accessor.equals(accessor) = " + accessor.equals(accessor));
 
-            PointAccessor accessor2 = new PointAccessorImpl(segment, 0L);
+            BaseTest.PointAccessor accessor2 = new PointAccessorImpl2(segment, 0L);
             System.out.println("accessor2 = " + accessor2);
             System.out.println("accessor2.hashCode() = " + accessor2.hashCode());
 
@@ -1277,23 +1384,14 @@ final class TestInterfaceMapper {
         return sb.toString();
     }
 
-    public interface PointAccessor {
-        int x();
-
-        int y();
-
-        void x(int x);
-
-        void y(int y);
-    }
 
     // @ValueBased
-    public static final class PointAccessorImpl implements PointAccessor {
+    public static final class PointAccessorImpl2 implements BaseTest.PointAccessor {
 
         private final MemorySegment segment;
         private final long offset;
 
-        public PointAccessorImpl(MemorySegment segment, long offset) {
+        public PointAccessorImpl2(MemorySegment segment, long offset) {
             this.segment = segment;
             this.offset = offset;
         }

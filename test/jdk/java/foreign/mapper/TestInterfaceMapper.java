@@ -142,6 +142,10 @@ final class TestInterfaceMapper {
         assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
         assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
 
+        // SegmentMapper::set
+        MemorySegment dstSegment = newSegment(POINT_LAYOUT);
+        mapper.set(dstSegment, accessor);
+        BaseTest.assertContentEquals(BaseTest.segmentOf(1, 2), dstSegment);
     }
 
     @Test
@@ -234,6 +238,19 @@ final class TestInterfaceMapper {
             Set<String> set2 = Arrays.stream("i()=12, b()=126, s()=32766, c()=A, f()=2.1415, l()=41, d()=122.4".split(", "))
                     .collect(Collectors.toSet());
             assertToString(accessor, mapper.type(), set2);
+
+            // SegmentMapper::set
+            MemorySegment dstSegment = newSegment(MIXED_LAYOUT);
+            mapper.set(dstSegment, accessor);
+            MemorySegment expected = newSegment(MIXED_LAYOUT);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("l")).set(expected, 0, 41L);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("d")).set(expected, 0, 122.45d);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("i")).set(expected, 0, 12);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("f")).set(expected, 0, 2.1415f);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("c")).set(expected, 0, 'A');
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("s")).set(expected, 0, (short) 32766);
+            MIXED_LAYOUT.varHandle(PathElement.groupElement("b")).set(expected, 0, (byte) 126);
+            BaseTest.assertContentEquals(expected, dstSegment);
         }
     }
 
@@ -263,6 +280,21 @@ final class TestInterfaceMapper {
         assertToString(accessor, mapper.type(), Set.of("x()=3", "y()=4"));
     }
 
+    @Test
+    void yAccessor() {
+        SegmentMapper<YAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, YAccessor.class, POINT_LAYOUT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        YAccessor accessor = mapper.get(segment, 0);
+        assertEquals(4, accessor.y());
+        assertToString(accessor, mapper.type(), Set.of("y()=4"));
+
+        // SegmentMapper::set
+        MemorySegment dstSegment = newSegment(POINT_LAYOUT);
+        mapper.set(dstSegment, accessor);
+        // Should only affect regions mapped by a setter
+        BaseTest.assertContentEquals(BaseTest.segmentOf(0, 0), dstSegment);
+    }
+
     interface LineAccessor {
         BaseTest.PointAccessor begin();
 
@@ -285,6 +317,21 @@ final class TestInterfaceMapper {
         assertEquals(8, end.y());
 
         assertToString(accessor, mapper.type(), Set.of("begin()=PointAccessor[", "end()=PointAccessor["));
+
+        begin.x(4);
+        begin.y(5);
+        end.x(7);
+        end.y(9);
+
+        assertEquals(4, begin.x());
+        assertEquals(5, begin.y());
+        assertEquals(7, end.x());
+        assertEquals(9, end.y());
+
+        // SegmentMapper::set
+        MemorySegment dstSegment = newSegment(LINE_LAYOUT);
+        mapper.set(dstSegment, accessor);
+        BaseTest.assertContentEquals(BaseTest.segmentOf(4, 5, 7, 9), dstSegment);
     }
 
     interface Empty {
@@ -712,6 +759,14 @@ final class TestInterfaceMapper {
     void set() {
 
 
+    }
+
+    static MemorySegment newSegment(MemoryLayout layout) {
+        return Arena.ofAuto().allocate(layout);
+    }
+
+    static MemorySegment newSegment(int size) {
+        return Arena.ofAuto().allocate(size);
     }
 
     void assertToString(Object o,

@@ -31,10 +31,13 @@ import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public abstract class BaseTest {
 
@@ -116,6 +119,22 @@ public abstract class BaseTest {
         } catch (Throwable th) {
             th.printStackTrace();
             throw th;
+        }
+    }
+
+    public static int[] segmentOf(int... ints) {
+        return ints;
+    }
+
+    public static void assertContentEquals(int[] expected, MemorySegment actual) {
+        assertContentEquals(MemorySegment.ofArray(expected), actual);
+    }
+
+    public static void assertContentEquals(MemorySegment expected, MemorySegment actual) {
+        if (expected.mismatch(actual) != -1) {
+            HexFormat hexFormat = HexFormat.ofDelimiter(" ");
+            fail("Expected '" + hexFormat.formatHex(expected.toArray(JAVA_BYTE)) +
+                    "' but got '" + hexFormat.formatHex(actual.toArray(JAVA_BYTE))+"'");
         }
     }
 

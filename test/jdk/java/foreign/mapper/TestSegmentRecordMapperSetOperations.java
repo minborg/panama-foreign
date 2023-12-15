@@ -223,20 +223,5 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
 
     }
 
-    private static int[] segmentOf(int... ints) {
-        return ints;
-    }
-
-    private static void assertContentEquals(int[] expected, MemorySegment actual) {
-        assertContentEquals(MemorySegment.ofArray(expected), actual);
-    }
-
-    private static void assertContentEquals(MemorySegment expected, MemorySegment actual) {
-        if (expected.mismatch(actual) != -1) {
-            HexFormat hexFormat = HexFormat.ofDelimiter(" ");
-            fail("Expected '" + hexFormat.formatHex(expected.toArray(JAVA_BYTE)) +
-                    "' but got '" + hexFormat.formatHex(actual.toArray(JAVA_BYTE))+"'");
-        }
-    }
 
 }

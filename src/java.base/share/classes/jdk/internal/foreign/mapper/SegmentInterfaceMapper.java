@@ -34,6 +34,7 @@ import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.AccessorTyp
 import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.Cardinality;
 import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.Key;
 import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.ValueType;
+import jdk.internal.foreign.mapper.component.Util;
 
 import java.io.IOException;
 import java.lang.constant.ClassDesc;
@@ -58,12 +59,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.SequencedCollection;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -74,6 +78,7 @@ import java.util.stream.Stream;
 
 import static java.lang.constant.ConstantDescs.*;
 import static jdk.internal.classfile.Classfile.*;
+import static jdk.internal.foreign.layout.MemoryLayoutUtil.requireNonNegative;
 
 /**
  * A record mapper that is matching components of an interface with elements in a GroupLayout.
@@ -81,7 +86,7 @@ import static jdk.internal.classfile.Classfile.*;
 @ValueBased
 public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLookup {
 
-    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+    private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
     private static final ClassDesc VALUE_LAYOUTS_CLASS_DESC = desc(ValueLayout.class);
     private static final ClassDesc MEMORY_SEGMENT_CLASS_DESC = desc(MemorySegment.class);
@@ -394,7 +399,15 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return set.stream()
                 .map(map::get)
                 .filter(Objects::nonNull)
-                .flatMap(List::stream);
+                .flatMap(Collection::stream);
+    }
+
+    static Stream<MethodInfo> getOrEmpty(Map<Key, List<MethodInfo>> map, Predicate<Key> condition) {
+        return Arrays.stream(Key.values())
+                .filter(condition)
+                .map(map::get)
+                .filter(Objects::nonNull)
+                .flatMap(Collection::stream);
     }
 
     // This method is using a partially initialized mapper
@@ -411,7 +424,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         MethodHandle getHandle = computeGetHandle();
 
         // (MemorySegment, long, T)void
-        MethodHandle setHandle = computeSetHandle();
+        MethodHandle setHandle = computeSetHandle(accessors);
 
         return new Handles(isExhaustive, getHandle, setHandle);
     }
@@ -430,17 +443,52 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
     // (MemorySegment, long, T)void
-    private MethodHandle computeSetHandle() {
-        // Todo: Fix me
-        return null;
+    // This method will return a MethodHandle that will update memory that
+    // is mapped to a setter only.
+    private MethodHandle computeSetHandle(Map<Key, List<MethodInfo>> accessors) {
+        List<AffectedMemory> fragments = getOrEmpty(accessors, k -> k.accessorType() == AccessorType.SETTER)
+                .sorted(Comparator.comparingLong(MethodInfo::offset))
+                .map(mi -> new AffectedMemory(mi.offset(), mi.layoutInfo().layout().byteSize()))
+                .toList();
+
+        fragments = AffectedMemory.coalesce(fragments);
+
+        try {
+            return switch (fragments.size()) {
+                case 0 -> MethodHandles.empty(Util.SET_TYPE);
+                case 1 -> {
+                    MethodType mt = MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class);
+                    yield LOCAL_LOOKUP.findVirtual(SegmentInterfaceMapper.class, "setAll", mt)
+                            .bindTo(this);
+                }
+                default -> {
+                    MethodType mt = MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class, List.class);
+                    MethodHandle mh = LOCAL_LOOKUP.findVirtual(SegmentInterfaceMapper.class, "setFragments", mt)
+                            .bindTo(this);
+                    yield MethodHandles.insertArguments(mh, 3, fragments);
+                }
+            };
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException("Unable to find setter", e);
+        }
     }
 
-    void set0(MemorySegment segment, long offset, T t) {
+    void setAll(MemorySegment segment, long offset, T t) {
         MemorySegment srcSegment = segment(t)
                 .orElseThrow(SegmentInterfaceMapper::notImplType);
         long srcOffset = offset(t)
                 .orElseThrow(SegmentInterfaceMapper::notImplType);
         MemorySegment.copy(srcSegment, srcOffset, segment, offset, layout().byteSize());
+    }
+
+    void setFragments(MemorySegment segment, long offset, T t, List<AffectedMemory> fragments) {
+        MemorySegment srcSegment = segment(t)
+                .orElseThrow(SegmentInterfaceMapper::notImplType);
+        long srcOffset = offset(t)
+                .orElseThrow(SegmentInterfaceMapper::notImplType);
+        for (AffectedMemory m: fragments) {
+            MemorySegment.copy(srcSegment, srcOffset + m.start(), segment, offset + m.start(), m.size());
+        }
     }
 
     static IllegalArgumentException notImplType() {
@@ -455,7 +503,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .flatMap(Optional::stream)
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
 
-        List<MethodInfo> allMethods = getOrEmpty(accessors, Set.of(Key.values())).toList();
+        List<MethodInfo> allMethods = getOrEmpty(accessors, k -> true).toList();
 
         // Make sure we have all components distinctly mapped
         for (MethodInfo component : allMethods) {
@@ -1100,7 +1148,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         private static MethodHandle findVirtual(String name) {
             try {
                 var mt = MethodType.methodType(Object.class, Object.class);
-                return LOOKUP.findVirtual(Mapped.class, name, mt);
+                return LOCAL_LOOKUP.findVirtual(Mapped.class, name, mt);
             } catch (ReflectiveOperationException e) {
                 // Should not happen
                 throw new InternalError(e);
@@ -1109,14 +1157,51 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
-    @SafeVarargs
-    @SuppressWarnings("varargs")
-    private static <T> List<T> concat(List<T> ... other) {
-        return Arrays.stream(other)
-                .reduce(new ArrayList<>(), (a, b) -> {
-                    a.addAll(b);
-                    return a;
-                });
+    record AffectedMemory(long start, long size){
+
+        AffectedMemory {
+            requireNonNegative(start);
+            requireNonNegative(size);
+        }
+
+/*        static List<AffectedMemory> coalesceGatherer(List<AffectedMemory> items) {
+            items.stream().gather(Gatherers.windowSliding(2))
+
+        }*/
+
+        static List<AffectedMemory> coalesce(List<AffectedMemory> items) {
+            List<AffectedMemory> result = new ArrayList<>();
+            int i = 0;
+            for ( ; i<items.size();i++) {
+                AffectedMemory current = items.get(i);
+                for (int j = i + 1; j < result.size(); j++) {
+                    AffectedMemory next = items.get(j);
+                    if (current.isBefore(next)) {
+                        current = current.merge(next);
+                    } else {
+                        break;
+                    }
+                }
+                result.add(current);
+            }
+            return result;
+        }
+
+        private boolean isBefore(AffectedMemory other) {
+            return start + size == other.start;
+        }
+
+        private AffectedMemory merge(AffectedMemory other) {
+            return new AffectedMemory(start, size + other.size());
+        }
+
+        private static AffectedMemory merge(SequencedCollection<AffectedMemory> items) {
+            long size = items.stream()
+                    .mapToLong(AffectedMemory::size)
+                    .sum();
+            return new AffectedMemory(items.getFirst().start(), size);
+        }
+
     }
 
     public static <T> SegmentInterfaceMapper<T> create(MethodHandles.Lookup lookup,

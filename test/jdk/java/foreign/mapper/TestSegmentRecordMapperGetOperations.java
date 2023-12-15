@@ -56,7 +56,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     @Test
     void point() {
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
-        assertTrue(mapper.isExhaustive());
 
         Point point = mapper.get(POINT_SEGMENT);
         assertEquals(new Point(3,4), point);
@@ -73,7 +72,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 mapper.map(TinyPoint.class,
                            p -> new TinyPoint((byte) p.x(), (byte) p.y()),
                            t -> new Point(t.x(), t.y()));
-        assertFalse(tinyMapper.isExhaustive());
         assertEquals(TinyPoint.class, tinyMapper.type());
         assertEquals(POINT_LAYOUT, tinyMapper.layout());
 
@@ -86,7 +84,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     @Test
     void line() {
         SegmentMapper<Line> mapper = SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
-        assertTrue(mapper.isExhaustive());
 
         Line point = mapper.get(POINT_SEGMENT);
         assertEquals(new Line(new Point(3,4), new Point(6, 0)), point);
@@ -141,11 +138,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         }
 
         @Override
-        public boolean isExhaustive() {
-            return true;
-        }
-
-        @Override
         public MethodHandle getHandle() {
             throw new UnsupportedOperationException();
         }
@@ -159,6 +151,11 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         public <R> SegmentMapper<R> map(Class<R> newType,
                                         Function<? super Point, ? extends R> toMapper,
                                         Function<? super R, ? extends Point> fromMapper) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <R> SegmentMapper<R> map(Class<R> newType, Function<? super Point, ? extends R> toMapper) {
             throw new UnsupportedOperationException();
         }
     }

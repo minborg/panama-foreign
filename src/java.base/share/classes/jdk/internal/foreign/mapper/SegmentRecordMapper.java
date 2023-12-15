@@ -41,7 +41,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.OptionalLong;
 import java.util.SequencedCollection;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -53,7 +52,6 @@ import java.util.stream.IntStream;
  * @param lookup       to use for reflective operations
  * @param type         record type to map to/from
  * @param layout       group layout to use for matching record components
- * @param isExhaustive if mapping is exhaustive
  * @param getHandle    for get operations
  * @param setHandle    for set operations
  * @param <T>          mapper type
@@ -67,20 +65,19 @@ public record SegmentRecordMapper<T extends Record>(
             @Override GroupLayout layout,
             long offset,
             int depth,
-            @Override boolean isExhaustive,
             // (MemorySegment, long)T
             @Override MethodHandle getHandle,
             // (MemorySegment, long, T)void
             @Override MethodHandle setHandle) implements SegmentMapper<T>, HasLookup {
 
-    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+    private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
     public SegmentRecordMapper(MethodHandles.Lookup lookup,
                                Class<T> type,
                                GroupLayout layout,
                                long offset,
                                int depth) {
-        this(lookup, type, layout, offset, depth, false, null, null);
+        this(lookup, type, layout, offset, depth, null, null);
     }
 
     // Canonical constructor in which we ignore some of the
@@ -90,7 +87,6 @@ public record SegmentRecordMapper<T extends Record>(
                                GroupLayout layout,
                                long offset,
                                int depth,
-                               boolean isExhaustive,      // Ignored
                                MethodHandle getHandle,    // Ignored
                                MethodHandle setHandle) {  // Ignored
         this.lookup = lookup;
@@ -99,7 +95,6 @@ public record SegmentRecordMapper<T extends Record>(
         this.offset = offset;
         this.depth = depth;
         Handles handles = handles(this);
-        this.isExhaustive = handles.isExhaustive();
         this.getHandle = handles.getHandle();
         this.setHandle = handles.setHandle();
     }
@@ -124,16 +119,13 @@ public record SegmentRecordMapper<T extends Record>(
                 .map(RecordComponent::getType)
                 .toArray(Class<?>[]::new);
 
-        // There is exactly one member layout for each record component
-        boolean isExhaustive = mapper.layout().memberLayouts().size() == mapper.type().getRecordComponents().length;
-
         // (MemorySegment, long)Object
         MethodHandle getHandle = computeGetHandle(mapper, componentTypes);
 
         // (MemorySegment, long, T)void
         MethodHandle setHandle = computeSetHandle(mapper, componentTypes);
 
-        return new Handles(isExhaustive, getHandle, setHandle);
+        return new Handles(getHandle, setHandle);
     }
 
     // (MemorySegment, long)Object
@@ -221,7 +213,7 @@ public record SegmentRecordMapper<T extends Record>(
     // Creates a new MH that will iterate over the sub-method handles
     private static MethodHandle iterate(SequencedCollection<MethodHandle> setHandles) {
         try {
-            var mh = LOOKUP.findStatic(SegmentRecordMapper.class,
+            var mh = LOCAL_LOOKUP.findStatic(SegmentRecordMapper.class,
                     "doSetOperations",
                     Util.SET_TYPE.appendParameterTypes(SequencedCollection.class));
             return MethodHandles.insertArguments(mh, 3, setHandles);
@@ -276,7 +268,6 @@ public record SegmentRecordMapper<T extends Record>(
      * @param lookup       to use for reflective operations
      * @param type         new type to map to/from
      * @param layout       original layout
-     * @param isExhaustive if mapping is exhaustive (always false)
      * @param getHandle    for get operations
      * @param setHandle    for set operations
      * @param toMapper     a function that goes from T to R
@@ -290,7 +281,6 @@ public record SegmentRecordMapper<T extends Record>(
             @Override MethodHandles.Lookup lookup,
             @Override Class<R> type,
             @Override GroupLayout layout,
-            @Override boolean isExhaustive,
             @Override MethodHandle getHandle,
             @Override MethodHandle setHandle,
             Function<? super T, ? extends R> toMapper,
@@ -300,7 +290,6 @@ public record SegmentRecordMapper<T extends Record>(
         Mapped(MethodHandles.Lookup lookup,
                Class<R> type,
                GroupLayout layout,
-               boolean isExhaustive,
                MethodHandle getHandle,
                MethodHandle setHandle,
                Function<? super T, ? extends R> toMapper,
@@ -309,7 +298,6 @@ public record SegmentRecordMapper<T extends Record>(
             this.lookup = lookup;
             this.type = type;
             this.layout = layout;
-            this.isExhaustive = isExhaustive;
             this.toMapper = toMapper;
             this.fromMapper = fromMapper;
             MethodHandle toMh = findVirtual("mapTo").bindTo(this);
@@ -353,7 +341,6 @@ public record SegmentRecordMapper<T extends Record>(
             return new Mapped<>(original.lookup(),
                         newType,
                         original.layout(),
-                        false, // There is no way to evaluate exhaustiveness
                         original.getHandle(),
                         original.setHandle(),
                         toMapper,
@@ -364,7 +351,7 @@ public record SegmentRecordMapper<T extends Record>(
         private static MethodHandle findVirtual(String name) {
             try {
                 var mt = MethodType.methodType(Object.class, Object.class);
-                return LOOKUP.findVirtual(Mapped.class, name, mt);
+                return LOCAL_LOOKUP.findVirtual(Mapped.class, name, mt);
             } catch (ReflectiveOperationException e) {
                 // Should not happen
                 throw new InternalError(e);

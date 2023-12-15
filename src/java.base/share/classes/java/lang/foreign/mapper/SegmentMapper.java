@@ -269,20 +269,6 @@ public interface SegmentMapper<T> {
      */
     GroupLayout layout();
 
-    /**
-     * {@return {@code true} if this mapper exhaustively maps all the contents of
-     *          a segment to components of this mapper}
-     * <p>
-     * More formally, if S is a segment with {@code S.byteSize() == layout().byteSize()}
-     * then there exists exactly one distinct mapping for every permutation of S's
-     * contents.
-     * <p>
-     * Segment mappers obtained via the {@linkplain #map(Class, Function)} or
-     * {@linkplain #map(Class, Function, Function)} have an isExhaustive method that
-     * always returns {@code false} as there is no way to determine exhaustiveness.
-     */
-    boolean isExhaustive();
-
     // Convenience methods
 
     /**

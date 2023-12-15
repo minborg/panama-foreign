@@ -23,6 +23,7 @@
 
 /*
  * @test
+ * @enablePreview
  * @modules java.base/jdk.internal.classfile
  *          java.base/jdk.internal.classfile.attribute
  *          java.base/jdk.internal.classfile.constantpool
@@ -100,7 +101,10 @@ import java.util.Collection;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiPredicate;
+import java.util.function.BinaryOperator;
 import java.util.stream.Collectors;
+import java.util.stream.Gatherer;
 
 import static java.lang.constant.ConstantDescs.*;
 import static java.lang.foreign.ValueLayout.*;
@@ -110,6 +114,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 // Todo: check wrapper classes
 // Todo: Check the SegmentMapper::map operation
+// Todo: Check unions
+// Todo: Prevent recursive definitions (and check for this explicitly)
 
 // Note: the order in which interface methods appears is unspecified.
 final class TestInterfaceMapper {
@@ -328,11 +334,108 @@ final class TestInterfaceMapper {
         assertEquals(7, end.x());
         assertEquals(9, end.y());
 
+        System.out.println("mapper = " + mapper);
+
         // SegmentMapper::set
         MemorySegment dstSegment = newSegment(LINE_LAYOUT);
         mapper.set(dstSegment, accessor);
         BaseTest.assertContentEquals(BaseTest.segmentOf(4, 5, 7, 9), dstSegment);
     }
+
+    interface LinesAccessor {
+        LineAccessor first();
+        LineAccessor second();
+    }
+
+    // This test ensures depth > 1 works
+    @Test
+    void lines() {
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8, 4, 5, 7, 9});
+
+        GroupLayout linesLayout = MemoryLayout.structLayout(
+                LINE_LAYOUT.withName("first"),
+                LINE_LAYOUT.withName("second")
+        );
+        SegmentMapper<LinesAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, LinesAccessor.class, linesLayout);
+
+        LinesAccessor accessor = mapper.get(segment);
+
+        LineAccessor first = accessor.first();
+        BaseTest.PointAccessor firstBegin = first.begin();
+        BaseTest.PointAccessor firstEnd = first.end();
+        LineAccessor second = accessor.second();
+        BaseTest.PointAccessor secondBegin = second.begin();
+        BaseTest.PointAccessor secondEnd = second.end();
+
+        assertEquals(3, firstBegin.x());
+        assertEquals(4, firstBegin.y());
+        assertEquals(6, firstEnd.x());
+        assertEquals(8, firstEnd.y());
+
+        assertEquals(4, secondBegin.x());
+        assertEquals(5, secondBegin.y());
+        assertEquals(7, secondEnd.x());
+        assertEquals(9, secondEnd.y());
+
+        firstBegin.x(13);
+        firstBegin.y(14);
+        firstEnd.x(16);
+        firstEnd.y(18);
+
+        secondBegin.x(14);
+        secondBegin.y(15);
+        secondEnd.x(17);
+        secondEnd.y(19);
+
+        // SegmentMapper::set
+        MemorySegment dstSegment = newSegment(linesLayout);
+        mapper.set(dstSegment, accessor);
+        BaseTest.assertContentEquals(
+                BaseTest.segmentOf(13, 14, 16, 18,  14, 15, 17, 19),
+                dstSegment);
+    }
+
+    @SuppressWarnings("unchecked")
+    static <T> Gatherer<T, ?, T> coalesce(
+            BiPredicate<? super T, ? super T> mergeCondition,
+            BinaryOperator<T> merger) {
+        return Gatherer.ofSequential(
+                () -> (T[]) new Object[1],
+                (current, element, downstream) -> {
+                    if (current[0] == null) {
+                        current[0] = element;
+                    } else {
+                        if (mergeCondition.test(current[0], element)) {
+                            current[0] = merger.apply(current[0], element);
+                        } else {
+                            var x = current[0];
+                            current[0] = element;
+                            return downstream.push(x);
+                        }
+                    }
+                    return true;
+                },
+                (current, downstream) -> {
+                    if (current[0] != null) {
+                        downstream.push(current[0]);
+                    }
+                }
+        );
+    }
+
+
+    @Test
+    void dedupCars() {
+
+        var dedup = "AAABCCCAABCC".chars()
+                .mapToObj(i -> (char) i)
+                .gather(coalesce((a, b) -> a == b, (a, b) -> a))
+                .map(Object::toString)
+                .collect(Collectors.joining());
+
+        assertEquals("ABCABC", dedup);
+    }
+
 
     interface Empty {
     }

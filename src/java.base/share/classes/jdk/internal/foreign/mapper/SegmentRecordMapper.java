@@ -107,6 +107,16 @@ public record SegmentRecordMapper<T extends Record>(
         return Mapped.of(this, newType, toMapper, fromMapper);
     }
 
+    @Override
+    public <R> SegmentMapper<R> map(Class<R> newType,
+                                    Function<? super T, ? extends R> toMapper) {
+        return map(newType,
+                toMapper,
+                _ -> {
+                    throw new UnsupportedOperationException(
+                            "This one-way mapper cannot map from " + newType + " to " + type());
+                });
+    }
 
     // Private methods and classes
 
@@ -315,6 +325,16 @@ public record SegmentRecordMapper<T extends Record>(
                                           Function<? super R, ? extends R1> toMapper,
                                           Function<? super R1, ? extends R> fromMapper) {
             return of(this, newType, toMapper, fromMapper);
+        }
+
+        @Override
+        public <R1> SegmentMapper<R1> map(Class<R1> newType, Function<? super R, ? extends R1> toMapper) {
+            return map(newType,
+                    toMapper,
+                    _ -> {
+                        throw new UnsupportedOperationException(
+                                "This one-way mapper cannot map from " + newType + " to " + type());
+                    });
         }
 
         // Used reflective when obtaining a MethodHandle

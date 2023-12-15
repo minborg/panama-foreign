@@ -67,18 +67,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
-import java.util.SequencedCollection;
 import java.util.Set;
-import java.util.function.BiPredicate;
-import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.ObjIntConsumer;
 import java.util.function.Predicate;
-import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
-import java.util.stream.Gatherer;
-import java.util.stream.Gatherers;
 import java.util.stream.Stream;
 
 import static java.lang.constant.ConstantDescs.*;
@@ -211,11 +205,17 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
     @Override
+    public <R> SegmentMapper<R> map(Class<R> newType, Function<? super T, ? extends R> toMapper) {
+        return Mapped.of(this, newType, toMapper);
+    }
+
+    @Override
     public <R> SegmentMapper<R> map(Class<R> newType,
                                     Function<? super T, ? extends R> toMapper,
                                     Function<? super R, ? extends T> fromMapper) {
-        return Mapped.of(this, newType, toMapper, fromMapper);
+        throw twoWayMappersUnsupported();
     }
+
 
     private Class<T> generateClass(Map<Key, List<MethodInfo>> accessors) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
@@ -1051,11 +1051,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
      * @param lookup       to use for reflective operations
      * @param type         new type to map to/from
      * @param layout       original layout
-     * @param isExhaustive if mapping is exhaustive (always false)
      * @param getHandle    for get operations
-     * @param setHandle    for set operations
      * @param toMapper     a function that goes from T to R
-     * @param fromMapper   a function that goes from R to T
      * @param <T>          original mapper type
      * @param <R>          composed mapper type
      */
@@ -1065,43 +1062,56 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
             @Override MethodHandles.Lookup lookup,
             @Override Class<R> type,
             @Override GroupLayout layout,
-            @Override boolean isExhaustive,
             @Override MethodHandle getHandle,
-            @Override MethodHandle setHandle,
-            Function<? super T, ? extends R> toMapper,
-            Function<? super R, ? extends T> fromMapper
+            Function<? super T, ? extends R> toMapper
     ) implements SegmentMapper<R>, HasLookup {
+
+        static final MethodHandle SET_OPERATIONS_UNSUPPORTED;
+
+        static {
+            MethodHandle handle;
+            try {
+                handle = LOCAL_LOOKUP.findStatic(
+                        Mapped.class,
+                        "setOperationsUnsupported",
+                        MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class));
+
+            } catch (ReflectiveOperationException e) {
+                throw new ExceptionInInitializerError(e);
+            }
+            SET_OPERATIONS_UNSUPPORTED = handle;
+        }
 
         Mapped(MethodHandles.Lookup lookup,
                Class<R> type,
                GroupLayout layout,
-               boolean isExhaustive,
                MethodHandle getHandle,
-               MethodHandle setHandle,
-               Function<? super T, ? extends R> toMapper,
-               Function<? super R, ? extends T> fromMapper
+               Function<? super T, ? extends R> toMapper
         ) {
             this.lookup = lookup;
             this.type = type;
             this.layout = layout;
-            this.isExhaustive = isExhaustive;
             this.toMapper = toMapper;
-            this.fromMapper = fromMapper;
             MethodHandle toMh = findVirtual("mapTo").bindTo(this);
             this.getHandle = MethodHandles.filterReturnValue(getHandle, toMh);
-            MethodHandle fromMh = findVirtual("mapFrom").bindTo(this);
-            if (setHandle != null) {
-                this.setHandle = MethodHandles.filterArguments(setHandle, 2, fromMh);
-            } else {
-                this.setHandle = null;
-            }
+        }
+
+        @Override
+        public MethodHandle setHandle() {
+            return SET_OPERATIONS_UNSUPPORTED;
         }
 
         @Override
         public <R1> SegmentMapper<R1> map(Class<R1> newType,
                                           Function<? super R, ? extends R1> toMapper,
                                           Function<? super R1, ? extends R> fromMapper) {
-            return of(this, newType, toMapper, fromMapper);
+            throw twoWayMappersUnsupported();
+        }
+
+        @Override
+        public <R1> SegmentMapper<R1> map(Class<R1> newType,
+                                          Function<? super R, ? extends R1> toMapper) {
+            return of(this, newType, toMapper);
         }
 
         // Used reflective when obtaining a MethodHandle
@@ -1110,29 +1120,24 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         }
 
         // Used reflective when obtaining a MethodHandle
-        T mapFrom(R r) {
+        /*T mapFrom(R r) {
             return fromMapper.apply(r);
-        }
+        }*/
 
         static <T, R, O extends SegmentMapper<T> & HasLookup> Mapped<T, R> of(
                 O original,
                 Class<R> newType,
-                Function<? super T, ? extends R> toMapper,
-                Function<? super R, ? extends T> fromMapper) {
+                Function<? super T, ? extends R> toMapper) {
 
             Objects.requireNonNull(original);
             Objects.requireNonNull(newType);
             Objects.requireNonNull(toMapper);
-            Objects.requireNonNull(fromMapper);
 
             return new Mapped<>(original.lookup(),
                     newType,
                     original.layout(),
-                    false, // There is no way to evaluate exhaustiveness
                     original.getHandle(),
-                    original.setHandle(),
-                    toMapper,
-                    fromMapper
+                    toMapper
             );
         }
 
@@ -1146,6 +1151,14 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
             }
         }
 
+        private static void setOperationsUnsupported(MemorySegment s, long o, Object t) {
+            throw new UnsupportedOperationException("SegmentMapper::set operations are not supported for mapped interface mappers");
+        }
+
+    }
+
+    private static UnsupportedOperationException twoWayMappersUnsupported() {
+        return new UnsupportedOperationException("Two-way mappers are not supported for interface mappers");
     }
 
     record AffectedMemory(long offset, long size){

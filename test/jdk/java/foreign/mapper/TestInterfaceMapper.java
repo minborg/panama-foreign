@@ -809,6 +809,12 @@ final class TestInterfaceMapper {
         assertEquals(2L, accessor.y());
         assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
         assertToString(accessor, LongPointAccessor.class, Set.of("x()=1", "y()=2"));
+
+        // SegmentMapper::set
+        MemorySegment dstSegment = newSegment(POINT_LAYOUT);
+        assertThrows(UnsupportedOperationException.class, (() ->
+                longMapper.set(dstSegment, accessor)
+        ));
     }
 
     static final class PointAccessorImpl implements BaseTest.PointAccessor {
@@ -847,16 +853,10 @@ final class TestInterfaceMapper {
     @Test
     void map2() {
         SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
-        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-
-        SegmentMapper<LongPointAccessor> longMapper = mapper.map(LongPointAccessor.class, LongPointAccessor::new, PointAccessorImpl::new);
-        LongPointAccessor accessor = longMapper.get(segment, POINT_LAYOUT.byteSize());
-
-        // Todo: how to test?
-
-        // longMapper.set(segment, accessor); // Does not make sense...
+        assertThrows(UnsupportedOperationException.class, () ->
+                mapper.map(LongPointAccessor.class, LongPointAccessor::new, PointAccessorImpl::new)
+        );
     }
-
 
     @Test
     void set() {

@@ -465,7 +465,7 @@ public interface SegmentMapper<T> {
 
     /**
      * {@return a method handle that returns new instances of type T projected from
-     * a provided external {@code MemorySegment} at a provided {@code long} offset}
+     *          a provided external {@code MemorySegment} at a provided {@code long} offset}
      * <p>
      * The returned method handle has the following characteristics:
      * <ul>
@@ -482,7 +482,7 @@ public interface SegmentMapper<T> {
 
     /**
      * {@return a method handle that writes a provided instance of type T into
-     * a provided {@code MemorySegment} at a provided {@code long} offset}
+     *          a provided {@code MemorySegment} at a provided {@code long} offset}
      * <p>
      * The returned method handle has the following characteristics:
      * <ul>
@@ -512,6 +512,7 @@ public interface SegmentMapper<T> {
      * @param toMapper to apply after get operations on this segment mapper
      * @param fromMapper to apply before set operations on this segment mapper
      * @param <R> the type of the new segment mapper
+     * @throws UnsupportedOperationException if this is an interface mapper.
      */
     <R> SegmentMapper<R> map(Class<R> newType,
                              Function<? super T, ? extends R> toMapper,
@@ -525,20 +526,16 @@ public interface SegmentMapper<T> {
      * <p>
      * It should be noted that the type R can represent almost any class and is not
      * restricted to records and interfaces.
+     * <p>
+     * Interface segment mappers returned by this method does not support
+     * {@linkplain #set(MemorySegment, Object) set} operations.
      *
      * @param  newType the new type the returned mapper shall use
      * @param toMapper to apply after get operations on this segment mapper
      * @param <R> the type of the new segment mapper
      */
-    default <R> SegmentMapper<R> map(Class<R> newType,
-                                     Function<? super T, ? extends R> toMapper) {
-        return map(newType,
-                toMapper,
-                _ -> {
-                    throw new UnsupportedOperationException(
-                            "This one-way mapper cannot map from " + newType + " to " + type());
-                });
-    }
+    <R> SegmentMapper<R> map(Class<R> newType,
+                             Function<? super T, ? extends R> toMapper);
 
     /**
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}

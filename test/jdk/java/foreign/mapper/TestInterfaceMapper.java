@@ -702,6 +702,40 @@ final class TestInterfaceMapper {
         assertEquals("PointRecord2Dim[points()=Point[4, 3]]", accessor.toString());
     }
 
+
+    @Test
+    void gap() {
+
+        interface Ints {
+            int first();
+            void first(int first);
+            int third();
+            void third(int third);
+        }
+
+        MemorySegment segment = MemorySegment.ofArray(new int[]{1, 2, 3});
+        GroupLayout layout = MemoryLayout.structLayout(
+                JAVA_INT.withName("first"),
+                JAVA_INT.withName("second"), // Not mapped to any setter
+                JAVA_INT.withName("third")
+        );
+        SegmentMapper<Ints> mapper = SegmentMapper.ofInterface(LOOKUP, Ints.class, layout);
+        Ints accessor = mapper.get(segment, 0);
+
+        assertEquals(1, accessor.first());
+        assertEquals(3, accessor.third());
+
+        accessor.first(11);
+        accessor.third(13);
+        assertEquals(11, accessor.first());
+        assertEquals(13, accessor.third());
+
+        MemorySegment dstSegment = newSegment(layout);
+        mapper.set(dstSegment, accessor);
+        // Unmapped regions should not be affected by the set operation
+        BaseTest.assertContentEquals(BaseTest.segmentOf(11, 0, 13), dstSegment);
+    }
+
     static final class LongPointAccessor {
 
         private final BaseTest.PointAccessor pointAccessor;

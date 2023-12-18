@@ -1,5 +1,6 @@
 package jdk.internal.foreign.mapper;
 
+import java.lang.foreign.GroupLayout;
 import java.lang.reflect.Method;
 
 record MethodInfo(Key key,
@@ -7,6 +8,12 @@ record MethodInfo(Key key,
                   Class<?> type,
                   LayoutInfo layoutInfo,
                   long offset) {
+
+    GroupLayout targetLayout() {
+        return (GroupLayout) layoutInfo().arrayInfo()
+                .map(ArrayInfo::elementLayout)
+                .orElse(layoutInfo().layout());
+    }
 
     enum Cardinality {SCALAR, ARRAY}
 

@@ -541,6 +541,7 @@ final class TestInterfaceMapper {
 
     public interface PolygonRecordAccessor {
         Point points(long index);
+        void points(long index, Point point);
     }
 
     @Test
@@ -564,6 +565,11 @@ final class TestInterfaceMapper {
         assertEquals(9, p2.y());
 
         assertEquals("PolygonRecordAccessor[points()=Point[3]]", accessor.toString());
+
+        accessor.points(1, new Point(-1, -2));
+        Point updatedP1 = accessor.points(1);
+        assertEquals(-1, updatedP1.x());
+        assertEquals(-2, updatedP1.y());
     }
 
     interface MixedBagArray {
@@ -670,6 +676,7 @@ final class TestInterfaceMapper {
 
     public interface PointRecord2Dim {
         Point points(long i, long j);
+        void points(long i , long j, Point point);
     }
 
     @Test
@@ -700,6 +707,10 @@ final class TestInterfaceMapper {
         }
 
         assertEquals("PointRecord2Dim[points()=Point[4, 3]]", accessor.toString());
+
+        accessor.points(1, 2, new Point(-1, -2));
+        assertEquals(-1, accessor.points(1, 2).x());
+        assertEquals(-2, accessor.points(1, 2).y());
     }
 
 

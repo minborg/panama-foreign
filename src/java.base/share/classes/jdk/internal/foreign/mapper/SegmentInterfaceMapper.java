@@ -113,7 +113,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         Accessors accessors = Accessors.of(type, layout);
 
         // Add affected memory for all the setters seen on this level
-        accessors.stream(k -> k.accessorType() == AccessorType.SETTER)
+        accessors.stream(AccessorType.SETTER)
                 .map(AffectedMemory::from)
                 .forEach(affectedMemories::add);
 
@@ -219,6 +219,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         ClassLoader loader = type.getClassLoader();
 
         // We need to materialize these methods so that the order is preserved
+        // during generation of the class.
         List<MethodInfo> virtualMethods = accessors.stream()
                 .filter(mi -> mi.key().valueType().isVirtual())
                 .toList();
@@ -291,13 +292,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                         MethodInfo a = virtualMethods.get(i);
                         switch (a.key().accessorType()) {
                             // @Override
-                            // <T extends Record> T gX(long c1, long c2, ..., long cN) {
+                            // <T> T gX(long c1, long c2, ..., long cN) {
                             //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
                             //     return (T) mh[x].invokeExact(segment, offset + elementOffset + indexOffset);
                             // }
                             case GETTER -> generateInvokeVirtualGetter(cb, classDesc, a, i);
                             // @Override
-                            // <T extends Record> void gX(T t) {
+                            // <T> void gX(T t) {
                             //     mh[x].invokeExact(segment, offset + elementOffset, t);
                             // }
                             case SETTER -> generateRecordSetter(cb, classDesc, a, i);
@@ -338,7 +339,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    List<MethodInfo> getters = accessors.stream(key -> key.accessorType()==AccessorType.GETTER)
+                    List<MethodInfo> getters = accessors.stream(AccessorType.GETTER)
                             .toList();
                     generateToString(cb, classDesc, getters);
                 });
@@ -352,7 +353,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                      ARRAY_INTERFACE_GETTER -> interfaceGetMethodHandleFor(a);
                                 case SCALAR_RECORD_GETTER,
                                      ARRAY_RECORD_GETTER    -> recordGetMethodHandleFor(a);
-                                case SCALAR_RECORD_SETTER   -> recordSetMethodHandleFor(a);
+                                case SCALAR_RECORD_SETTER,
+                                     ARRAY_RECORD_SETTER    -> recordSetMethodHandleFor(a);
                                 default -> throw new InternalError("Should not reach here " + a);
                             }
                     ).toList();
@@ -566,17 +568,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo) {
 
-        GroupLayout groupLayout = (GroupLayout) methodInfo.layoutInfo().arrayInfo()
-                .map(ArrayInfo::elementLayout)
-                .orElse(methodInfo.layoutInfo().layout());
-
         List<AffectedMemory> affectedElementMemories = new ArrayList<>();
 
         // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentInterfaceMapper<?> innerMapper = new SegmentInterfaceMapper<>(
                 lookup,
                 methodInfo.type(),
-                groupLayout,
+                methodInfo.targetLayout(),
                 affectedElementMemories);
 
         affectedElementMemories.stream()
@@ -588,14 +586,10 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private MethodHandle recordGetMethodHandleFor(MethodInfo methodInfo) {
 
-        GroupLayout groupLayout = (GroupLayout) methodInfo.layoutInfo().arrayInfo()
-                .map(ArrayInfo::elementLayout)
-                .orElse(methodInfo.layoutInfo().layout());
-
         // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
                 MapperUtil.castToRecordClass(methodInfo.type()),
-                groupLayout,
+                methodInfo.targetLayout(),
                 0, // The actual offset is added later at invocation
                 0);
 
@@ -608,7 +602,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
                 MapperUtil.castToRecordClass(methodInfo.type()),
-                (GroupLayout) methodInfo.layoutInfo().layout(),
+                methodInfo.targetLayout(),
                 0, // The actual offset is added later at invocation
                 0);
 
@@ -759,7 +753,10 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                       MethodInfo info,
                                       int boostrapIndex) {
         var name = info.method().getName();
-        var parameterDesc = desc(info.type());
+        // If it is an array, there is a number of long parameters
+        List<ClassDesc> parameterDesc = info.layoutInfo().arrayInfo()
+                .map(ai -> Stream.concat(ai.dimensions().stream().map(_ -> CD_long), Stream.of(desc(info.type()))).toList())
+                .orElse(List.of(desc(info.type())));
 
         DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
                 BSM_CLASS_DATA_AT,
@@ -771,8 +768,16 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                             .checkcast(desc(MethodHandle.class)) // MethodHandle
                             .aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
-                    offsetBlock(cob, classDesc, info.offset())
-                            .aload(1) // Record
+                    offsetBlock(cob, classDesc, info.offset());
+
+                    // Is this an array accessor?
+                    info.layoutInfo().arrayInfo().ifPresent(
+                            ai -> reduceArrayIndexes(cob, ai)
+                    );
+
+                    int valueSlotNo = (parameterDesc.size() - 1) * 2 + 1;
+                    cob
+                            .aload(valueSlotNo) // Record
                             .checkcast(desc(Record.class))
                             .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long, CD_Object))
                             .return_();

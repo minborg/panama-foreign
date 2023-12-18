@@ -44,6 +44,10 @@ final class Accessors {
                 .flatMap(Collection::stream);
     }
 
+    Stream<MethodInfo> stream(MethodInfo.AccessorType accessorType) {
+        return stream(key -> key.accessorType() == accessorType);
+    }
+
     Stream<MethodInfo> stream(Predicate<MethodInfo.Key> condition) {
         return Arrays.stream(MethodInfo.Key.values())
                 .filter(condition)

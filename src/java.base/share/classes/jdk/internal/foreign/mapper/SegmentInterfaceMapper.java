@@ -31,9 +31,7 @@ import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
 import jdk.internal.foreign.mapper.MethodInfo.AccessorType;
-import jdk.internal.foreign.mapper.MethodInfo.Cardinality;
 import jdk.internal.foreign.mapper.MethodInfo.Key;
-import jdk.internal.foreign.mapper.MethodInfo.ValueType;
 import jdk.internal.foreign.mapper.component.Util;
 
 import java.io.IOException;
@@ -45,7 +43,6 @@ import java.lang.constant.MethodTypeDesc;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
@@ -53,7 +50,6 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -61,6 +57,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -70,7 +67,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static java.lang.constant.ConstantDescs.*;
 import static jdk.internal.classfile.Classfile.*;
@@ -101,6 +97,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     private final MethodHandle segmentGetHandle;
     private final MethodHandle offsetGetHandle;
     private final List<AffectedMemory> affectedMemories;
+    private final Map<CacheKey, SegmentMapper<?>> subMappers;
 
     private SegmentInterfaceMapper(MethodHandles.Lookup lookup,
                                    Class<T> type,
@@ -110,6 +107,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.type = MapperUtil.requireImplementableInterfaceType(type);
         this.layout = layout;
         this.affectedMemories = affectedMemories;
+        this.subMappers = new HashMap<>();
         Accessors accessors = Accessors.of(type, layout);
 
         // Add affected memory for all the setters seen on this level
@@ -196,6 +194,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 "type=" + type + ", " +
                 "layout=" + layout + ", " +
                 "implClass=" + implClass + ", " +
+                "memoryChunks = " + affectedMemories.size() + ", " +
                 "getHandle=" + getHandle + ", " +
                 "setHandle=" + setHandle + ']';
     }
@@ -211,7 +210,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                     Function<? super R, ? extends T> fromMapper) {
         throw twoWayMappersUnsupported();
     }
-
 
     private Class<T> generateClass(Accessors accessors) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
@@ -299,9 +297,10 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                             case GETTER -> generateInvokeVirtualGetter(cb, classDesc, a, i);
                             // @Override
                             // <T> void gX(T t) {
-                            //     mh[x].invokeExact(segment, offset + elementOffset, t);
+                            //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
+                            //     mh[x].invokeExact(segment, offset + elementOffset + indexOffset, t);
                             // }
-                            case SETTER -> generateRecordSetter(cb, classDesc, a, i);
+                            case SETTER -> generateInvokeVirtualSetter(cb, classDesc, a, i);
                         }
                     }
 
@@ -382,7 +381,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     // Private methods and classes
 
-
     // (MemorySegment, long)Object
     private MethodHandle computeGetHandle() {
         try {
@@ -426,6 +424,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         }
     }
 
+    // Invoked reflectively
     void setAll(MemorySegment segment, long offset, T t) {
         MemorySegment srcSegment = segment(t)
                 .orElseThrow(SegmentInterfaceMapper::notImplType);
@@ -434,6 +433,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         MemorySegment.copy(srcSegment, srcOffset, segment, offset, layout().byteSize());
     }
 
+    // Invoked reflectively
     void setFragments(MemorySegment segment, long offset, T t, List<AffectedMemory> fragments) {
         MemorySegment srcSegment = segment(t)
                 .orElseThrow(SegmentInterfaceMapper::notImplType);
@@ -487,126 +487,33 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
-    private Map<Key, List<MethodInfo>> accessors() {
-        return Arrays.stream(type.getMethods())
-                .filter(m -> !Modifier.isStatic(m.getModifiers()))
-                .filter(m -> !m.isDefault())
-                .map(this::methodInfo)
-                .collect(Collectors.groupingBy(MethodInfo::key));
-    }
-
-    private MethodInfo methodInfo(Method method) {
-
-        AccessorType accessorType = isGetter(method)
-                ? AccessorType.GETTER
-                : AccessorType.SETTER;
-
-        Class<?> targetType = (accessorType == AccessorType.GETTER)
-                ? method.getReturnType()
-                : getterType(method);
-
-        ValueType valueType;
-        if (targetType.isPrimitive() || targetType.equals(MemorySegment.class)) {
-            valueType = ValueType.VALUE;
-        } else if (targetType.isInterface()) {
-            valueType = ValueType.INTERFACE;
-        } else if (targetType.isRecord()) {
-            valueType = ValueType.RECORD;
-        } else {
-            throw new IllegalArgumentException("Type " + targetType + " is neither a primitive value, an interface nor a record: " + method);
-        }
-
-        var elementPath = MemoryLayout.PathElement.groupElement(method.getName());
-        MemoryLayout element;
-        try {
-            element = layout.select(elementPath);
-        } catch (IllegalArgumentException iae) {
-            throw new IllegalArgumentException("Unable to resolve '" + method + "' in " + layout, iae);
-        }
-        var offset = layout.byteOffset(elementPath);
-
-        return switch (element) {
-            case ValueLayout vl -> {
-                if (!targetType.equals(vl.carrier())) {
-                    throw new IllegalArgumentException("The type " + targetType + " for method " + method +
-                            "does not match " + element);
-                }
-                yield new MethodInfo(Key.of(Cardinality.SCALAR, valueType, accessorType),
-                        method, targetType, LayoutInfo.of(vl), offset);
-            }
-            case GroupLayout gl ->
-                    new MethodInfo(Key.of(Cardinality.SCALAR, valueType, accessorType),
-                            method, targetType, LayoutInfo.of(gl), offset);
-            case SequenceLayout sl -> {
-                MethodInfo info = new MethodInfo(Key.of(Cardinality.ARRAY, valueType, accessorType)
-                        , method, targetType, LayoutInfo.of(sl), offset);
-                int noDimensions = info.layoutInfo().arrayInfo().orElseThrow().dimensions().size();
-                // The last parameter for a setter is the new value
-                int expectedParameterIndexCount = method.getParameterCount() - (accessorType == AccessorType.SETTER ? 1 : 0);
-                if (expectedParameterIndexCount != noDimensions) {
-                    throw new IllegalArgumentException(
-                            "Sequence layout has a dimension of " + noDimensions +
-                                    " and so, the method parameter count does not" +
-                                    " match for: " + method);
-                }
-                yield info;
-            }
-            default -> throw new IllegalArgumentException("Cannot map " + element + " for " + type);
-        };
-    }
-
-    static Class<?> getterType(Method method) {
-        if (method.getParameterCount() == 0) {
-            throw new IllegalArgumentException("A setter must take at least one argument: " + method);
-        }
-        return method.getParameterTypes()[method.getParameterCount() - 1];
-    }
-
-    static boolean isGetter(Method method) {
-        return method.getReturnType() != void.class;
-    }
-
     private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo) {
-
-        List<AffectedMemory> affectedElementMemories = new ArrayList<>();
-
-        // Todo: As the offset is zero, we can cache these mappers (per type and layout)
-        SegmentInterfaceMapper<?> innerMapper = new SegmentInterfaceMapper<>(
-                lookup,
-                methodInfo.type(),
-                methodInfo.targetLayout(),
-                affectedElementMemories);
-
-        affectedElementMemories.stream()
+        SegmentInterfaceMapper<?> innerMapper = (SegmentInterfaceMapper<?>) cachedInterfaceMapper(methodInfo);
+        innerMapper.affectedMemories.stream()
                 .map(am -> am.translate(methodInfo.offset()))
                 .forEach(affectedMemories::add);
-
         return innerMapper.getHandle();
     }
 
     private MethodHandle recordGetMethodHandleFor(MethodInfo methodInfo) {
-
-        // Todo: As the offset is zero, we can cache these mappers (per type and layout)
-        SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
-                MapperUtil.castToRecordClass(methodInfo.type()),
-                methodInfo.targetLayout(),
-                0, // The actual offset is added later at invocation
-                0);
-
-        return innerMapper.getHandle()
+        return cachedRecordMapper(methodInfo)
+                .getHandle()
                 .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
     }
 
     private MethodHandle recordSetMethodHandleFor(MethodInfo methodInfo) {
+        return cachedRecordMapper(methodInfo)
+                .setHandle();
+    }
 
-        // Todo: As the offset is zero, we can cache these mappers (per type and layout)
-        SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
-                MapperUtil.castToRecordClass(methodInfo.type()),
-                methodInfo.targetLayout(),
-                0, // The actual offset is added later at invocation
-                0);
+    private SegmentMapper<?> cachedInterfaceMapper(MethodInfo methodInfo) {
+        return subMappers.computeIfAbsent(CacheKey.of(methodInfo), _ ->
+                SegmentMapper.ofInterface(lookup, methodInfo.type(), methodInfo.targetLayout()));
+    }
 
-        return innerMapper.setHandle();
+    private SegmentMapper<?> cachedRecordMapper(MethodInfo methodInfo) {
+        return subMappers.computeIfAbsent(CacheKey.of(methodInfo), _ ->
+                SegmentMapper.ofRecord(lookup, MapperUtil.castToRecordClass(methodInfo.type()), methodInfo.targetLayout()));
     }
 
     private void generateValueGetter(ClassBuilder cb,
@@ -686,10 +593,10 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
 
-    private void generateRecordSetter(ClassBuilder cb,
-                                      ClassDesc classDesc,
-                                      MethodInfo info,
-                                      int boostrapIndex) {
+    private void generateInvokeVirtualSetter(ClassBuilder cb,
+                                             ClassDesc classDesc,
+                                             MethodInfo info,
+                                             int boostrapIndex) {
         var name = info.method().getName();
         List<ClassDesc> parameterDesc = parameterDesc(info);
 
@@ -854,9 +761,19 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
 
+    record CacheKey(Class<?> type,
+                   GroupLayout layout) {
+
+        static CacheKey of(MethodInfo methodInfo) {
+            return new CacheKey(methodInfo.type(), methodInfo.targetLayout().withoutName());
+        }
+
+    }
+
     // Used to keep track of which memory shards gets accessed
     // by setters. We need this when computing the setHandle
-    record AffectedMemory(long offset, long size) {
+    record AffectedMemory(long offset,
+                          long size) {
 
         AffectedMemory {
             requireNonNegative(offset);

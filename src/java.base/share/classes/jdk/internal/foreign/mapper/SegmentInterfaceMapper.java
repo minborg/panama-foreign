@@ -26,40 +26,28 @@
 package jdk.internal.foreign.mapper;
 
 import jdk.internal.ValueBased;
-import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.ClassHierarchyResolver;
-import jdk.internal.classfile.CodeBuilder;
-import jdk.internal.classfile.Label;
 import jdk.internal.foreign.mapper.MethodInfo.AccessorType;
 import jdk.internal.foreign.mapper.MethodInfo.Key;
 import jdk.internal.foreign.mapper.component.Util;
 
 import java.io.IOException;
 import java.lang.constant.ClassDesc;
-import java.lang.constant.DirectMethodHandleDesc;
-import java.lang.constant.DynamicCallSiteDesc;
-import java.lang.constant.DynamicConstantDesc;
-import java.lang.constant.MethodTypeDesc;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.invoke.StringConcatFactory;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -68,7 +56,6 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import static java.lang.constant.ConstantDescs.*;
 import static jdk.internal.classfile.Classfile.*;
 import static jdk.internal.foreign.layout.MemoryLayoutUtil.requireNonNegative;
 
@@ -80,14 +67,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
-    private static final ClassDesc VALUE_LAYOUTS_CLASS_DESC = desc(ValueLayout.class);
-    private static final ClassDesc MEMORY_SEGMENT_CLASS_DESC = desc(MemorySegment.class);
-
-    static final String SEGMENT_FIELD_NAME = "segment";
-    static final String OFFSET_FIELD_NAME = "offset";
-    public static final String SECRET_SEGMENT_METHOD_NAME = "$_$_$sEgMeNt$_$_$";
-    public static final String SECRET_OFFSET_METHOD_NAME = "$_$_$oFfSeT$_$_$";
-
     private final MethodHandles.Lookup lookup;
     private final Class<T> type;
     private final GroupLayout layout;
@@ -97,7 +76,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     private final MethodHandle segmentGetHandle;
     private final MethodHandle offsetGetHandle;
     private final List<AffectedMemory> affectedMemories;
-    private final Map<CacheKey, SegmentMapper<?>> subMappers;
+    private final MapperCache mapperCache;
 
     private SegmentInterfaceMapper(MethodHandles.Lookup lookup,
                                    Class<T> type,
@@ -107,7 +86,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.type = MapperUtil.requireImplementableInterfaceType(type);
         this.layout = layout;
         this.affectedMemories = affectedMemories;
-        this.subMappers = new HashMap<>();
+        this.mapperCache = MapperCache.of(lookup);
         Accessors accessors = Accessors.of(type, layout);
 
         // Add affected memory for all the setters seen on this level
@@ -126,9 +105,9 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.setHandle = computeSetHandle();
 
         try {
-            this.segmentGetHandle = lookup.unreflect(implClass.getMethod(SECRET_SEGMENT_METHOD_NAME))
+            this.segmentGetHandle = lookup.unreflect(implClass.getMethod(MapperUtil.SECRET_SEGMENT_METHOD_NAME))
                     .asType(MethodType.methodType(MemorySegment.class, Object.class));
-            this.offsetGetHandle = lookup.unreflect(implClass.getMethod(SECRET_OFFSET_METHOD_NAME))
+            this.offsetGetHandle = lookup.unreflect(implClass.getMethod(MapperUtil.SECRET_OFFSET_METHOD_NAME))
                     .asType(MethodType.methodType(long.class, Object.class));;
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
@@ -182,6 +161,10 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return OptionalLong.empty();
     }
 
+    List<AffectedMemory> affectedMemories() {
+        return affectedMemories;
+    }
+
     boolean isImplClass(T source) {
         // Implicit null check of source
         return implClass == source.getClass();
@@ -213,7 +196,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private Class<T> generateClass(Accessors accessors) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
-        ClassDesc interfaceClassDesc = desc(type);
         ClassLoader loader = type.getClassLoader();
 
         // We need to materialize these methods so that the order is preserved
@@ -224,51 +206,28 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
         byte[] bytes = of(ClassHierarchyResolverOption.of(ClassHierarchyResolver.ofClassLoading(loader)))
                 .build(classDesc, cb -> {
-                    // public final
-                    cb.withFlags(ACC_PUBLIC | ACC_FINAL | ACC_SUPER);
-                    // extends Object
-                    cb.withSuperclass(CD_Object);
-                    // implements "type"
-                    cb.withInterfaceSymbols(interfaceClassDesc);
-                    // private final MemorySegment $segment$;
-                    cb.withField(SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC, ACC_PRIVATE | ACC_FINAL);
-                    // private final long $offset$;
-                    cb.withField(OFFSET_FIELD_NAME, CD_long, ACC_PRIVATE | ACC_FINAL);
+                    ByteCodeGenerator generator = ByteCodeGenerator.of(type, cb);
 
-                    cb.withMethodBody(INIT_NAME, MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long), ACC_PUBLIC, cob -> {
-                        cob.aload(0)
-                                // Call Object's constructor
-                                .invokespecial(CD_Object, INIT_NAME, MTD_void, false)
-                                // Set "segment"
-                                .aload(0)
-                                .aload(1)
-                                .putfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                                // Set "offset"
-                                .aload(0)
-                                .lload(2)
-                                .putfield(classDesc, OFFSET_FIELD_NAME, CD_long)
-                                .return_();
-                    });
+                    // public final XxInterfaceMapper implements Xx {
+                    //     private final MemorySegment segment;
+                    //     private final long offset;
+                    generator.classDefinition();
 
+                    // void XxInterfaceMapper(MemorySegment segment, long offset) {
+                    //    this.segment = segment;
+                    //    this.offset = offset;
+                    // }
+                    generator.constructor();
 
                     // MemorySegment $_$_$sEgMeNt$_$_$() {
                     //     return segment;
                     // }
-                    cb.withMethodBody(SECRET_SEGMENT_METHOD_NAME, MethodTypeDesc.of(MEMORY_SEGMENT_CLASS_DESC), ACC_PUBLIC, cob ->
-                            cob.aload(0)
-                                    .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                                    .areturn()
-                    );
+                    generator.obscuredSegment();
 
                     // long $_$_$oFfSeT$_$_$() {
                     //     return offset;
                     // }
-                    cb.withMethodBody(SECRET_OFFSET_METHOD_NAME, MethodTypeDesc.of(CD_long), ACC_PUBLIC, cob ->
-                            cob.aload(0)
-                                    .getfield(classDesc, OFFSET_FIELD_NAME, CD_long)
-                                    .lreturn()
-                    );
-
+                    generator.obscuredOffset();
 
                     // @Override
                     // <t> gX(c1, c2, ..., cN) {
@@ -276,7 +235,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //     return segment.get(JAVA_t, offset + elementOffset + indexOffset);
                     // }
                     accessors.stream(Set.of(Key.SCALAR_VALUE_GETTER, Key.ARRAY_VALUE_GETTER))
-                            .forEach(a -> generateValueGetter(cb, classDesc, a));
+                            .forEach(generator::valueGetter);
 
                     // @Override
                     // void gX(c1, c2, ..., cN, <t> t) {
@@ -284,7 +243,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //     segment.set(JAVA_t, offset + elementOffset + indexOffset, t);
                     // }
                     accessors.stream(Set.of(Key.SCALAR_VALUE_SETTER, Key.ARRAY_VALUE_SETTER))
-                            .forEach(a -> generateValueSetter(cb, classDesc, a));
+                            .forEach(generator::valueSetter);
 
                     for (int i = 0; i < virtualMethods.size(); i++) {
                         MethodInfo a = virtualMethods.get(i);
@@ -294,13 +253,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                             //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
                             //     return (T) mh[x].invokeExact(segment, offset + elementOffset + indexOffset);
                             // }
-                            case GETTER -> generateInvokeVirtualGetter(cb, classDesc, a, i);
+                            case GETTER -> generator.invokeVirtualGetter(a, i);
                             // @Override
                             // <T> void gX(T t) {
                             //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
                             //     mh[x].invokeExact(segment, offset + elementOffset + indexOffset, t);
                             // }
-                            case SETTER -> generateInvokeVirtualSetter(cb, classDesc, a, i);
+                            case SETTER -> generator.invokeVirtualSetter(a, i);
                         }
                     }
 
@@ -308,31 +267,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     // int hashCode() {
                     //     return System.identityHashCode(this);
                     // }
-                    cb.withMethodBody("hashCode", MethodTypeDesc.of(CD_int), ACC_PUBLIC | ACC_FINAL, cob ->
-                            cob.aload(0)
-                                    .invokestatic(desc(System.class), "identityHashCode", MethodTypeDesc.of(CD_int, CD_Object))
-                                    .ireturn()
-                    );
+                    generator.hashCode_();
 
                     // @Override
                     // boolean equals(Object o) {
                     //     return this == o;
                     // }
-                    cb.withMethodBody("equals", MethodTypeDesc.of(CD_boolean, CD_Object), ACC_PUBLIC | ACC_FINAL, cob -> {
-                                Label l0 = cob.newLabel();
-                                Label l1 = cob.newLabel();
-                                cob.aload(0)
-                                        .aload(1)
-                                        .if_acmpne(l0)
-                                        .iconst_1()
-                                        .goto_(l1)
-                                        .labelBinding(l0)
-                                        .iconst_0()
-                                        .labelBinding(l1)
-                                        .ireturn()
-                                ;
-                            }
-                    );
+                    generator.equals_();
 
                     //  @Override
                     //  public String toString() {
@@ -340,20 +281,17 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  }
                     List<MethodInfo> getters = accessors.stream(AccessorType.GETTER)
                             .toList();
-                    generateToString(cb, classDesc, getters);
+                    generator.toString_(getters);
                 });
         try {
-
-            // Todo: These handles can be de-duplicated
-
             List<MethodHandle> classData = virtualMethods.stream()
                     .map(a -> switch (a.key()) {
                                 case SCALAR_INTERFACE_GETTER,
-                                     ARRAY_INTERFACE_GETTER -> interfaceGetMethodHandleFor(a);
+                                     ARRAY_INTERFACE_GETTER -> mapperCache.interfaceGetMethodHandleFor(a, affectedMemories::add);
                                 case SCALAR_RECORD_GETTER,
-                                     ARRAY_RECORD_GETTER    -> recordGetMethodHandleFor(a);
+                                     ARRAY_RECORD_GETTER    -> mapperCache.recordGetMethodHandleFor(a);
                                 case SCALAR_RECORD_SETTER,
-                                     ARRAY_RECORD_SETTER    -> recordSetMethodHandleFor(a);
+                                     ARRAY_RECORD_SETTER    -> mapperCache.recordSetMethodHandleFor(a);
                                 default -> throw new InternalError("Should not reach here " + a);
                             }
                     ).toList();
@@ -396,7 +334,8 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     // (MemorySegment, long, T)void
     // This method will return a MethodHandle that will update memory that
-    // is mapped to a setter only.
+    // is mapped to a setter. Memory that is not mapped to a setter will be
+    // unaffected.
     private MethodHandle computeSetHandle() {
         List<AffectedMemory> fragments = affectedMemories.stream()
                 .sorted(Comparator.comparingLong(AffectedMemory::offset))
@@ -487,6 +426,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     }
 
+/*    // Begin Caching
     private MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo) {
         SegmentInterfaceMapper<?> innerMapper = (SegmentInterfaceMapper<?>) cachedInterfaceMapper(methodInfo);
         innerMapper.affectedMemories.stream()
@@ -516,251 +456,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 SegmentMapper.ofRecord(lookup, MapperUtil.castToRecordClass(methodInfo.type()), methodInfo.targetLayout()));
     }
 
-    private void generateValueGetter(ClassBuilder cb,
-                                     ClassDesc classDesc,
-                                     MethodInfo info) {
-
-        String name = info.method().getName();
-        ClassDesc returnDesc = desc(info.type());
-        ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
-
-        var getDesc = MethodTypeDesc.of(returnDesc, scalarInfo.valueLayoutDesc(), CD_long);
-        List<ClassDesc> parameterDesc = parameterDesc(info);
-
-        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc, parameterDesc), ACC_PUBLIC, cob -> {
-                    cob.aload(0)
-                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
-                    offsetBlock(cob, info, classDesc)
-                            .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "get", getDesc);
-                    // ireturn(), dreturn() etc.
-                    info.layoutInfo().returnOp().accept(cob);
-                }
-        );
-    }
-
-    private void generateValueSetter(ClassBuilder cb,
-                                     ClassDesc classDesc,
-                                     MethodInfo info) {
-
-        String name = info.method().getName();
-        List<ClassDesc> parameterDesc = parameterDesc(info);
-
-        ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
-
-        var setDesc = MethodTypeDesc.of(CD_void, scalarInfo.valueLayoutDesc(), CD_long, desc(info.type()));
-
-        cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
-                    cob.aload(0)
-                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
-                    offsetBlock(cob, info, classDesc);
-                    // iload, dload, etc.
-                    info.layoutInfo().paramOp().accept(cob, valueSlotNumber(parameterDesc.size()));
-                    cob.invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "set", setDesc)
-                            .return_();
-                }
-        );
-    }
-
-    private void generateInvokeVirtualGetter(ClassBuilder cb,
-                                             ClassDesc classDesc,
-                                             MethodInfo info,
-                                             int boostrapIndex) {
-
-        var name = info.method().getName();
-        var returnDesc = desc(info.type());
-
-        DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
-                BSM_CLASS_DATA_AT,
-                boostrapIndex
-        );
-
-        List<ClassDesc> parameterDesc = parameterDesc(info);
-
-        cb.withMethodBody(name, MethodTypeDesc.of(returnDesc, parameterDesc), ACC_PUBLIC, cob -> {
-                    cob.ldc(desc)
-                            .checkcast(desc(MethodHandle.class)) // MethodHandle
-                            .aload(0)
-                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
-
-                    offsetBlock(cob, info, classDesc)
-                            .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_Object, MEMORY_SEGMENT_CLASS_DESC, CD_long))
-                            .checkcast(returnDesc)
-                            .areturn();
-                }
-        );
-    }
-
-
-    private void generateInvokeVirtualSetter(ClassBuilder cb,
-                                             ClassDesc classDesc,
-                                             MethodInfo info,
-                                             int boostrapIndex) {
-        var name = info.method().getName();
-        List<ClassDesc> parameterDesc = parameterDesc(info);
-
-        DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
-                BSM_CLASS_DATA_AT,
-                boostrapIndex
-        );
-
-        cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
-                    cob.ldc(desc)
-                            .checkcast(desc(MethodHandle.class)) // MethodHandle
-                            .aload(0)
-                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
-                    offsetBlock(cob, info, classDesc)
-                            .aload(valueSlotNumber(parameterDesc.size())) // Record
-                            .checkcast(desc(Record.class))
-                            .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long, CD_Object))
-                            .return_();
-                }
-        );
-    }
-
-    private static int valueSlotNumber(int parameters) {
-        return (parameters - 1) * 2 + 1;
-    }
-
-    private static List<ClassDesc> parameterDesc(MethodInfo info) {
-        // If it is an array, there is a number of long parameters
-        List<ClassDesc> desc = info.layoutInfo().arrayInfo()
-                .map(ai -> ai.dimensions().stream().map(_ -> CD_long).toList())
-                .orElse(Collections.emptyList());
-
-        if (info.key().accessorType() == AccessorType.SETTER) {
-            // Add the trailing setter type
-            desc = new ArrayList<>(desc);
-            desc.add(desc(info.type()));
-        }
-        return List.copyOf(desc);
-    }
-
-    // Generate code that calculates:
-    // long indexOffset = f(dimensions, c1, c2, ..., long cN); // If an array, otherwise 0
-    // "this.offset + layoutOffset + indexOffset"
-    private static CodeBuilder offsetBlock(CodeBuilder cob,
-                                           MethodInfo info,
-                                           ClassDesc classDesc) {
-        cob.aload(0)
-                .getfield(classDesc, OFFSET_FIELD_NAME, CD_long); // long
-
-        if (info.offset() != 0) {
-            cob.ldc(info.offset())
-                    .ladd();
-        }
-
-        // If this is an array accessor, we need to
-        // compute the adjusted indices offset
-        info.layoutInfo().arrayInfo().ifPresent(
-                ai -> reduceArrayIndexes(cob, ai)
-        );
-
-        return cob;
-    }
-
-    // Example:
-    //   The dimensions are [3, 4] and the element byte size is 8 bytes
-    //   reduce(2, 3) -> 2 * 4 * 8 + 3 * 8 = 88
-    // public static long reduce(long i1, long i2) {
-    //     long offset = Objects.checkIndex(i1, 3) * (8 * 4) +
-    //     Objects.checkIndex(i2, 4) * 8;
-    //     return offset;
-    // }
-    static void reduceArrayIndexes(CodeBuilder cob,
-                            ArrayInfo arrayInfo) {
-        long elementByteSize = arrayInfo.elementLayout().byteSize();
-        // Check parameters and push scaled offsets on the stack
-        for (int i = 0; i < arrayInfo.dimensions().size(); i++) {
-            long dimension = arrayInfo.dimensions().get(i);
-            long factor = arrayInfo.dimensions().stream()
-                    .skip(i + 1)
-                    .reduce(elementByteSize, Math::multiplyExact);
-
-            cob.lload(1 + i * 2)
-                    .ldc(dimension)
-                    .invokestatic(desc(Objects.class), "checkIndex", MethodTypeDesc.of(CD_long, CD_long, CD_long))
-                    .ldc(factor)
-                    .lmul();
-        }
-        // Sum their values (including the value that existed *before* this method was invoked)
-        for (int i = 0; i < arrayInfo.dimensions().size(); i++) {
-            cob.ladd();
-        }
-    }
-
-
-    private void generateToString(ClassBuilder cb,
-                                  ClassDesc classDesc,
-                                  List<MethodInfo> getters) {
-
-        // We want the components to appear in the order reported by Class::getMethods
-        // So, we first construct a map that we can use to lookup MethodInfo objects
-        Map<Method, MethodInfo> methods = getters.stream()
-                .collect(Collectors.toMap(MethodInfo::method, Function.identity()));
-        List<MethodInfo> sortedGetters = Arrays.stream(type.getMethods())
-                .map(methods::get)
-                .filter(Objects::nonNull) // Unmapped methods discarded (e.g. static methods)
-                .toList();
-
-        // Foo[g0()=\u0001, g1()=\u0001, ...]
-        var recipe = sortedGetters.stream()
-                .map(m -> m.layoutInfo().arrayInfo()
-                        .map(ai -> String.format("%s()=%s%s", m.method().getName(), m.type().getSimpleName(), ai.dimensions()))
-                        .orElse(String.format("%s()=\u0001", m.method().getName()))
-                )
-                .collect(Collectors.joining(", ", type.getSimpleName() + "[", "]"));
-
-        List<MethodInfo> nonArrayGetters = sortedGetters.stream()
-                .filter(i -> i.layoutInfo().arrayInfo().isEmpty())
-                .toList();
-
-        DirectMethodHandleDesc bootstrap = ofCallsiteBootstrap(
-                desc(StringConcatFactory.class),
-                "makeConcatWithConstants",
-                CD_CallSite,
-                CD_String, CD_Object.arrayType()
-        );
-
-        List<ClassDesc> getDescriptions = classDescs(nonArrayGetters);
-
-        DynamicCallSiteDesc desc = DynamicCallSiteDesc.of(
-                bootstrap,
-                "toString",
-                MethodTypeDesc.of(CD_String, getDescriptions), // String, g0, g1, ...
-                recipe
-        );
-
-        cb.withMethodBody("toString",
-                MethodTypeDesc.of(CD_String),
-                ACC_PUBLIC | ACC_FINAL,
-                cob -> {
-                    for (int i = 0; i < nonArrayGetters.size(); i++) {
-                        var name = nonArrayGetters.get(i).method().getName();
-                        cob.aload(0);
-                        // Method gi:()?
-                        cob.invokevirtual(classDesc, name, MethodTypeDesc.of(getDescriptions.get(i)));
-                    }
-                    cob.invokedynamic(desc);
-                    cob.areturn();
-                });
-
-    }
-
-    private static List<ClassDesc> classDescs(List<MethodInfo> methods) {
-        return methods.stream()
-                .map(MethodInfo::type)
-                .map(SegmentInterfaceMapper::desc)
-                .toList();
-    }
-
-    static ClassDesc desc(Class<?> clazz) {
-        return clazz.describeConstable()
-                .orElseThrow();
-    }
-
-
     record CacheKey(Class<?> type,
                    GroupLayout layout) {
 
@@ -769,6 +464,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         }
 
     }
+    // End: Caching*/
 
     // Used to keep track of which memory shards gets accessed
     // by setters. We need this when computing the setHandle

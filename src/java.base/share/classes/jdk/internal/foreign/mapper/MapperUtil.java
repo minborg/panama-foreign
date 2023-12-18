@@ -27,6 +27,7 @@ package jdk.internal.foreign.mapper;
 
 import sun.security.action.GetPropertyAction;
 
+import java.lang.constant.ClassDesc;
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.util.Objects;
@@ -38,6 +39,9 @@ public final class MapperUtil {
 
     private static final String DEBUG =
             GetPropertyAction.privilegedGetProperty("java.lang.foreign.mapper.debug", "");
+
+    public static final String SECRET_SEGMENT_METHOD_NAME = "$_$_$sEgMeNt$_$_$";
+    public static final String SECRET_OFFSET_METHOD_NAME = "$_$_$oFfSeT$_$_$";
 
     public static boolean isDebug() {
         return !DEBUG.isEmpty();
@@ -77,6 +81,11 @@ public final class MapperUtil {
     @SuppressWarnings("unchecked")
     public static <T extends Record> Class<T> castToRecordClass(Class<?> clazz) {
         return (Class<T>) clazz;
+    }
+
+    public static ClassDesc desc(Class<?> clazz) {
+        return clazz.describeConstable()
+                .orElseThrow();
     }
 
     public static Object evalWithMemorySegmentAndOffset(MethodHandle mh, MemorySegment segment, long offset) {

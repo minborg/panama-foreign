@@ -21,12 +21,6 @@
  * questions.
  */
 
-/*
- * @test
- * @run junit/othervm --enable-native-access=ALL-UNNAMED TestSegmentRecordMapperGetOperations
- */
-// options: --enable-preview -source ${jdk.version} -Xlint:preview
-
 package jdk.internal.foreign.mapper;
 
 import java.lang.foreign.GroupLayout;

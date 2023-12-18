@@ -3,6 +3,7 @@ package jdk.internal.foreign.mapper;
 import java.lang.foreign.GroupLayout;
 import java.lang.reflect.Method;
 
+// Todo: Rename this class
 record MethodInfo(Key key,
                   Method method,
                   Class<?> type,

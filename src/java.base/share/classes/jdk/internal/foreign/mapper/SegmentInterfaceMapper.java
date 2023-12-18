@@ -618,24 +618,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
 
         var getDesc = MethodTypeDesc.of(returnDesc, scalarInfo.valueLayoutDesc(), CD_long);
-
-        // If it is an array, there is a number of long parameters
-        List<ClassDesc> parameterDesc = info.layoutInfo().arrayInfo()
-                .map(ai -> ai.dimensions().stream().map(_ -> CD_long).toList())
-                .orElse(Collections.emptyList());
+        List<ClassDesc> parameterDesc = parameterDesc(info);
 
         cb.withMethodBody(name, MethodTypeDesc.of(returnDesc, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
                             .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
-                    offsetBlock(cob, classDesc, info.offset());
-
-                    // Is this an array accessor?
-                    info.layoutInfo().arrayInfo().ifPresent(
-                            ai -> reduceArrayIndexes(cob, ai)
-                    );
-
-                    cob
+                    offsetBlock(cob, info, classDesc)
                             .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "get", getDesc);
                     // ireturn(), dreturn() etc.
                     info.layoutInfo().returnOp().accept(cob);
@@ -648,11 +637,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                                      MethodInfo info) {
 
         String name = info.method().getName();
-
-        // If it is an array, there is a number of long parameters
-        List<ClassDesc> parameterDesc = info.layoutInfo().arrayInfo()
-                .map(ai -> Stream.concat(ai.dimensions().stream().map(_ -> CD_long), Stream.of(desc(info.type()))).toList())
-                .orElse(List.of(desc(info.type())));
+        List<ClassDesc> parameterDesc = parameterDesc(info);
 
         ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
 
@@ -662,21 +647,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
                             .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
-                    offsetBlock(cob, classDesc, info.offset());
-
-                    // Is this an array accessor?
-                    info.layoutInfo().arrayInfo().ifPresent(
-                            ai -> reduceArrayIndexes(cob, ai)
-                    );
-
-                    int valueSlotNo = (parameterDesc.size() - 1) * 2 + 1;
+                    offsetBlock(cob, info, classDesc);
                     // iload, dload, etc.
-                    info.layoutInfo().paramOp().accept(cob, valueSlotNo);
+                    info.layoutInfo().paramOp().accept(cob, valueSlotNumber(parameterDesc.size()));
                     cob.invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "set", setDesc)
                             .return_();
                 }
         );
-
     }
 
     private void generateInvokeVirtualGetter(ClassBuilder cb,
@@ -692,10 +669,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 boostrapIndex
         );
 
-        // If it is an array, there is a number of long parameters
-        List<ClassDesc> parameterDesc = info.layoutInfo().arrayInfo()
-                .map(ai -> ai.dimensions().stream().map(_ -> CD_long).toList())
-                .orElse(Collections.emptyList());
+        List<ClassDesc> parameterDesc = parameterDesc(info);
 
         cb.withMethodBody(name, MethodTypeDesc.of(returnDesc, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.ldc(desc)
@@ -703,19 +677,80 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                             .aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
 
-                    offsetBlock(cob, classDesc, info.offset());
-
-                    // Is this an array accessor?
-                    info.layoutInfo().arrayInfo().ifPresent(
-                            ai -> reduceArrayIndexes(cob, ai)
-                    );
-
-                    cob
+                    offsetBlock(cob, info, classDesc)
                             .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_Object, MEMORY_SEGMENT_CLASS_DESC, CD_long))
                             .checkcast(returnDesc)
                             .areturn();
                 }
         );
+    }
+
+
+    private void generateRecordSetter(ClassBuilder cb,
+                                      ClassDesc classDesc,
+                                      MethodInfo info,
+                                      int boostrapIndex) {
+        var name = info.method().getName();
+        List<ClassDesc> parameterDesc = parameterDesc(info);
+
+        DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
+                BSM_CLASS_DATA_AT,
+                boostrapIndex
+        );
+
+        cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
+                    cob.ldc(desc)
+                            .checkcast(desc(MethodHandle.class)) // MethodHandle
+                            .aload(0)
+                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
+                    offsetBlock(cob, info, classDesc)
+                            .aload(valueSlotNumber(parameterDesc.size())) // Record
+                            .checkcast(desc(Record.class))
+                            .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long, CD_Object))
+                            .return_();
+                }
+        );
+    }
+
+    private static int valueSlotNumber(int parameters) {
+        return (parameters - 1) * 2 + 1;
+    }
+
+    private static List<ClassDesc> parameterDesc(MethodInfo info) {
+        // If it is an array, there is a number of long parameters
+        List<ClassDesc> desc = info.layoutInfo().arrayInfo()
+                .map(ai -> ai.dimensions().stream().map(_ -> CD_long).toList())
+                .orElse(Collections.emptyList());
+
+        if (info.key().accessorType() == AccessorType.SETTER) {
+            // Add the trailing setter type
+            desc = new ArrayList<>(desc);
+            desc.add(desc(info.type()));
+        }
+        return List.copyOf(desc);
+    }
+
+    // Generate code that calculates:
+    // long indexOffset = f(dimensions, c1, c2, ..., long cN); // If an array, otherwise 0
+    // "this.offset + layoutOffset + indexOffset"
+    private static CodeBuilder offsetBlock(CodeBuilder cob,
+                                           MethodInfo info,
+                                           ClassDesc classDesc) {
+        cob.aload(0)
+                .getfield(classDesc, OFFSET_FIELD_NAME, CD_long); // long
+
+        if (info.offset() != 0) {
+            cob.ldc(info.offset())
+                    .ladd();
+        }
+
+        // If this is an array accessor, we need to
+        // compute the adjusted indices offset
+        info.layoutInfo().arrayInfo().ifPresent(
+                ai -> reduceArrayIndexes(cob, ai)
+        );
+
+        return cob;
     }
 
     // Example:
@@ -726,7 +761,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     //     Objects.checkIndex(i2, 4) * 8;
     //     return offset;
     // }
-    void reduceArrayIndexes(CodeBuilder cob,
+    static void reduceArrayIndexes(CodeBuilder cob,
                             ArrayInfo arrayInfo) {
         long elementByteSize = arrayInfo.elementLayout().byteSize();
         // Check parameters and push scaled offsets on the stack
@@ -748,56 +783,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         }
     }
 
-    private void generateRecordSetter(ClassBuilder cb,
-                                      ClassDesc classDesc,
-                                      MethodInfo info,
-                                      int boostrapIndex) {
-        var name = info.method().getName();
-        // If it is an array, there is a number of long parameters
-        List<ClassDesc> parameterDesc = info.layoutInfo().arrayInfo()
-                .map(ai -> Stream.concat(ai.dimensions().stream().map(_ -> CD_long), Stream.of(desc(info.type()))).toList())
-                .orElse(List.of(desc(info.type())));
-
-        DynamicConstantDesc<MethodHandle> desc = DynamicConstantDesc.of(
-                BSM_CLASS_DATA_AT,
-                boostrapIndex
-        );
-
-        cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
-                    cob.ldc(desc)
-                            .checkcast(desc(MethodHandle.class)) // MethodHandle
-                            .aload(0)
-                            .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC); // MemorySegment
-                    offsetBlock(cob, classDesc, info.offset());
-
-                    // Is this an array accessor?
-                    info.layoutInfo().arrayInfo().ifPresent(
-                            ai -> reduceArrayIndexes(cob, ai)
-                    );
-
-                    int valueSlotNo = (parameterDesc.size() - 1) * 2 + 1;
-                    cob
-                            .aload(valueSlotNo) // Record
-                            .checkcast(desc(Record.class))
-                            .invokevirtual(CD_MethodHandle, "invokeExact", MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long, CD_Object))
-                            .return_();
-                }
-        );
-    }
-
-    // Generate code that calculates "this.offset + layoutOffset"
-    private static CodeBuilder offsetBlock(CodeBuilder cob,
-                                           ClassDesc classDesc,
-                                           long layoutOffset) {
-        cob.aload(0)
-                .getfield(classDesc, OFFSET_FIELD_NAME, CD_long); // long
-
-        if (layoutOffset != 0) {
-            cob.ldc(layoutOffset)
-                    .ladd();
-        }
-        return cob;
-    }
 
     private void generateToString(ClassBuilder cb,
                                   ClassDesc classDesc,
@@ -867,6 +852,60 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return clazz.describeConstable()
                 .orElseThrow();
     }
+
+
+    // Used to keep track of which memory shards gets accessed
+    // by setters. We need this when computing the setHandle
+    record AffectedMemory(long offset, long size) {
+
+        AffectedMemory {
+            requireNonNegative(offset);
+            requireNonNegative(size);
+        }
+
+        static AffectedMemory from(MethodInfo mi) {
+            return new AffectedMemory(mi.offset(), mi.layoutInfo().layout().byteSize());
+        }
+
+        AffectedMemory translate(long delta) {
+            return new AffectedMemory(offset() + delta, size());
+        }
+
+        static List<AffectedMemory> coalesce(List<AffectedMemory> items) {
+            List<AffectedMemory> result = new ArrayList<>();
+            int i = 0;
+            for ( ; i<items.size();i++) {
+                AffectedMemory current = items.get(i);
+                for (int j = i + 1; j < result.size(); j++) {
+                    AffectedMemory next = items.get(j);
+                    if (current.isBefore(next)) {
+                        current = current.merge(next);
+                    } else {
+                        break;
+                    }
+                }
+                result.add(current);
+            }
+            return result;
+        }
+
+        private boolean isBefore(AffectedMemory other) {
+            return offset + size == other.offset();
+        }
+
+        private AffectedMemory merge(AffectedMemory other) {
+            return new AffectedMemory(offset, size + other.size());
+        }
+
+    }
+
+    public static <T> SegmentInterfaceMapper<T> create(MethodHandles.Lookup lookup,
+                                                       Class<T> type,
+                                                       GroupLayout layout) {
+        return new SegmentInterfaceMapper<>(lookup, type, layout, new ArrayList<>());
+    }
+
+    // Mapping
 
     /**
      * This class models composed record mappers.
@@ -984,52 +1023,4 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return new UnsupportedOperationException("Two-way mappers are not supported for interface mappers");
     }
 
-    record AffectedMemory(long offset, long size){
-
-        AffectedMemory {
-            requireNonNegative(offset);
-            requireNonNegative(size);
-        }
-
-        static AffectedMemory from(MethodInfo mi) {
-            return new AffectedMemory(mi.offset(), mi.layoutInfo().layout().byteSize());
-        }
-
-        AffectedMemory translate(long delta) {
-            return new AffectedMemory(offset() + delta, size());
-        }
-
-        static List<AffectedMemory> coalesce(List<AffectedMemory> items) {
-            List<AffectedMemory> result = new ArrayList<>();
-            int i = 0;
-            for ( ; i<items.size();i++) {
-                AffectedMemory current = items.get(i);
-                for (int j = i + 1; j < result.size(); j++) {
-                    AffectedMemory next = items.get(j);
-                    if (current.isBefore(next)) {
-                        current = current.merge(next);
-                    } else {
-                        break;
-                    }
-                }
-                result.add(current);
-            }
-            return result;
-        }
-
-        private boolean isBefore(AffectedMemory other) {
-            return offset + size == other.offset();
-        }
-
-        private AffectedMemory merge(AffectedMemory other) {
-            return new AffectedMemory(offset, size + other.size());
-        }
-
-    }
-
-    public static <T> SegmentInterfaceMapper<T> create(MethodHandles.Lookup lookup,
-                                                       Class<T> type,
-                                                       GroupLayout layout) {
-        return new SegmentInterfaceMapper<>(lookup, type, layout, new ArrayList<>());
-    }
 }

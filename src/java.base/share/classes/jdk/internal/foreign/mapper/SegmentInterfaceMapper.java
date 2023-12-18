@@ -30,10 +30,10 @@ import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
-import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.AccessorType;
-import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.Cardinality;
-import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.Key;
-import jdk.internal.foreign.mapper.SegmentInterfaceMapper.MethodInfo.ValueType;
+import jdk.internal.foreign.mapper.MethodInfo.AccessorType;
+import jdk.internal.foreign.mapper.MethodInfo.Cardinality;
+import jdk.internal.foreign.mapper.MethodInfo.Key;
+import jdk.internal.foreign.mapper.MethodInfo.ValueType;
 import jdk.internal.foreign.mapper.component.Util;
 
 import java.io.IOException;
@@ -59,7 +59,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -68,9 +67,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.ObjIntConsumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -113,23 +110,22 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         this.type = MapperUtil.requireImplementableInterfaceType(type);
         this.layout = layout;
         this.affectedMemories = affectedMemories;
-        Map<Key, List<MethodInfo>> accessors = accessors();
+        Accessors accessors = Accessors.of(type, layout);
 
         // Add affected memory for all the setters seen on this level
-        getOrEmpty(accessors, k -> k.accessorType() == AccessorType.SETTER)
+        accessors.stream(k -> k.accessorType() == AccessorType.SETTER)
                 .map(AffectedMemory::from)
                 .forEach(affectedMemories::add);
 
-        List<MethodInfo> interfaceSetters = getOrEmpty(accessors, Set.of(Key.SCALAR_INTERFACE_SETTER, Key.ARRAY_INTERFACE_SETTER))
+        List<MethodInfo> interfaceSetters = accessors.stream(Set.of(Key.SCALAR_INTERFACE_SETTER, Key.ARRAY_INTERFACE_SETTER))
                 .toList();
         if (!interfaceSetters.isEmpty()) {
             throw new IllegalArgumentException("Setters cannot take an interface as a parameter: " + interfaceSetters);
         }
         assertMappingsCorrectAndTotal(type, layout, accessors);
         this.implClass = generateClass(accessors);
-        Handles handles = handles(accessors);
-        this.getHandle = handles.getHandle();
-        this.setHandle = handles.setHandle();
+        this.getHandle = computeGetHandle();
+        this.setHandle = computeSetHandle();
 
         try {
             this.segmentGetHandle = lookup.unreflect(implClass.getMethod(SECRET_SEGMENT_METHOD_NAME))
@@ -217,15 +213,14 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
 
-    private Class<T> generateClass(Map<Key, List<MethodInfo>> accessors) {
+    private Class<T> generateClass(Accessors accessors) {
         ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
         ClassDesc interfaceClassDesc = desc(type);
         ClassLoader loader = type.getClassLoader();
 
-        // We need to materialize these methods so that order is preserved
-        List<MethodInfo> virtualMethods = accessors.values().stream()
-                .flatMap(Collection::stream)
-                .filter(mi -> mi.key.valueType().isVirtual())
+        // We need to materialize these methods so that the order is preserved
+        List<MethodInfo> virtualMethods = accessors.stream()
+                .filter(mi -> mi.key().valueType().isVirtual())
                 .toList();
 
         byte[] bytes = of(ClassHierarchyResolverOption.of(ClassHierarchyResolver.ofClassLoading(loader)))
@@ -281,7 +276,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
                     //     return segment.get(JAVA_t, offset + elementOffset + indexOffset);
                     // }
-                    getOrEmpty(accessors, Set.of(Key.SCALAR_VALUE_GETTER, Key.ARRAY_VALUE_GETTER))
+                    accessors.stream(Set.of(Key.SCALAR_VALUE_GETTER, Key.ARRAY_VALUE_GETTER))
                             .forEach(a -> generateValueGetter(cb, classDesc, a));
 
                     // @Override
@@ -289,7 +284,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
                     //     segment.set(JAVA_t, offset + elementOffset + indexOffset, t);
                     // }
-                    getOrEmpty(accessors, Set.of(Key.SCALAR_VALUE_SETTER, Key.ARRAY_VALUE_SETTER))
+                    accessors.stream(Set.of(Key.SCALAR_VALUE_SETTER, Key.ARRAY_VALUE_SETTER))
                             .forEach(a -> generateValueSetter(cb, classDesc, a));
 
                     for (int i = 0; i < virtualMethods.size(); i++) {
@@ -343,7 +338,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    List<MethodInfo> getters = getOrEmpty(accessors, key -> key.accessorType()==AccessorType.GETTER)
+                    List<MethodInfo> getters = accessors.stream(key -> key.accessorType()==AccessorType.GETTER)
                             .toList();
                     generateToString(cb, classDesc, getters);
                 });
@@ -385,36 +380,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     // Private methods and classes
 
-    static List<MethodInfo> getOrEmpty(Map<Key, List<MethodInfo>> map, Key key) {
-        return map.getOrDefault(key, Collections.emptyList());
-    }
-
-    static Stream<MethodInfo> getOrEmpty(Map<Key, List<MethodInfo>> map, Set<Key> set) {
-        return set.stream()
-                .map(map::get)
-                .filter(Objects::nonNull)
-                .flatMap(Collection::stream);
-    }
-
-    static Stream<MethodInfo> getOrEmpty(Map<Key, List<MethodInfo>> map, Predicate<Key> condition) {
-        return Arrays.stream(Key.values())
-                .filter(condition)
-                .map(map::get)
-                .filter(Objects::nonNull)
-                .flatMap(Collection::stream);
-    }
-
-    // This method is using a partially initialized mapper
-    private Handles handles(Map<Key, List<MethodInfo>> accessors) {
-
-        // (MemorySegment, long)Object
-        MethodHandle getHandle = computeGetHandle();
-
-        // (MemorySegment, long, T)void
-        MethodHandle setHandle = computeSetHandle();
-
-        return new Handles(getHandle, setHandle);
-    }
 
     // (MemorySegment, long)Object
     private MethodHandle computeGetHandle() {
@@ -483,13 +448,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
     private static void assertMappingsCorrectAndTotal(Class<?> type,
                                                       GroupLayout layout,
-                                                      Map<Key, List<MethodInfo>> accessors) {
+                                                      Accessors accessors) {
         var nameMappingCounts = layout.memberLayouts().stream()
                 .map(MemoryLayout::name)
                 .flatMap(Optional::stream)
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
 
-        List<MethodInfo> allMethods = getOrEmpty(accessors, k -> true).toList();
+        List<MethodInfo> allMethods = accessors.stream().toList();
 
         // Make sure we have all components distinctly mapped
         for (MethodInfo component : allMethods) {
@@ -615,7 +580,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 affectedElementMemories);
 
         affectedElementMemories.stream()
-                .map(am -> am.translate(methodInfo.offset))
+                .map(am -> am.translate(methodInfo.offset()))
                 .forEach(affectedMemories::add);
 
         return innerMapper.getHandle();
@@ -629,7 +594,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
         // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
-                MapperUtil.castToRecordClass(methodInfo.type),
+                MapperUtil.castToRecordClass(methodInfo.type()),
                 groupLayout,
                 0, // The actual offset is added later at invocation
                 0);
@@ -642,7 +607,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
         // Todo: As the offset is zero, we can cache these mappers (per type and layout)
         SegmentMapper<?> innerMapper = new SegmentRecordMapper<>(lookup,
-                MapperUtil.castToRecordClass(methodInfo.type),
+                MapperUtil.castToRecordClass(methodInfo.type()),
                 (GroupLayout) methodInfo.layoutInfo().layout(),
                 0, // The actual offset is added later at invocation
                 0);
@@ -773,7 +738,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         // Check parameters and push scaled offsets on the stack
         for (int i = 0; i < arrayInfo.dimensions().size(); i++) {
             long dimension = arrayInfo.dimensions().get(i);
-            long factor = arrayInfo.dimensions.stream()
+            long factor = arrayInfo.dimensions().stream()
                     .skip(i + 1)
                     .reduce(elementByteSize, Math::multiplyExact);
 
@@ -829,81 +794,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         return cob;
     }
 
-    record MethodInfo(Key key,
-                      Method method,
-                      Class<?> type,
-                      LayoutInfo layoutInfo,
-                      long offset) {
-
-        enum Cardinality {SCALAR, ARRAY}
-
-        enum ValueType {
-            VALUE(false), INTERFACE(true), RECORD(true);
-
-            private final boolean virtual;
-
-            ValueType(boolean virtual) {
-                this.virtual = virtual;
-            }
-
-            public boolean isVirtual() {
-                return virtual;
-            }
-        }
-
-        enum AccessorType {GETTER, SETTER}
-
-        enum Key {
-            SCALAR_VALUE_GETTER(Cardinality.SCALAR, ValueType.VALUE, AccessorType.GETTER),
-            SCALAR_VALUE_SETTER(Cardinality.SCALAR, ValueType.VALUE, AccessorType.SETTER),
-            SCALAR_INTERFACE_GETTER(Cardinality.SCALAR, ValueType.INTERFACE, AccessorType.GETTER),
-            SCALAR_INTERFACE_SETTER(Cardinality.SCALAR, ValueType.INTERFACE, AccessorType.SETTER), // Unavailable
-            SCALAR_RECORD_GETTER(Cardinality.SCALAR, ValueType.RECORD, AccessorType.GETTER),
-            SCALAR_RECORD_SETTER(Cardinality.SCALAR, ValueType.RECORD, AccessorType.SETTER),
-            ARRAY_VALUE_GETTER(Cardinality.ARRAY, ValueType.VALUE, AccessorType.GETTER),
-            ARRAY_VALUE_SETTER(Cardinality.ARRAY, ValueType.VALUE, AccessorType.SETTER),
-            ARRAY_INTERFACE_GETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.GETTER),
-            ARRAY_INTERFACE_SETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.SETTER),   // Unavailable
-            ARRAY_RECORD_GETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.GETTER),
-            ARRAY_RECORD_SETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.SETTER);         // Todo
-
-            private final Cardinality cardinality;
-            private final ValueType valueType;
-            private final AccessorType accessorType;
-
-            Key(Cardinality cardinality, ValueType valueType, AccessorType accessorType) {
-                this.cardinality = cardinality;
-                this.valueType = valueType;
-                this.accessorType = accessorType;
-            }
-
-            public Cardinality cardinality() {
-                return cardinality;
-            }
-
-            public ValueType valueType() {
-                return valueType;
-            }
-
-            public AccessorType accessorType() {
-                return accessorType;
-            }
-
-            public static Key of(Cardinality cardinality,
-                                 ValueType valueType,
-                                 AccessorType accessorType) {
-
-                for (Key k : Key.values()) {
-                    if (k.cardinality == cardinality && valueType == k.valueType && accessorType == k.accessorType) {
-                        return k;
-                    }
-                }
-                throw new InternalError("Should not reach here");
-            }
-        }
-
-    }
-
     private void generateToString(ClassBuilder cb,
                                   ClassDesc classDesc,
                                   List<MethodInfo> getters) {
@@ -926,7 +816,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .collect(Collectors.joining(", ", type.getSimpleName() + "[", "]"));
 
         List<MethodInfo> nonArrayGetters = sortedGetters.stream()
-                .filter(i -> i.layoutInfo().arrayInfo.isEmpty())
+                .filter(i -> i.layoutInfo().arrayInfo().isEmpty())
                 .toList();
 
         DirectMethodHandleDesc bootstrap = ofCallsiteBootstrap(
@@ -968,86 +858,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                 .toList();
     }
 
-    record LayoutInfo(MemoryLayout layout,
-                      Optional<ScalarInfo> scalarInfo,
-                      Optional<ArrayInfo> arrayInfo,
-                      Consumer<CodeBuilder> returnOp,
-                      ObjIntConsumer<CodeBuilder> paramOp) {
-
-
-        private static LayoutInfo of(ValueLayout layout) {
-            return switch (layout) {
-                // Todo: Remove boolean?
-                case ValueLayout.OfBoolean bo ->
-                        LayoutInfo.ofScalar(bo, "JAVA_BOOLEAN", ValueLayout.OfBoolean.class, CodeBuilder::ireturn, CodeBuilder::iload);
-                case ValueLayout.OfByte by ->
-                        LayoutInfo.ofScalar(by, "JAVA_BYTE", ValueLayout.OfByte.class, CodeBuilder::ireturn, CodeBuilder::iload);
-                case ValueLayout.OfShort sh ->
-                        LayoutInfo.ofScalar(sh, "JAVA_SHORT", ValueLayout.OfShort.class, CodeBuilder::ireturn, CodeBuilder::iload);
-                case ValueLayout.OfChar ch ->
-                        LayoutInfo.ofScalar(ch, "JAVA_CHAR", ValueLayout.OfChar.class, CodeBuilder::ireturn, CodeBuilder::iload);
-                case ValueLayout.OfInt in ->
-                        LayoutInfo.ofScalar(in, "JAVA_INT", ValueLayout.OfInt.class, CodeBuilder::ireturn, CodeBuilder::iload);
-                case ValueLayout.OfFloat fl ->
-                        LayoutInfo.ofScalar(fl, "JAVA_FLOAT", ValueLayout.OfFloat.class, CodeBuilder::freturn, CodeBuilder::fload);
-                case ValueLayout.OfLong lo ->
-                        LayoutInfo.ofScalar(lo, "JAVA_LONG", ValueLayout.OfLong.class, CodeBuilder::lreturn, CodeBuilder::lload);
-                case ValueLayout.OfDouble db ->
-                        LayoutInfo.ofScalar(db, "JAVA_DOUBLE", ValueLayout.OfDouble.class, CodeBuilder::dreturn, CodeBuilder::dload);
-                default ->
-                        throw new IllegalArgumentException("Unable to map to a LayoutInfo: " + layout);
-            };
-        }
-
-        static LayoutInfo of(GroupLayout layout) {
-            return new LayoutInfo(layout, Optional.empty(), Optional.empty(), CodeBuilder::areturn, CodeBuilder::aload);
-        }
-
-        static LayoutInfo of(SequenceLayout layout) {
-            ArrayInfo arrayInfo = ArrayInfo.of(layout);
-            LayoutInfo elementLayoutInfo = (arrayInfo.elementLayout() instanceof ValueLayout vl)
-                    ? of(vl)
-                    : null;
-            Optional<ScalarInfo> scalarInfo = Optional.ofNullable(elementLayoutInfo)
-                    .flatMap(li -> li.scalarInfo);
-            return scalarInfo
-                    .map(_ -> new LayoutInfo(layout, scalarInfo, Optional.of(arrayInfo), elementLayoutInfo.returnOp(), elementLayoutInfo.paramOp())
-                    ).orElse(new LayoutInfo(layout, scalarInfo, Optional.of(arrayInfo), CodeBuilder::areturn, CodeBuilder::aload));
-
-        }
-
-        private static <T extends ValueLayout> LayoutInfo ofScalar(T layout,
-                                                                   String memberName,
-                                                                   Class<T> layoutType,
-                                                                   Consumer<CodeBuilder> returnOp,
-                                                                   ObjIntConsumer<CodeBuilder> paramOp) {
-            return new LayoutInfo(layout, Optional.of(new ScalarInfo(memberName, desc(layoutType))), Optional.empty(), returnOp, paramOp);
-        }
-
-    }
-
-    record ScalarInfo(String memberName,
-                      ClassDesc valueLayoutDesc ){}
-
-    record ArrayInfo(MemoryLayout elementLayout,
-                     List<Long> dimensions) {
-
-        static ArrayInfo of(SequenceLayout layout) {
-            return recurse(new ArrayInfo(layout, new ArrayList<>()));
-        }
-
-        private static ArrayInfo recurse(ArrayInfo info) {
-            if (!(info.elementLayout instanceof SequenceLayout sl)) {
-                // We are done. Create an immutable record
-                return new ArrayInfo(info.elementLayout(), List.copyOf(info.dimensions()));
-            }
-            info.dimensions().add(sl.elementCount());
-            return recurse(new ArrayInfo(sl.elementLayout(), info.dimensions()));
-        }
-
-    }
-
-    private static ClassDesc desc(Class<?> clazz) {
+    static ClassDesc desc(Class<?> clazz) {
         return clazz.describeConstable()
                 .orElseThrow();
     }

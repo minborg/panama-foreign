@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.mapper.LayoutGenerators;
+import java.lang.foreign.mapper.SegmentMapper;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -97,6 +98,18 @@ final class TestLayoutGenerators extends BaseTest {
         assertThrows(IllegalArgumentException.class, () ->
                     LayoutGenerators.ofRecord(Foo.class)
                 );
+    }
+
+    public interface Bar {
+        // Array setters do not have any natural layout
+        void ints(long i, int value);
+    }
+
+    @Test
+    void fromBar() {
+        assertThrows(IllegalArgumentException.class, () ->
+                LayoutGenerators.ofInterface(Bar.class)
+        );
     }
 
 }

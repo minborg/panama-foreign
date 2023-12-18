@@ -100,16 +100,11 @@ public final class InternalLayoutGenerators {
     }
 
     private static UnifiedHolder holderFor(Method method) {
-        return new UnifiedHolder(method.getName(), method.getReturnType());
+        return new UnifiedHolder(method.getName(), method.getParameterTypes()[0]);
     }
 
     private static UnifiedHolder holderFor(RecordComponent recordComponent) {
         return new UnifiedHolder(recordComponent.getName(), recordComponent.getType());
-    }
-
-    private static UnifiedHolder holderForArrayComponent(String name,
-                                                                    Class<?> componentType) {
-        return new UnifiedHolder(name, componentType);
     }
 
     private static MemoryLayout resolve(Class<?> type, UnifiedHolder h) {
@@ -134,9 +129,16 @@ public final class InternalLayoutGenerators {
     private static Stream<Method> mappableMethods(Class<?> type) {
         return Arrays.stream(type.getMethods())
                 .filter(f -> Modifier.isPublic(f.getModifiers()))
-                // Consider only pure getters as in the record case
-                .filter(f -> f.getParameterCount() == 0)
-                .filter(f -> !f.getReturnType().equals(void.class));
+                .filter(m -> !m.isDefault())
+                .filter(f -> f.getReturnType().equals(void.class))
+                .map(InternalLayoutGenerators::requirePureGetter);
+    }
+
+    private static Method requirePureGetter(Method method) {
+        if (method.getParameterCount() != 1) {
+            throw new IllegalArgumentException("Array accessors do not correspond to any natural layout: "+method);
+        }
+        return method;
     }
 
     // ValueLayout mapping

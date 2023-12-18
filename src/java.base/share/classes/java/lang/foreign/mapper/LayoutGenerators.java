@@ -32,10 +32,9 @@ public final class LayoutGenerators {
      * @throws IllegalArgumentException if the provided {@code type} cannot be
      *         reflectively analysed
      * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         components for which there are no exact mapping (of names and types) in
-     *         the provided {@code layout} or if the provided {@code type} is not public
-     *         or if the method is otherwise unable to create a group layout as specified
-     *         above
+     *         components for which there are no exact mapping (of names and/or types) or
+     *         if the provided {@code type} is not public or if the method is otherwise
+     *         unable to create a group layout as specified above
      */
     public static <T> GroupLayout ofInterface(Class<T> type) {
         MapperUtil.requireImplementableInterfaceType(type);
@@ -60,10 +59,9 @@ public final class LayoutGenerators {
      * @throws IllegalArgumentException if the provided {@code type} cannot be
      *         reflectively analysed
      * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         components for which there are no exact mapping (of names and types) in
-     *         the provided {@code layout} or if the provided {@code type} is not public
-     *         or if the method is otherwise unable to create a group layout as specified
-     *         above
+     *         components for which there are no exact mapping (of names and/or types)
+     *         or if the provided {@code type} is not public or if the method is otherwise
+     *         unable to create a group layout as specified above
      */
     public static <T extends Record> GroupLayout ofRecord(Class<T> type) {
         MapperUtil.requireRecordType(type);

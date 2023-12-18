@@ -536,7 +536,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
 
         Class<?> targetType = (accessorType == AccessorType.GETTER)
                 ? method.getReturnType()
-                : method.getParameterTypes()[method.getParameterCount() - 1]; // Last parameter
+                : getterType(method);
 
         ValueType valueType;
         if (targetType.isPrimitive() || targetType.equals(MemorySegment.class)) {
@@ -586,6 +586,13 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
             }
             default -> throw new IllegalArgumentException("Cannot map " + element + " for " + type);
         };
+    }
+
+    static Class<?> getterType(Method method) {
+        if (method.getParameterCount() == 0) {
+            throw new IllegalArgumentException("A setter must take at least one argument: " + method);
+        }
+        return method.getParameterTypes()[method.getParameterCount() - 1];
     }
 
     static boolean isGetter(Method method) {

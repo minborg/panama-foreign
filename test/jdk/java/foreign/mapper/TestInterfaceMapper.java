@@ -709,6 +709,10 @@ final class TestInterfaceMapper {
         interface Ints {
             int first();
             void first(int first);
+
+            int second();
+            // No setter for second
+
             int third();
             void third(int third);
         }

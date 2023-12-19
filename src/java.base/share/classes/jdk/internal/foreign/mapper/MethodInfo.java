@@ -74,7 +74,7 @@ record MethodInfo(Key key,
         ARRAY_INTERFACE_GETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.GETTER),
         ARRAY_INTERFACE_SETTER(Cardinality.ARRAY, ValueType.INTERFACE, AccessorType.SETTER),   // Unavailable for interfaces
         ARRAY_RECORD_GETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.GETTER),
-        ARRAY_RECORD_SETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.SETTER);         // Todo
+        ARRAY_RECORD_SETTER(Cardinality.ARRAY, ValueType.RECORD, AccessorType.SETTER);
 
         private final Cardinality cardinality;
         private final ValueType valueType;

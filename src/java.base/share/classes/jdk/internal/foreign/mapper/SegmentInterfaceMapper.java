@@ -61,51 +61,31 @@ import static jdk.internal.foreign.layout.MemoryLayoutUtil.requireNonNegative;
 /**
  * A record mapper that is matching components of an interface with elements in a GroupLayout.
  */
-public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLookup {
+public final class SegmentInterfaceMapper<T>
+        extends AbstractSegmentMapper<T>
+        implements SegmentMapper<T>, HasLookup {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
-    private final MethodHandles.Lookup lookup;
-    private final Class<T> type;
-    private final GroupLayout layout;
     private final Class<T> implClass;
-    private final MethodHandle getHandle;
-    private final MethodHandle setHandle;
     private final MethodHandle segmentGetHandle;
     private final MethodHandle offsetGetHandle;
     private final List<AffectedMemory> affectedMemories;
-    private final MapperCache mapperCache;
-
-    // Todo: Create an abstract base class for (Segment | Record) mapper
 
     private SegmentInterfaceMapper(MethodHandles.Lookup lookup,
                                    Class<T> type,
                                    GroupLayout layout,
+                                   boolean leaf,
                                    List<AffectedMemory> affectedMemories) {
-        this.lookup = lookup;
-        this.type = MapperUtil.requireImplementableInterfaceType(type);
-        this.layout = layout;
+        super(lookup, type, layout, leaf, ValueType.INTERFACE, MapperUtil::requireImplementableInterfaceType, Accessors::ofInterface);
         this.affectedMemories = affectedMemories;
-        this.mapperCache = MapperCache.of(lookup);
-        Accessors accessors = Accessors.ofInterface(type, layout);
-
-        List<Method> unsupportedAccessors = accessors.stream(k -> !k.isSupportedFor(ValueType.INTERFACE))
-                .map(AccessorInfo::method)
-                .toList();
-        if (!unsupportedAccessors.isEmpty()) {
-            throw new IllegalArgumentException("The following accessors are not supported: " + unsupportedAccessors);
-        }
-
-        MapperUtil.assertMappingsCorrectAndTotal(type, layout, accessors);
 
         // Add affected memory for all the setters seen on this level
-        accessors.stream(AccessorType.SETTER)
+        accessors().stream(AccessorType.SETTER)
                 .map(AffectedMemory::from)
                 .forEach(affectedMemories::add);
 
-        this.implClass = generateClass(accessors);
-        this.getHandle = computeGetHandle();
-        this.setHandle = computeSetHandle();
+        this.implClass = generateClass();
 
         try {
             this.segmentGetHandle = lookup.unreflect(implClass.getMethod(MapperUtil.SECRET_SEGMENT_METHOD_NAME))
@@ -115,31 +95,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    @Override
-    public MethodHandles.Lookup lookup() {
-        return lookup;
-    }
-
-    @Override
-    public Class<T> type() {
-        return type;
-    }
-
-    @Override
-    public GroupLayout layout() {
-        return layout;
-    }
-
-    @Override
-    public MethodHandle getHandle() {
-        return getHandle;
-    }
-
-    @Override
-    public MethodHandle setHandle() {
-        return setHandle;
     }
 
     @Override
@@ -174,18 +129,6 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     }
 
     @Override
-    public String toString() {
-        return "SegmentInterfaceMapper[" +
-                "lookup=" + lookup + ", " +
-                "type=" + type + ", " +
-                "layout=" + layout + ", " +
-                "implClass=" + implClass + ", " +
-                "memoryChunks = " + affectedMemories.size() + ", " +
-                "getHandle=" + getHandle + ", " +
-                "setHandle=" + setHandle + ']';
-    }
-
-    @Override
     public <R> SegmentMapper<R> map(Class<R> newType, Function<? super T, ? extends R> toMapper) {
         return Mapped.of(this, newType, toMapper);
     }
@@ -197,19 +140,19 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
         throw twoWayMappersUnsupported();
     }
 
-    private Class<T> generateClass(Accessors accessors) {
-        ClassDesc classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
-        ClassLoader loader = type.getClassLoader();
+    private Class<T> generateClass() {
+        ClassDesc classDesc = ClassDesc.of(type().getSimpleName() + "InterfaceMapper");
+        ClassLoader loader = type().getClassLoader();
 
         // We need to materialize these methods so that the order is preserved
         // during generation of the class.
-        List<AccessorInfo> virtualMethods = accessors.stream()
+        List<AccessorInfo> virtualMethods = accessors().stream()
                 .filter(mi -> mi.key().valueType().isVirtual())
                 .toList();
 
         byte[] bytes = of(ClassHierarchyResolverOption.of(ClassHierarchyResolver.ofClassLoading(loader)))
                 .build(classDesc, cb -> {
-                    ByteCodeGenerator generator = ByteCodeGenerator.of(type, cb);
+                    ByteCodeGenerator generator = ByteCodeGenerator.of(type(), cb);
 
                     // public final XxInterfaceMapper implements Xx {
                     //     private final MemorySegment segment;
@@ -237,7 +180,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
                     //     return segment.get(JAVA_t, offset + elementOffset + indexOffset);
                     // }
-                    accessors.stream(Set.of(Key.SCALAR_VALUE_GETTER, Key.ARRAY_VALUE_GETTER))
+                    accessors().stream(Set.of(Key.SCALAR_VALUE_GETTER, Key.ARRAY_VALUE_GETTER))
                             .forEach(generator::valueGetter);
 
                     // @Override
@@ -245,7 +188,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //     long indexOffset = f(dimensions, c1, c2, ..., long cN);
                     //     segment.set(JAVA_t, offset + elementOffset + indexOffset, t);
                     // }
-                    accessors.stream(Set.of(Key.SCALAR_VALUE_SETTER, Key.ARRAY_VALUE_SETTER))
+                    accessors().stream(Set.of(Key.SCALAR_VALUE_SETTER, Key.ARRAY_VALUE_SETTER))
                             .forEach(generator::valueSetter);
 
                     for (int i = 0; i < virtualMethods.size(); i++) {
@@ -282,7 +225,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
                     //  public String toString() {
                     //      return "Foo[g0()=" + g0() + ", g1()=" + g1() + ... "]";
                     //  }
-                    List<AccessorInfo> getters = accessors.stream(AccessorType.GETTER)
+                    List<AccessorInfo> getters = accessors().stream(AccessorType.GETTER)
                             .toList();
                     generator.toString_(getters);
                 });
@@ -290,11 +233,11 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
             List<MethodHandle> classData = virtualMethods.stream()
                     .map(a -> switch (a.key()) {
                                 case SCALAR_INTERFACE_GETTER,
-                                     ARRAY_INTERFACE_GETTER -> mapperCache.interfaceGetMethodHandleFor(a, affectedMemories::add);
+                                     ARRAY_INTERFACE_GETTER -> mapperCache().interfaceGetMethodHandleFor(a, affectedMemories::add);
                                 case SCALAR_RECORD_GETTER,
-                                     ARRAY_RECORD_GETTER    -> mapperCache.recordGetMethodHandleFor(a);
+                                     ARRAY_RECORD_GETTER    -> mapperCache().recordGetMethodHandleFor(a);
                                 case SCALAR_RECORD_SETTER,
-                                     ARRAY_RECORD_SETTER    -> mapperCache.recordSetMethodHandleFor(a);
+                                     ARRAY_RECORD_SETTER    -> mapperCache().recordSetMethodHandleFor(a);
                                 default -> throw new InternalError("Should not reach here " + a);
                             }
                     ).toList();
@@ -310,23 +253,23 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
             }
 
             @SuppressWarnings("unchecked")
-            Class<T> c = (Class<T>) lookup
+            Class<T> c = (Class<T>) lookup()
                     .defineHiddenClassWithClassData(bytes, classData, true)
                     .lookupClass();
             return c;
         } catch (IllegalAccessException | VerifyError e) {
             throw new IllegalArgumentException("Unable to define interface mapper proxy class for " +
-                    type + " using " + layout, e);
+                    type() + " using " + layout(), e);
         }
     }
 
     // Private methods and classes
 
     // (MemorySegment, long)Object
-    private MethodHandle computeGetHandle() {
+    protected MethodHandle computeGetHandle() {
         try {
             // (MemorySegment, long)void
-            var ctor = lookup.findConstructor(implClass, MethodType.methodType(void.class, MemorySegment.class, long.class));
+            var ctor = lookup().findConstructor(implClass, MethodType.methodType(void.class, MemorySegment.class, long.class));
             // -> (MemorySegment, long)Object
             ctor = ctor.asType(ctor.type().changeReturnType(Object.class));
             return ctor;
@@ -339,7 +282,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     // This method will return a MethodHandle that will update memory that
     // is mapped to a setter. Memory that is not mapped to a setter will be
     // unaffected.
-    private MethodHandle computeSetHandle() {
+    protected MethodHandle computeSetHandle() {
         List<AffectedMemory> fragments = affectedMemories.stream()
                 .sorted(Comparator.comparingLong(AffectedMemory::offset))
                 .toList();
@@ -440,7 +383,7 @@ public final class SegmentInterfaceMapper<T> implements SegmentMapper<T>, HasLoo
     public static <T> SegmentInterfaceMapper<T> create(MethodHandles.Lookup lookup,
                                                        Class<T> type,
                                                        GroupLayout layout) {
-        return new SegmentInterfaceMapper<>(lookup, type, layout, new ArrayList<>());
+        return new SegmentInterfaceMapper<>(lookup, type, layout, false, new ArrayList<>());
     }
 
     // Mapping

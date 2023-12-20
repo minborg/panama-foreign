@@ -119,6 +119,11 @@ public final class Accessors {
                 .collect(Collectors.groupingBy(AccessorInfo::key)));
     }
 
+    public void clear() {
+        keyToAccessorMap.clear();
+        methodToAccessorMap.clear();
+    }
+
     private static AccessorInfo accessorInfo(Class<?> type, GroupLayout layout, Method method) {
         AccessorInfo.AccessorType accessorType = isGetter(method)
                 ? AccessorInfo.AccessorType.GETTER

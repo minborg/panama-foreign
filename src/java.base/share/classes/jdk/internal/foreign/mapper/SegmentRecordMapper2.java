@@ -38,7 +38,6 @@ import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.List;
@@ -50,75 +49,17 @@ import java.util.stream.IntStream;
 /**
  * A record mapper that is matching components of a record with elements in a GroupLayout.
  */
-public final class SegmentRecordMapper2<T extends Record> implements SegmentMapper<T>, HasLookup {
+public final class SegmentRecordMapper2<T extends Record>
+        extends AbstractSegmentMapper<T>
+        implements SegmentMapper<T>, HasLookup {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
-
-    private final MethodHandles.Lookup lookup;
-    private final Class<T> type;
-    private final GroupLayout layout;
-    private final boolean leaf;
-    private final MethodHandle getHandle;
-    private final MethodHandle setHandle;
-    private final MapperCache mapperCache;
 
     SegmentRecordMapper2(MethodHandles.Lookup lookup,
                          Class<T> type,
                          GroupLayout layout,
                          boolean leaf) {
-        this.lookup = lookup;
-        this.type = MapperUtil.requireRecordType(type);
-        this.layout = layout;
-        this.leaf = leaf;
-        this.mapperCache = MapperCache.of(lookup);
-        Accessors accessors = Accessors.ofRecord(type, layout);
-
-        List<Method> unsupportedAccessors = accessors.stream(k -> !k.isSupportedFor(ValueType.RECORD))
-                .map(AccessorInfo::method)
-                .toList();
-        if (!unsupportedAccessors.isEmpty()) {
-            throw new IllegalArgumentException("The following accessors are not supported: " + unsupportedAccessors);
-        }
-
-        MapperUtil.assertMappingsCorrectAndTotal(type, layout, accessors);
-
-        this.getHandle = computeGetHandle(accessors);
-        this.setHandle = computeSetHandle(accessors);
-    }
-
-    @Override
-    public MethodHandles.Lookup lookup() {
-        return lookup;
-    }
-
-    @Override
-    public Class<T> type() {
-        return type;
-    }
-
-    @Override
-    public GroupLayout layout() {
-        return layout;
-    }
-
-    @Override
-    public MethodHandle getHandle() {
-        return getHandle;
-    }
-
-    @Override
-    public MethodHandle setHandle() {
-        return setHandle;
-    }
-
-    @Override
-    public String toString() {
-        return "SegmentRecordMapper2[" +
-                "lookup=" + lookup + ", " +
-                "type=" + type + ", " +
-                "layout=" + layout + ", " +
-                "getHandle=" + getHandle + ", " +
-                "setHandle=" + setHandle + ']';
+        super(lookup, type, layout, leaf, ValueType.RECORD, MapperUtil::requireRecordType, Accessors::ofRecord);
     }
 
     @Override
@@ -142,26 +83,27 @@ public final class SegmentRecordMapper2<T extends Record> implements SegmentMapp
     // Private methods and classes
 
     // -> (MemorySegment, long)Object
-    private MethodHandle computeGetHandle(Accessors accessors) {
+    @Override
+    protected MethodHandle computeGetHandle() {
 
         // For each component, find an f(a) = MethodHandle(MemorySegment, long) that returns the component type
-        List<MethodHandle> getHandles = Arrays.stream(type.getRecordComponents())
+        List<MethodHandle> getHandles = Arrays.stream(type().getRecordComponents())
                 .map(RecordComponent::getAccessor)
-                .map(accessors::getOrThrow)
+                .map(accessors()::getOrThrow)
                 .map(this::getHandle)
                 .toList();
 
         // The types for the constructor/components
-        Class<?>[] componentTypes = Arrays.stream(type.getRecordComponents())
+        Class<?>[] componentTypes = Arrays.stream(type().getRecordComponents())
                 .map(RecordComponent::getType)
                 .toArray(Class<?>[]::new);
 
         MethodHandle ctor;
         try {
-            ctor = lookup.findConstructor(type, MethodType.methodType(void.class, componentTypes));
+            ctor = lookup().findConstructor(type(), MethodType.methodType(void.class, componentTypes));
         } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("There is no constructor in '" + type.getName() +
-                    "' for " + Arrays.toString(componentTypes) + " using lookup " + lookup, e);
+            throw new IllegalArgumentException("There is no constructor in '" + type().getName() +
+                    "' for " + Arrays.toString(componentTypes) + " using lookup " + lookup(), e);
         }
 
         // (x,y,...)T -> ((MS, long)x, (MS, long)y, ...)T
@@ -169,7 +111,7 @@ public final class SegmentRecordMapper2<T extends Record> implements SegmentMapp
             ctor = MethodHandles.collectArguments(ctor, i, getHandles.get(i));
         }
 
-        var mt = Util.GET_TYPE.changeReturnType(type);
+        var mt = Util.GET_TYPE.changeReturnType(type());
 
         // 0, 1, 0, 1, ...
         int[] reorder = IntStream.range(0, getHandles.size())
@@ -178,7 +120,7 @@ public final class SegmentRecordMapper2<T extends Record> implements SegmentMapp
 
         // Fold the many identical (MemorySegment, long) arguments into a single argument
         ctor = MethodHandles.permuteArguments(ctor, mt, reorder);
-        if (!leaf) {
+        if (!isLeaf()) {
             // This is the base level mh so, we need to cast to Object as the final
             // apply() method will do the final cast
             ctor = ctor.asType(Util.GET_TYPE);
@@ -189,7 +131,7 @@ public final class SegmentRecordMapper2<T extends Record> implements SegmentMapp
     }
 
     private MethodHandle getHandle(AccessorInfo accessorInfo) {
-        GetMethodHandleGenerator getGenerator = GetMethodHandleGenerator.create(lookup, mapperCache);
+        GetMethodHandleGenerator getGenerator = GetMethodHandleGenerator.create(lookup(), mapperCache());
         try {
             MethodHandle mh = switch (accessorInfo.key()) {
                 case SCALAR_VALUE_GETTER -> getGenerator.ofScalarValue(accessorInfo);
@@ -205,12 +147,13 @@ public final class SegmentRecordMapper2<T extends Record> implements SegmentMapp
     }
 
     // (MemorySegment, long, Object)void
-    private MethodHandle computeSetHandle(Accessors accessors) {
+    @Override
+    protected MethodHandle computeSetHandle() {
 
         // for each component, extracts its value and write to the correct location
-        List<MethodHandle> setHandles = Arrays.stream(type.getRecordComponents())
+        List<MethodHandle> setHandles = Arrays.stream(type().getRecordComponents())
                 .map(RecordComponent::getAccessor)
-                .map(accessors::getOrThrow)
+                .map(accessors()::getOrThrow)
                 .map(this::setHandle)
                 .toList();
 
@@ -221,14 +164,14 @@ public final class SegmentRecordMapper2<T extends Record> implements SegmentMapp
             default -> iterate(setHandles);
         };
 
-        if (!leaf) {
+        if (!isLeaf()) {
             mh = mh.asType(Util.SET_TYPE);
         }
         return mh;
     }
 
     private MethodHandle setHandle(AccessorInfo accessorInfo) {
-        SetMethodHandleGenerator setGenerator = SetMethodHandleGenerator.create(lookup, mapperCache);
+        SetMethodHandleGenerator setGenerator = SetMethodHandleGenerator.create(lookup(), mapperCache());
         try {
             MethodHandle mh = switch (accessorInfo.key()) {
                 case SCALAR_VALUE_GETTER -> setGenerator.ofScalarValue(accessorInfo);
@@ -238,7 +181,7 @@ public final class SegmentRecordMapper2<T extends Record> implements SegmentMapp
                         throw new IllegalArgumentException("Unable to map " + accessorInfo.method());
             };
             // (T)x
-            MethodHandle extractor = lookup.unreflect(accessorInfo.method());
+            MethodHandle extractor = lookup().unreflect(accessorInfo.method());
             // (MemorySegment, long, x) -> (MemorySegment, long, T)
             mh = MethodHandles.filterArguments(mh, 2, extractor);
             return Transpose.transposeOffset(mh, accessorInfo.offset());

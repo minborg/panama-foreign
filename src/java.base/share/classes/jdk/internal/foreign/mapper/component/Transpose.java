@@ -48,7 +48,7 @@ import java.util.stream.IntStream;
  * As transposition is going to be used for every component except the
  * first, we cache likely transpose method handles.
  */
-final class Transpose {
+public final class Transpose {
 
     // Transposing offsets
 
@@ -69,8 +69,8 @@ final class Transpose {
         IS_CACHED = ImmutableBitSetPredicate.of(set);
     }
 
-    static MethodHandle transposeOffset(MethodHandle mh,
-                                        long offset) {
+    public static MethodHandle transposeOffset(MethodHandle mh,
+                                               long offset) {
         return offset == 0
                 ? mh // Nothing to do
                 // (X0, long, ...)R -> (X0, long, ...)R

@@ -26,6 +26,7 @@
 package jdk.internal.foreign.mapper;
 
 import jdk.internal.ValueBased;
+import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemorySegment;
@@ -52,41 +53,41 @@ final class MapperCache {
         this.subMappers = new HashMap<>();
     }
 
-    MethodHandle interfaceGetMethodHandleFor(MethodInfo methodInfo,
+    MethodHandle interfaceGetMethodHandleFor(AccessorInfo accessorInfo,
                                              Consumer<? super SegmentInterfaceMapper.AffectedMemory> adder) {
-        SegmentInterfaceMapper<?> innerMapper = (SegmentInterfaceMapper<?>) cachedInterfaceMapper(methodInfo);
+        SegmentInterfaceMapper<?> innerMapper = (SegmentInterfaceMapper<?>) cachedInterfaceMapper(accessorInfo);
         innerMapper.affectedMemories().stream()
-                .map(am -> am.translate(methodInfo.offset()))
+                .map(am -> am.translate(accessorInfo.offset()))
                 .forEach(adder);
         return innerMapper.getHandle();
     }
 
-    MethodHandle recordGetMethodHandleFor(MethodInfo methodInfo) {
-        return cachedRecordMapper(methodInfo)
-                .getHandle()
-                .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
+    MethodHandle recordGetMethodHandleFor(AccessorInfo accessorInfo) {
+        return cachedRecordMapper(accessorInfo)
+                .getHandle();
     }
 
-    MethodHandle recordSetMethodHandleFor(MethodInfo methodInfo) {
-        return cachedRecordMapper(methodInfo)
+    MethodHandle recordSetMethodHandleFor(AccessorInfo accessorInfo) {
+        return cachedRecordMapper(accessorInfo)
                 .setHandle();
     }
 
-    private SegmentMapper<?> cachedInterfaceMapper(MethodInfo methodInfo) {
-        return subMappers.computeIfAbsent(CacheKey.of(methodInfo), _ ->
-                SegmentMapper.ofInterface(lookup, methodInfo.type(), methodInfo.targetLayout()));
+    private SegmentMapper<?> cachedInterfaceMapper(AccessorInfo accessorInfo) {
+        return subMappers.computeIfAbsent(CacheKey.of(accessorInfo), _ ->
+                SegmentMapper.ofInterface(lookup, accessorInfo.type(), accessorInfo.targetLayout()));
     }
 
-    private SegmentMapper<?> cachedRecordMapper(MethodInfo methodInfo) {
-        return subMappers.computeIfAbsent(CacheKey.of(methodInfo), _ ->
-                SegmentMapper.ofRecord(lookup, MapperUtil.castToRecordClass(methodInfo.type()), methodInfo.targetLayout()));
+    private SegmentMapper<?> cachedRecordMapper(AccessorInfo accessorInfo) {
+        return subMappers.computeIfAbsent(CacheKey.of(accessorInfo), _ ->
+                new SegmentRecordMapper2<>(lookup, MapperUtil.requireRecordType(accessorInfo.type()), accessorInfo.targetLayout(), true)
+        );
     }
 
     record CacheKey(Class<?> type,
                     GroupLayout layout) {
 
-        static CacheKey of(MethodInfo methodInfo) {
-            return new CacheKey(methodInfo.type(), methodInfo.targetLayout().withoutName());
+        static CacheKey of(AccessorInfo accessorInfo) {
+            return new CacheKey(accessorInfo.type(), accessorInfo.targetLayout().withoutName());
         }
 
     }

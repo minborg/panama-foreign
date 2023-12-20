@@ -25,12 +25,28 @@
 
 package jdk.internal.foreign.mapper;
 
+import jdk.internal.foreign.mapper.accessor.AccessorInfo;
+import jdk.internal.foreign.mapper.accessor.Accessors;
 import sun.security.action.GetPropertyAction;
 
 import java.lang.constant.ClassDesc;
+import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
+import java.lang.reflect.RecordComponent;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 public final class MapperUtil {
 
@@ -88,13 +104,48 @@ public final class MapperUtil {
                 .orElseThrow();
     }
 
-    public static Object evalWithMemorySegmentAndOffset(MethodHandle mh, MemorySegment segment, long offset) {
-        try {
-            return mh.invokeExact(segment, offset);
-        } catch (Throwable e) {
-            throw new IllegalStateException("Unable to invoke method handle " + mh, e);
+
+    static void assertMappingsCorrectAndTotal(Class<?> type,
+                                              GroupLayout layout,
+                                              Accessors accessors) {
+
+        var nameMappingCounts = layout.memberLayouts().stream()
+                .map(MemoryLayout::name)
+                .flatMap(Optional::stream)
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+
+        List<AccessorInfo> allMethods = accessors.stream().toList();
+
+        // Make sure we have all components distinctly mapped
+        for (AccessorInfo component : allMethods) {
+            String name = component.method().getName();
+            switch (nameMappingCounts.getOrDefault(name, 0L).intValue()) {
+                case 0 -> throw new IllegalArgumentException("No mapping for " +
+                        type.getName() + "." + name +
+                        " in layout " + layout);
+                case 1 -> { /* Happy path */ }
+                default -> throw new IllegalArgumentException("Duplicate mappings for " +
+                        type.getName() + "." + name +
+                        " in layout " + layout);
+            }
         }
+
+        // Make sure all methods of the type are mapped (totality)
+        Set<Method> accessorMethods = allMethods.stream()
+                .map(AccessorInfo::method)
+                .collect(Collectors.toSet());
+
+        var typeMethods = type.isRecord()
+                ? Arrays.stream(type.getRecordComponents()).map(RecordComponent::getAccessor).toList()
+                : Arrays.stream(type.getMethods()).toList();
+
+        var missing = typeMethods.stream()
+                .filter(Predicate.not(accessorMethods::contains))
+                .toList();
+
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException("Unable to map methods: " + missing);
+        }
+
     }
-
-
 }

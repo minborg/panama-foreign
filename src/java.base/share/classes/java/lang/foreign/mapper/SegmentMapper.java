@@ -3,12 +3,14 @@ package java.lang.foreign.mapper;
 import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentInterfaceMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper;
+import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -419,7 +421,8 @@ public interface SegmentMapper<T> {
      */
     default void set(MemorySegment segment, long offset, T t) {
         try {
-            setHandle().invokeExact(segment, offset, (Object) t);
+            setHandle()
+                    .invokeExact(segment, offset, (Object) t);
         } catch (IndexOutOfBoundsException |
                  WrongThreadException |
                  IllegalStateException |
@@ -538,6 +541,34 @@ public interface SegmentMapper<T> {
                              Function<? super T, ? extends R> toMapper);
 
     /**
+     * {@return the backing segment of the provided {@code source},
+     *          or, if no backing segment exists, {@linkplain Optional#empty()}}
+     * <p>
+     * Interfaces obtained from segment mappers have backing segments. Records obtained
+     * from segment mappers do not.
+     *
+     * @param source from which to extract the backing segment
+     */
+    default Optional<MemorySegment> segment(T source) {
+        Objects.requireNonNull(source);
+        return Optional.empty();
+    }
+
+    /**
+     * {@return the offset in the backing segment of the provided {@code source},
+     *          or, if no backing segment exists, {@linkplain OptionalLong#empty()}}
+     * <p>
+     * Interfaces obtained from segment mappers have backing segments. Records obtained
+     * from segment mappers do not.
+     *
+     * @param source from which to extract the backing segment
+     */
+    default OptionalLong offset(T source) {
+        Objects.requireNonNull(source);
+        return OptionalLong.empty();
+    }
+
+    /**
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
      *          to the provided interface {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
@@ -620,35 +651,7 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
-        return new SegmentRecordMapper<>(lookup, type, layout, 0L, 0);
-    }
-
-    /**
-     * {@return the backing segment of the provided {@code source},
-     *          or, if no backing segment exists, {@linkplain Optional#empty()}}
-     * <p>
-     * Interfaces obtained from segment mappers have backing segments. Records obtained
-     * from segment mappers do not.
-     *
-     * @param source from which to extract the backing segment
-     */
-    default Optional<MemorySegment> segment(T source) {
-        Objects.requireNonNull(source);
-        return Optional.empty();
-    }
-
-    /**
-     * {@return the offset in the backing segment of the provided {@code source},
-     *          or, if no backing segment exists, {@linkplain OptionalLong#empty()}}
-     * <p>
-     * Interfaces obtained from segment mappers have backing segments. Records obtained
-     * from segment mappers do not.
-     *
-     * @param source from which to extract the backing segment
-     */
-    default OptionalLong offset(T source) {
-        Objects.requireNonNull(source);
-        return OptionalLong.empty();
+        return SegmentRecordMapper2.create(lookup, type, layout);
     }
 
 }

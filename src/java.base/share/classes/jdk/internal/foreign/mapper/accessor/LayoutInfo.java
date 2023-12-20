@@ -23,7 +23,7 @@
  * questions.
  */
 
-package jdk.internal.foreign.mapper;
+package jdk.internal.foreign.mapper.accessor;
 
 import jdk.internal.classfile.CodeBuilder;
 
@@ -35,14 +35,13 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.ObjIntConsumer;
 
-record LayoutInfo(MemoryLayout layout,
+public record LayoutInfo(MemoryLayout layout,
                   Optional<ScalarInfo> scalarInfo,
                   Optional<ArrayInfo> arrayInfo,
                   Consumer<CodeBuilder> returnOp,
                   ObjIntConsumer<CodeBuilder> paramOp) {
 
-
-    static LayoutInfo of(ValueLayout layout) {
+    public static LayoutInfo of(ValueLayout layout) {
         return switch (layout) {
             // Todo: Remove boolean?
             case ValueLayout.OfBoolean bo ->
@@ -66,11 +65,11 @@ record LayoutInfo(MemoryLayout layout,
         };
     }
 
-    static LayoutInfo of(GroupLayout layout) {
+    public static LayoutInfo of(GroupLayout layout) {
         return new LayoutInfo(layout, Optional.empty(), Optional.empty(), CodeBuilder::areturn, CodeBuilder::aload);
     }
 
-    static LayoutInfo of(SequenceLayout layout) {
+    public static LayoutInfo of(SequenceLayout layout) {
         ArrayInfo arrayInfo = ArrayInfo.of(layout);
         LayoutInfo elementLayoutInfo = (arrayInfo.elementLayout() instanceof ValueLayout vl)
                 ? of(vl)
@@ -85,10 +84,10 @@ record LayoutInfo(MemoryLayout layout,
 
     private static <T extends ValueLayout> LayoutInfo ofScalar(T layout,
                                                                String memberName,
-                                                               Class<T> layoutType,
+                                                               Class<T> interfaceType,
                                                                Consumer<CodeBuilder> returnOp,
                                                                ObjIntConsumer<CodeBuilder> paramOp) {
-        return new LayoutInfo(layout, Optional.of(new ScalarInfo(memberName, MapperUtil.desc(layoutType))), Optional.empty(), returnOp, paramOp);
+        return new LayoutInfo(layout, Optional.of(new ScalarInfo(memberName, interfaceType)), Optional.empty(), returnOp, paramOp);
     }
 
 }

@@ -29,6 +29,9 @@ import jdk.internal.ValueBased;
 import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
+import jdk.internal.foreign.mapper.accessor.ArrayInfo;
+import jdk.internal.foreign.mapper.accessor.AccessorInfo;
+import jdk.internal.foreign.mapper.accessor.ScalarInfo;
 
 import java.lang.constant.ClassDesc;
 import java.lang.constant.DirectMethodHandleDesc;
@@ -123,18 +126,18 @@ final class ByteCodeGenerator {
         );
     }
 
-    void valueGetter(MethodInfo info) {
+    void valueGetter(AccessorInfo info) {
         String name = info.method().getName();
         ClassDesc returnDesc = desc(info.type());
         ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
 
-        var getDesc = MethodTypeDesc.of(returnDesc, scalarInfo.valueLayoutDesc(), CD_long);
+        var getDesc = MethodTypeDesc.of(returnDesc, desc(scalarInfo.interfaceType()), CD_long);
         List<ClassDesc> parameterDesc = parameterDesc(info);
 
         cb.withMethodBody(name, MethodTypeDesc.of(returnDesc, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
+                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), desc(scalarInfo.interfaceType()));
                     offsetBlock(cob, info, classDesc)
                             .invokeinterface(MEMORY_SEGMENT_CLASS_DESC, "get", getDesc);
                     // ireturn(), dreturn() etc.
@@ -143,18 +146,18 @@ final class ByteCodeGenerator {
         );
     }
 
-    void valueSetter(MethodInfo info) {
+    void valueSetter(AccessorInfo info) {
         String name = info.method().getName();
         List<ClassDesc> parameterDesc = parameterDesc(info);
 
         ScalarInfo scalarInfo = info.layoutInfo().scalarInfo().orElseThrow();
 
-        var setDesc = MethodTypeDesc.of(CD_void, scalarInfo.valueLayoutDesc(), CD_long, desc(info.type()));
+        var setDesc = MethodTypeDesc.of(CD_void, desc(scalarInfo.interfaceType()), CD_long, desc(info.type()));
 
         cb.withMethodBody(name, MethodTypeDesc.of(CD_void, parameterDesc), ACC_PUBLIC, cob -> {
                     cob.aload(0)
                             .getfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
-                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), scalarInfo.valueLayoutDesc());
+                            .getstatic(VALUE_LAYOUTS_CLASS_DESC, scalarInfo.memberName(), desc(scalarInfo.interfaceType()));
                     offsetBlock(cob, info, classDesc);
                     // iload, dload, etc.
                     info.layoutInfo().paramOp().accept(cob, valueSlotNumber(parameterDesc.size()));
@@ -164,7 +167,7 @@ final class ByteCodeGenerator {
         );
     }
 
-    void invokeVirtualGetter(MethodInfo info,
+    void invokeVirtualGetter(AccessorInfo info,
                              int boostrapIndex) {
 
         var name = info.method().getName();
@@ -191,7 +194,7 @@ final class ByteCodeGenerator {
         );
     }
 
-    void invokeVirtualSetter(MethodInfo info,
+    void invokeVirtualSetter(AccessorInfo info,
                              int boostrapIndex) {
 
         var name = info.method().getName();
@@ -242,13 +245,13 @@ final class ByteCodeGenerator {
         );
     }
 
-    void toString_(List<MethodInfo> getters) {
+    void toString_(List<AccessorInfo> getters) {
 
         // We want the components to appear in the order reported by Class::getMethods
         // So, we first construct a map that we can use to lookup MethodInfo objects
-        Map<Method, MethodInfo> methods = getters.stream()
-                .collect(Collectors.toMap(MethodInfo::method, Function.identity()));
-        List<MethodInfo> sortedGetters = Arrays.stream(type.getMethods())
+        Map<Method, AccessorInfo> methods = getters.stream()
+                .collect(Collectors.toMap(AccessorInfo::method, Function.identity()));
+        List<AccessorInfo> sortedGetters = Arrays.stream(type.getMethods())
                 .map(methods::get)
                 .filter(Objects::nonNull) // Unmapped methods discarded (e.g. static methods)
                 .toList();
@@ -261,7 +264,7 @@ final class ByteCodeGenerator {
                 )
                 .collect(Collectors.joining(", ", type.getSimpleName() + "[", "]"));
 
-        List<MethodInfo> nonArrayGetters = sortedGetters.stream()
+        List<AccessorInfo> nonArrayGetters = sortedGetters.stream()
                 .filter(i -> i.layoutInfo().arrayInfo().isEmpty())
                 .toList();
 
@@ -273,7 +276,7 @@ final class ByteCodeGenerator {
         );
 
         List<ClassDesc> getDescriptions = nonArrayGetters.stream()
-                .map(MethodInfo::type)
+                .map(AccessorInfo::type)
                 .map(MapperUtil::desc)
                 .toList();
 
@@ -303,7 +306,7 @@ final class ByteCodeGenerator {
     // long indexOffset = f(dimensions, c1, c2, ..., long cN); // If an array, otherwise 0
     // "this.offset + layoutOffset + indexOffset"
     private static CodeBuilder offsetBlock(CodeBuilder cob,
-                                           MethodInfo info,
+                                           AccessorInfo info,
                                            ClassDesc classDesc) {
         cob.aload(0)
                 .getfield(classDesc, OFFSET_FIELD_NAME, CD_long); // long
@@ -356,13 +359,13 @@ final class ByteCodeGenerator {
         return (parameters - 1) * 2 + 1;
     }
 
-    private static List<ClassDesc> parameterDesc(MethodInfo info) {
+    private static List<ClassDesc> parameterDesc(AccessorInfo info) {
         // If it is an array, there is a number of long parameters
         List<ClassDesc> desc = info.layoutInfo().arrayInfo()
                 .map(ai -> ai.dimensions().stream().map(_ -> CD_long).toList())
                 .orElse(Collections.emptyList());
 
-        if (info.key().accessorType() == MethodInfo.AccessorType.SETTER) {
+        if (info.key().accessorType() == AccessorInfo.AccessorType.SETTER) {
             // Add the trailing setter type
             desc = new ArrayList<>(desc);
             desc.add(desc(info.type()));

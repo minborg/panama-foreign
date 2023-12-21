@@ -5,6 +5,7 @@ import jdk.internal.foreign.mapper.accessor.ArrayInfo;
 import jdk.internal.foreign.mapper.component.Util;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
@@ -16,6 +17,20 @@ import static jdk.internal.foreign.mapper.component.Util.REQUIRE_ARRAY_LENGTH;
 
 @ValueBased
 final class SetMethodHandleGenerator {
+
+    private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
+    private static final MethodHandle FROM_2D_ARRAY;
+
+    static {
+        try {
+            FROM_2D_ARRAY = LOCAL_LOOKUP.findStatic(SetMethodHandleGenerator.class,
+                    "from2DArray",
+                    MethodType.methodType(void.class, MemorySegment.class, long.class,
+                            Object.class, int[].class, ValueLayout.class, MemoryLayout.class));
+        } catch (Exception e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
 
     private final MethodHandles.Lookup lookup;
     private final MapperCache mapperCache;
@@ -40,6 +55,7 @@ final class SetMethodHandleGenerator {
 
     public MethodHandle ofArrayValue(AccessorInfo accessorInfo) throws ReflectiveOperationException {
         ArrayInfo arrayInfo = accessorInfo.layoutInfo().arrayInfo().orElseThrow();
+        MemoryLayout elementLayout = arrayInfo.elementLayout();
         if (arrayInfo.dimensions().size() == 1) {
             int length = arrayInfo.dimensions().getFirst().intValue();
             MethodType methodType = MethodType.methodType(void.class,
@@ -49,7 +65,7 @@ final class SetMethodHandleGenerator {
             // -> (Object arr, MemorySegment, ValueLayout.ofx, long, int)void
             mh = MethodHandles.insertArguments(mh, 1 , 0);
             // -> (Object arr, MemorySegment, long, int)void
-            mh = MethodHandles.insertArguments(mh, 2, arrayInfo.elementLayout());
+            mh = MethodHandles.insertArguments(mh, 2, elementLayout);
             // (Object arr, MemorySegment, long, int)void -> (Object arr, MemorySegment, long)void
             mh = MethodHandles.insertArguments(mh, 3, length);
 
@@ -64,9 +80,32 @@ final class SetMethodHandleGenerator {
             // (MemorySegment, long, Object)void -> (MemorySegment, long, x[])void
             return mh.asType(mh.type().changeParameterType(2, accessorInfo.type()));
         }
-        throw new UnsupportedOperationException();
+        int[] dimensions = arrayInfo.dimensions().stream().mapToInt(Long::intValue).toArray();
+        MemoryLayout sequenceLayout = accessorInfo.layoutInfo().layout();
+        if (dimensions.length == 2) {
+            // (...)void -> (MemorySegment, long, Object)void
+            MethodHandle mh = MethodHandles.insertArguments(FROM_2D_ARRAY,3, dimensions, elementLayout, sequenceLayout);
+            // (MemorySegment, long, Object)void -> (MemorySegment, long, x[])void
+            mh = mh.asType(mh.type().changeParameterType(2, accessorInfo.type()));
+            return mh;
+        }
+        throw new IllegalArgumentException("No support of arrays of dimension > 2");
     }
 
+    // Reflective use
+    private static void from2DArray(MemorySegment segment, long offset, Object array,
+                                    int[] dimensions,
+                                    ValueLayout elementLayout,
+                                    MemoryLayout sequenceLayout) {
+
+        long sliceSize = dimensions[1] * elementLayout.byteSize();
+        Util.requireArrayLength(array, dimensions[0]);
+        for (int i = 0; i < dimensions[0]; i++) {
+            Object subArray = Array.get(array, i);
+            Util.requireArrayLength(subArray, dimensions[1]);
+            MemorySegment.copy(subArray, 0, segment, elementLayout, offset + sliceSize * i, dimensions[1]);
+        }
+    }
 
     // Factory
     static SetMethodHandleGenerator create(MethodHandles.Lookup lookup,

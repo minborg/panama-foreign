@@ -484,7 +484,15 @@ public final class Util {
         }
     }
 
-    private static Object requireArrayLength(Object array, int expected) {
+    public static Class<?> baseComponentType(Class<?> type) {
+        Class<?> componentType = type.componentType();
+        if (componentType == null) {
+            return type;
+        }
+        return baseComponentType(componentType);
+    }
+
+    public static Object requireArrayLength(Object array, int expected) {
         int actual = Array.getLength(array);
         if (actual != expected) {
             throw new ArrayIndexOutOfBoundsException(

@@ -119,8 +119,6 @@ final class TestRecordMapper {
         Line point = mapper.get(segment);
         assertEquals(new Line(new Point(3, 4), new Point(6, 0)), point);
 
-        System.out.println("mapper.setHandle() = " + mapper.setHandle());
-
         mapper.set(segment, POINT_LAYOUT.byteSize(), new Line(
                 new Point(-3, -4),
                 new Point(-6, 0)
@@ -132,6 +130,7 @@ final class TestRecordMapper {
                          Point p4, Point p5, Point p6, Point p7) {
     }
 
+    // This test is to make sure the iterative setter works (as opposed to the composed one).
     @Test
     void bunch() {
         StructLayout layout = MemoryLayout.structLayout(IntStream.range(0, 8)
@@ -260,7 +259,7 @@ final class TestRecordMapper {
 
     @Test
     public void testSequenceBox2D() {
-        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 1 + 2 * 3 + 1).toArray());
+        var segment = MemorySegment.ofArray(IntStream.range(0, 1 + 2 * 3 + 1).toArray());
 
         var layout = MemoryLayout.structLayout(
                 JAVA_INT.withName("before"),
@@ -279,7 +278,7 @@ final class TestRecordMapper {
         var dstSegment = newCopyOf(segment);
         mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15, 16}}, 17));
 
-        MapperTestUtil.assertContentEquals(IntStream.rangeClosed(0, 1 + 2 * 3 + 1).map(i -> i + 10).toArray(), dstSegment);
+        MapperTestUtil.assertContentEquals(IntStream.range(0, 1 + 2 * 3 + 1).map(i -> i + 10).toArray(), dstSegment);
 
         assertThrows(NullPointerException.class, () -> {
             // The array is null

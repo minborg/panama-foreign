@@ -130,8 +130,12 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
 
     // Abstract methods
 
+    // -> (MemorySegment, long)T if isLeaf()
+    // -> (MemorySegment, long)Object if !isLeaf()
     protected abstract MethodHandle computeGetHandle();
 
+    // (MemorySegment, long, T)void if isLeaf()
+    // (MemorySegment, long, Object)void if !isLeaf()
     protected abstract MethodHandle computeSetHandle();
 
 }

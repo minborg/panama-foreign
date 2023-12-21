@@ -66,23 +66,19 @@ public final class SegmentRecordMapper2<T extends Record>
     public <R> SegmentMapper<R> map(Class<R> newType,
                                     Function<? super T, ? extends R> toMapper,
                                     Function<? super R, ? extends T> fromMapper) {
-        return Mapped.of(lookup(), this, newType, toMapper, fromMapper);
+        return new Mapped<>(lookup(), newType, layout(), getHandle(), setHandle(), toMapper, fromMapper);
     }
 
     @Override
     public <R> SegmentMapper<R> map(Class<R> newType,
                                     Function<? super T, ? extends R> toMapper) {
-        return map(newType,
-                toMapper,
+        return map(newType, toMapper,
                 _ -> {
                     throw new UnsupportedOperationException(
                             "This one-way mapper cannot map from " + newType + " to " + type());
                 });
     }
 
-    // Private methods and classes
-
-    // -> (MemorySegment, long)Object
     @Override
     protected MethodHandle computeGetHandle() {
 
@@ -130,23 +126,6 @@ public final class SegmentRecordMapper2<T extends Record>
         return ctor;
     }
 
-    private MethodHandle getHandle(AccessorInfo accessorInfo) {
-        GetMethodHandleGenerator getGenerator = GetMethodHandleGenerator.create(lookup(), mapperCache());
-        try {
-            MethodHandle mh = switch (accessorInfo.key()) {
-                case SCALAR_VALUE_GETTER -> getGenerator.ofScalarValue(accessorInfo);
-                case SCALAR_RECORD_GETTER -> getGenerator.ofScalarRecord(accessorInfo);
-                case ARRAY_VALUE_GETTER -> getGenerator.ofArrayValue(accessorInfo);
-                default ->
-                        throw new IllegalArgumentException("Unable to map " + accessorInfo.method());
-            };
-            return Transpose.transposeOffset(mh, accessorInfo.offset());
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("Unable to compute getter for " + accessorInfo.method(), e);
-        }
-    }
-
-    // (MemorySegment, long, Object)void
     @Override
     protected MethodHandle computeSetHandle() {
 
@@ -168,6 +147,24 @@ public final class SegmentRecordMapper2<T extends Record>
             mh = mh.asType(Util.SET_TYPE);
         }
         return mh;
+    }
+
+    // Private methods and classes
+
+    private MethodHandle getHandle(AccessorInfo accessorInfo) {
+        GetMethodHandleGenerator getGenerator = GetMethodHandleGenerator.create(lookup(), mapperCache());
+        try {
+            MethodHandle mh = switch (accessorInfo.key()) {
+                case SCALAR_VALUE_GETTER -> getGenerator.ofScalarValue(accessorInfo);
+                case SCALAR_RECORD_GETTER -> getGenerator.ofScalarRecord(accessorInfo);
+                case ARRAY_VALUE_GETTER -> getGenerator.ofArrayValue(accessorInfo);
+                default ->
+                        throw new IllegalArgumentException("Unable to map " + accessorInfo.method());
+            };
+            return Transpose.transposeOffset(mh, accessorInfo.offset());
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException("Unable to compute getter for " + accessorInfo.method(), e);
+        }
     }
 
     private MethodHandle setHandle(AccessorInfo accessorInfo) {
@@ -290,13 +287,12 @@ public final class SegmentRecordMapper2<T extends Record>
         public <R1> SegmentMapper<R1> map(Class<R1> newType,
                                           Function<? super R, ? extends R1> toMapper,
                                           Function<? super R1, ? extends R> fromMapper) {
-            return of(lookup, this, newType, toMapper, fromMapper);
+            return new Mapped<>(lookup, newType, layout(), getHandle(), setHandle(), toMapper, fromMapper);
         }
 
         @Override
         public <R1> SegmentMapper<R1> map(Class<R1> newType, Function<? super R, ? extends R1> toMapper) {
-            return map(newType,
-                    toMapper,
+            return new Mapped<>(lookup, newType, layout(), getHandle(), setHandle(), toMapper,
                     _ -> {
                         throw new UnsupportedOperationException(
                                 "This one-way mapper cannot map from " + newType + " to " + type());
@@ -311,28 +307,6 @@ public final class SegmentRecordMapper2<T extends Record>
         // Used reflective when obtaining a MethodHandle
         T mapFrom(R r) {
             return fromMapper.apply(r);
-        }
-
-        static <T, R> Mapped<T, R> of(MethodHandles.Lookup lookup,
-                                      SegmentMapper<T> original,
-                                      Class<R> newType,
-                                      Function<? super T, ? extends R> toMapper,
-                                      Function<? super R, ? extends T> fromMapper) {
-
-            Objects.requireNonNull(lookup);
-            Objects.requireNonNull(original);
-            Objects.requireNonNull(newType);
-            Objects.requireNonNull(toMapper);
-            Objects.requireNonNull(fromMapper);
-
-            return new Mapped<>(lookup,
-                    newType,
-                    original.layout(),
-                    original.getHandle(),
-                    original.setHandle(),
-                    toMapper,
-                    fromMapper
-            );
         }
 
         private static MethodHandle findVirtual(String name) {

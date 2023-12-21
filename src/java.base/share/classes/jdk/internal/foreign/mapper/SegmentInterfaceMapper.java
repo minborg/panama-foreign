@@ -47,7 +47,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -129,7 +128,7 @@ public final class SegmentInterfaceMapper<T>
 
     @Override
     public <R> SegmentMapper<R> map(Class<R> newType, Function<? super T, ? extends R> toMapper) {
-        return Mapped.of(lookup(), this, newType, toMapper);
+        return new Mapped<>(lookup(), newType, layout(), getHandle(), toMapper);
     }
 
     @Override
@@ -262,9 +261,9 @@ public final class SegmentInterfaceMapper<T>
         }
     }
 
-    // Private methods and classes
 
-    // (MemorySegment, long)Object
+
+    @Override
     protected MethodHandle computeGetHandle() {
         try {
             // (MemorySegment, long)void
@@ -277,10 +276,10 @@ public final class SegmentInterfaceMapper<T>
         }
     }
 
-    // (MemorySegment, long, T)void
     // This method will return a MethodHandle that will update memory that
     // is mapped to a setter. Memory that is not mapped to a setter will be
     // unaffected.
+    @Override
     protected MethodHandle computeSetHandle() {
         List<AffectedMemory> fragments = affectedMemories.stream()
                 .sorted(Comparator.comparingLong(AffectedMemory::offset))
@@ -308,8 +307,10 @@ public final class SegmentInterfaceMapper<T>
         }
     }
 
+    // Private methods and classes
+
     // Invoked reflectively
-    void setAll(MemorySegment segment, long offset, T t) {
+    private void setAll(MemorySegment segment, long offset, T t) {
         MemorySegment srcSegment = segment(t)
                 .orElseThrow(SegmentInterfaceMapper::notImplType);
         long srcOffset = offset(t)
@@ -318,7 +319,7 @@ public final class SegmentInterfaceMapper<T>
     }
 
     // Invoked reflectively
-    void setFragments(MemorySegment segment, long offset, T t, List<AffectedMemory> fragments) {
+    private void setFragments(MemorySegment segment, long offset, T t, List<AffectedMemory> fragments) {
         MemorySegment srcSegment = segment(t)
                 .orElseThrow(SegmentInterfaceMapper::notImplType);
         long srcOffset = offset(t)
@@ -328,10 +329,9 @@ public final class SegmentInterfaceMapper<T>
         }
     }
 
-    static IllegalArgumentException notImplType() {
+    private static IllegalArgumentException notImplType() {
         return new IllegalArgumentException("The provided object of type T is not created by this mapper.");
     }
-
 
     // Used to keep track of which memory shards gets accessed
     // by setters. We need this when computing the setHandle
@@ -451,7 +451,7 @@ public final class SegmentInterfaceMapper<T>
         @Override
         public <R1> SegmentMapper<R1> map(Class<R1> newType,
                                           Function<? super R, ? extends R1> toMapper) {
-            return of(lookup, this, newType, toMapper);
+            return new Mapped<>(lookup, newType, layout(), getHandle(), toMapper);
         }
 
         // Used reflective when obtaining a MethodHandle
@@ -463,24 +463,6 @@ public final class SegmentInterfaceMapper<T>
         /*T mapFrom(R r) {
             return fromMapper.apply(r);
         }*/
-
-        static <T, R> Mapped<T, R> of(MethodHandles.Lookup lookup,
-                                      SegmentMapper<T> original,
-                                      Class<R> newType,
-                                      Function<? super T, ? extends R> toMapper) {
-
-            Objects.requireNonNull(lookup);
-            Objects.requireNonNull(original);
-            Objects.requireNonNull(newType);
-            Objects.requireNonNull(toMapper);
-
-            return new Mapped<>(lookup,
-                    newType,
-                    original.layout(),
-                    original.getHandle(),
-                    toMapper
-            );
-        }
 
         private static MethodHandle findVirtual(String name) {
             try {

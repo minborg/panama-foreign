@@ -158,6 +158,7 @@ public final class SegmentRecordMapper2<T extends Record>
                 case SCALAR_VALUE_GETTER -> getGenerator.ofScalarValue(accessorInfo);
                 case SCALAR_RECORD_GETTER -> getGenerator.ofScalarRecord(accessorInfo);
                 case ARRAY_VALUE_GETTER -> getGenerator.ofArrayValue(accessorInfo);
+                case ARRAY_RECORD_GETTER -> getGenerator.ofArrayRecord(accessorInfo);
                 default ->
                         throw new IllegalArgumentException("Unable to map " + accessorInfo.method());
             };
@@ -174,6 +175,7 @@ public final class SegmentRecordMapper2<T extends Record>
                 case SCALAR_VALUE_GETTER -> setGenerator.ofScalarValue(accessorInfo);
                 case SCALAR_RECORD_GETTER -> setGenerator.ofScalarRecord(accessorInfo);
                 case ARRAY_VALUE_GETTER -> setGenerator.ofArrayValue(accessorInfo);
+                case ARRAY_RECORD_GETTER -> setGenerator.ofArrayRecord(accessorInfo);
                 default ->
                         throw new IllegalArgumentException("Unable to map " + accessorInfo.method());
             };

@@ -5,6 +5,7 @@ import jdk.internal.foreign.mapper.accessor.ArrayInfo;
 import jdk.internal.foreign.mapper.component.Util;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 
+import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -20,13 +21,18 @@ final class SetMethodHandleGenerator {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
     private static final MethodHandle FROM_2D_ARRAY;
+    private static final MethodHandle FROM_RECORD_ARRAY;
 
     static {
         try {
             FROM_2D_ARRAY = LOCAL_LOOKUP.findStatic(SetMethodHandleGenerator.class,
                     "from2DArray",
-                    MethodType.methodType(void.class, MemorySegment.class, long.class,
-                            Object.class, int[].class, ValueLayout.class, MemoryLayout.class));
+                    MethodType.methodType(void.class, MemorySegment.class, long.class,  Object.class,
+                            int[].class, ValueLayout.class));
+            FROM_RECORD_ARRAY = LOCAL_LOOKUP.findStatic(SetMethodHandleGenerator.class,
+                    "fromRecordArray",
+                    MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class,
+                            Class.class, int.class, long.class, MethodHandle.class));
         } catch (Exception e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -49,15 +55,15 @@ final class SetMethodHandleGenerator {
         return MethodHandles.insertArguments(mh, 1, accessorInfo.layoutInfo().layout());
     }
 
-    public MethodHandle ofScalarRecord(AccessorInfo accessorInfo) throws ReflectiveOperationException {
+    MethodHandle ofScalarRecord(AccessorInfo accessorInfo) throws ReflectiveOperationException {
         return mapperCache.recordSetMethodHandleFor(accessorInfo);
     }
 
-    public MethodHandle ofArrayValue(AccessorInfo accessorInfo) throws ReflectiveOperationException {
+    MethodHandle ofArrayValue(AccessorInfo accessorInfo) throws ReflectiveOperationException {
         ArrayInfo arrayInfo = accessorInfo.layoutInfo().arrayInfo().orElseThrow();
         MemoryLayout elementLayout = arrayInfo.elementLayout();
         if (arrayInfo.dimensions().size() == 1) {
-            int length = arrayInfo.dimensions().getFirst().intValue();
+            int length = arrayInfo.dimensions().getLast().intValue();
             MethodType methodType = MethodType.methodType(void.class,
                     Object.class, int.class, MemorySegment.class, ValueLayout.class, long.class, int.class);
             // (Object arr, int , MemorySegment, ValueLayout.ofx, long, int)void
@@ -81,10 +87,9 @@ final class SetMethodHandleGenerator {
             return mh.asType(mh.type().changeParameterType(2, accessorInfo.type()));
         }
         int[] dimensions = arrayInfo.dimensions().stream().mapToInt(Long::intValue).toArray();
-        MemoryLayout sequenceLayout = accessorInfo.layoutInfo().layout();
         if (dimensions.length == 2) {
             // (...)void -> (MemorySegment, long, Object)void
-            MethodHandle mh = MethodHandles.insertArguments(FROM_2D_ARRAY,3, dimensions, elementLayout, sequenceLayout);
+            MethodHandle mh = MethodHandles.insertArguments(FROM_2D_ARRAY,3, dimensions, elementLayout);
             // (MemorySegment, long, Object)void -> (MemorySegment, long, x[])void
             mh = mh.asType(mh.type().changeParameterType(2, accessorInfo.type()));
             return mh;
@@ -92,11 +97,28 @@ final class SetMethodHandleGenerator {
         throw new IllegalArgumentException("No support of arrays of dimension > 2");
     }
 
+    MethodHandle ofArrayRecord(AccessorInfo accessorInfo) {
+        ArrayInfo arrayInfo = accessorInfo.layoutInfo().arrayInfo().orElseThrow();
+        MemoryLayout elementLayout = arrayInfo.elementLayout();
+        Class<?> baseComponentType = Util.baseComponentType(accessorInfo.type());
+        int[] dimensions = arrayInfo.dimensions().stream().mapToInt(Long::intValue).toArray();
+        MethodHandle setter = mapperCache.cachedRecordMapper(baseComponentType, (GroupLayout) arrayInfo.elementLayout())
+                .setHandle();
+        setter = setter.asType(setter.type().changeParameterType(2, Object.class));
+        if (dimensions.length == 1) {
+            MethodHandle mh = MethodHandles.insertArguments(FROM_RECORD_ARRAY, 3, baseComponentType, dimensions[0], elementLayout.byteSize(), setter);
+            mh = mh.asType(mh.type().changeParameterType(2, accessorInfo.type()));
+            return mh;
+        }
+        throw new IllegalArgumentException("No support of arrays of dimension > 1");
+    }
+
+    // Support Methods
+
     // Reflective use
     private static void from2DArray(MemorySegment segment, long offset, Object array,
                                     int[] dimensions,
-                                    ValueLayout elementLayout,
-                                    MemoryLayout sequenceLayout) {
+                                    ValueLayout elementLayout) {
 
         long sliceSize = dimensions[1] * elementLayout.byteSize();
         Util.requireArrayLength(array, dimensions[0]);
@@ -104,6 +126,26 @@ final class SetMethodHandleGenerator {
             Object subArray = Array.get(array, i);
             Util.requireArrayLength(subArray, dimensions[1]);
             MemorySegment.copy(subArray, 0, segment, elementLayout, offset + sliceSize * i, dimensions[1]);
+        }
+    }
+
+    // Reflective use
+    private static void fromRecordArray(MemorySegment segment, long offset, Object array,
+                                        Class<?> baseComponentType,
+                                        int dimension,
+                                        long sliceSize,
+                                        MethodHandle setter) {
+
+        Util.requireArrayLength(array, dimension);
+        for (int i = 0; i < dimension; i++) {
+            try {
+                Object element = Array.get(array, i);
+                setter.invokeExact(segment, offset + i * sliceSize, element);
+            } catch (NullPointerException | ArrayIndexOutOfBoundsException propagate) {
+                throw propagate;
+            } catch (Throwable throwable) {
+                throw new RuntimeException("Unable to write " + baseComponentType, throwable);
+            }
         }
     }
 

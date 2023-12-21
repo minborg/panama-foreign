@@ -295,6 +295,57 @@ final class TestRecordMapper {
         });
     }
 
+    record Polygon(Point[] points) {
+
+        @Override
+        public boolean equals(Object obj) {
+            return obj instanceof Polygon(var otherPoints) &&
+                    Arrays.equals(points, otherPoints);
+        }
+
+        @Override
+        public String toString() {
+            return Arrays.toString(points);
+        }
+    }
+
+    @Test
+    void triangle() {
+        var segment = MemorySegment.ofArray(new int[]{1, 1, 2, 2, 3, 1});
+
+        GroupLayout layout = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
+        );
+
+        var mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Polygon.class, layout);
+
+        Polygon triangle = mapper.get(segment);
+
+        assertEquals(new Polygon(new Point[]{new Point(1,1), new Point(2,2), new Point(3, 1)}), triangle);
+
+        var dstSegment = newCopyOf(segment);
+        mapper.set(dstSegment, new Polygon(new Point[]{new Point(11,11), new Point(12,12), new Point(13, 11)}));
+
+        MapperTestUtil.assertContentEquals(new int[]{11, 11, 12, 12, 13, 11}, dstSegment);
+
+        assertThrows(NullPointerException.class, () -> {
+            // The array is null
+            mapper.set(dstSegment, new Polygon(null));
+        });
+
+        assertThrows(IndexOutOfBoundsException.class, () -> {
+            // The array is not of correct size
+            mapper.set(dstSegment, new Polygon(new Point[]{new Point(1, 1), new Point(2, 2)}));
+        });
+        assertThrows(IndexOutOfBoundsException.class, () -> {
+            // The array is not of correct size
+            Point[] points = IntStream.range(0, 4).mapToObj(_ -> new Point(1, 1)).toArray(Point[]::new);
+            mapper.set(dstSegment, new Polygon(points));
+        });
+
+    }
+
+
     // Support methods
 
     private static MemorySegment newCopyOf(MemorySegment source) {

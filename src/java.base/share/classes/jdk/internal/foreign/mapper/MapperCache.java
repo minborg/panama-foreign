@@ -73,13 +73,17 @@ final class MapperCache {
     }
 
     private SegmentMapper<?> cachedInterfaceMapper(AccessorInfo accessorInfo) {
-        return subMappers.computeIfAbsent(CacheKey.of(accessorInfo), _ ->
-                SegmentMapper.ofInterface(lookup, accessorInfo.type(), accessorInfo.targetLayout()));
+        return subMappers.computeIfAbsent(CacheKey.of(accessorInfo), k ->
+                SegmentMapper.ofInterface(lookup, k.type(), k.layout()));
     }
 
     private SegmentMapper<?> cachedRecordMapper(AccessorInfo accessorInfo) {
-        return subMappers.computeIfAbsent(CacheKey.of(accessorInfo), _ ->
-                new SegmentRecordMapper2<>(lookup, MapperUtil.requireRecordType(accessorInfo.type()), accessorInfo.targetLayout(), true)
+        return cachedRecordMapper(accessorInfo.type(), accessorInfo.targetLayout());
+    }
+
+    SegmentMapper<?> cachedRecordMapper(Class<?> type, GroupLayout layout) {
+        return subMappers.computeIfAbsent(CacheKey.of(type, layout), k ->
+                new SegmentRecordMapper2<>(lookup, MapperUtil.requireRecordType(k.type()), k.layout(), true)
         );
     }
 
@@ -87,7 +91,11 @@ final class MapperCache {
                     GroupLayout layout) {
 
         static CacheKey of(AccessorInfo accessorInfo) {
-            return new CacheKey(accessorInfo.type(), accessorInfo.targetLayout().withoutName());
+            return of(accessorInfo.type(), accessorInfo.targetLayout().withoutName());
+        }
+
+        static CacheKey of(Class<?> type, GroupLayout layout) {
+            return new CacheKey(type, layout.withoutName());
         }
 
     }

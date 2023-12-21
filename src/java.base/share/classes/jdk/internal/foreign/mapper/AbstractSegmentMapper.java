@@ -39,7 +39,7 @@ import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.UnaryOperator;
 
-abstract class AbstractSegmentMapper<T> implements SegmentMapper<T>, HasLookup {
+abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
 
     private final MethodHandles.Lookup lookup;
     private final Class<T> type;
@@ -68,7 +68,8 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T>, HasLookup {
                 .map(AccessorInfo::method)
                 .toList();
         if (!unsupportedAccessors.isEmpty()) {
-            throw new IllegalArgumentException("The following accessors are not supported: " + unsupportedAccessors);
+            throw new IllegalArgumentException(
+                    "The following accessors are not supported for " + valueType + ": " + unsupportedAccessors);
         }
         MapperUtil.assertMappingsCorrectAndTotal(type, layout, accessors);
 
@@ -76,13 +77,7 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T>, HasLookup {
         this.setHandle = computeSetHandle();
 
         // We do not need the accessors anymore
-        this.accessors.clear();
         this.accessors = null;
-    }
-
-    @Override
-    public final MethodHandles.Lookup lookup() {
-        return lookup;
     }
 
     @Override
@@ -116,6 +111,10 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T>, HasLookup {
     }
 
     // Protected methods
+
+    protected final MethodHandles.Lookup lookup() {
+        return lookup;
+    }
 
     protected final Accessors accessors() {
         return accessors;

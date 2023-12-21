@@ -25,7 +25,6 @@
 
 package jdk.internal.foreign.mapper;
 
-import jdk.internal.ValueBased;
 import jdk.internal.foreign.mapper.accessor.Accessors;
 import jdk.internal.foreign.mapper.component.Transpose;
 import jdk.internal.foreign.mapper.component.Util;
@@ -51,7 +50,7 @@ import java.util.stream.IntStream;
  */
 public final class SegmentRecordMapper2<T extends Record>
         extends AbstractSegmentMapper<T>
-        implements SegmentMapper<T>, HasLookup {
+        implements SegmentMapper<T> {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
@@ -59,14 +58,15 @@ public final class SegmentRecordMapper2<T extends Record>
                          Class<T> type,
                          GroupLayout layout,
                          boolean leaf) {
-        super(lookup, type, layout, leaf, ValueType.RECORD, MapperUtil::requireRecordType, Accessors::ofRecord);
+        super(lookup, type, layout, leaf,
+                ValueType.RECORD, MapperUtil::requireRecordType, Accessors::ofRecord);
     }
 
     @Override
     public <R> SegmentMapper<R> map(Class<R> newType,
                                     Function<? super T, ? extends R> toMapper,
                                     Function<? super R, ? extends T> fromMapper) {
-        return Mapped.of(this, newType, toMapper, fromMapper);
+        return Mapped.of(lookup(), this, newType, toMapper, fromMapper);
     }
 
     @Override
@@ -253,17 +253,15 @@ public final class SegmentRecordMapper2<T extends Record>
      * @param <T>        original mapper type
      * @param <R>        composed mapper type
      */
-    // Records have trusted instance fields.
-    @ValueBased
     record Mapped<T, R>(
-            @Override MethodHandles.Lookup lookup,
+            MethodHandles.Lookup lookup,
             @Override Class<R> type,
             @Override GroupLayout layout,
             @Override MethodHandle getHandle,
             @Override MethodHandle setHandle,
             Function<? super T, ? extends R> toMapper,
             Function<? super R, ? extends T> fromMapper
-    ) implements SegmentMapper<R>, HasLookup {
+    ) implements SegmentMapper<R> {
 
         Mapped(MethodHandles.Lookup lookup,
                Class<R> type,
@@ -292,7 +290,7 @@ public final class SegmentRecordMapper2<T extends Record>
         public <R1> SegmentMapper<R1> map(Class<R1> newType,
                                           Function<? super R, ? extends R1> toMapper,
                                           Function<? super R1, ? extends R> fromMapper) {
-            return of(this, newType, toMapper, fromMapper);
+            return of(lookup, this, newType, toMapper, fromMapper);
         }
 
         @Override
@@ -315,18 +313,19 @@ public final class SegmentRecordMapper2<T extends Record>
             return fromMapper.apply(r);
         }
 
-        static <T, R, O extends SegmentMapper<T> & HasLookup> Mapped<T, R> of(
-                O original,
-                Class<R> newType,
-                Function<? super T, ? extends R> toMapper,
-                Function<? super R, ? extends T> fromMapper) {
+        static <T, R> Mapped<T, R> of(MethodHandles.Lookup lookup,
+                                      SegmentMapper<T> original,
+                                      Class<R> newType,
+                                      Function<? super T, ? extends R> toMapper,
+                                      Function<? super R, ? extends T> fromMapper) {
 
+            Objects.requireNonNull(lookup);
             Objects.requireNonNull(original);
             Objects.requireNonNull(newType);
             Objects.requireNonNull(toMapper);
             Objects.requireNonNull(fromMapper);
 
-            return new Mapped<>(original.lookup(),
+            return new Mapped<>(lookup,
                     newType,
                     original.layout(),
                     original.getHandle(),

@@ -25,7 +25,6 @@
 
 package jdk.internal.foreign.mapper;
 
-import jdk.internal.ValueBased;
 import jdk.internal.classfile.ClassHierarchyResolver;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo.AccessorType;
@@ -42,7 +41,6 @@ import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -63,7 +61,7 @@ import static jdk.internal.foreign.layout.MemoryLayoutUtil.requireNonNegative;
  */
 public final class SegmentInterfaceMapper<T>
         extends AbstractSegmentMapper<T>
-        implements SegmentMapper<T>, HasLookup {
+        implements SegmentMapper<T> {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
@@ -77,7 +75,8 @@ public final class SegmentInterfaceMapper<T>
                                    GroupLayout layout,
                                    boolean leaf,
                                    List<AffectedMemory> affectedMemories) {
-        super(lookup, type, layout, leaf, ValueType.INTERFACE, MapperUtil::requireImplementableInterfaceType, Accessors::ofInterface);
+        super(lookup, type, layout, leaf,
+                ValueType.INTERFACE, MapperUtil::requireImplementableInterfaceType, Accessors::ofInterface);
         this.affectedMemories = affectedMemories;
 
         // Add affected memory for all the setters seen on this level
@@ -130,7 +129,7 @@ public final class SegmentInterfaceMapper<T>
 
     @Override
     public <R> SegmentMapper<R> map(Class<R> newType, Function<? super T, ? extends R> toMapper) {
-        return Mapped.of(this, newType, toMapper);
+        return Mapped.of(lookup(), this, newType, toMapper);
     }
 
     @Override
@@ -399,15 +398,13 @@ public final class SegmentInterfaceMapper<T>
      * @param <T>          original mapper type
      * @param <R>          composed mapper type
      */
-    // Records have trusted instance fields.
-    @ValueBased
     record Mapped<T, R>(
-            @Override MethodHandles.Lookup lookup,
+            MethodHandles.Lookup lookup,
             @Override Class<R> type,
             @Override GroupLayout layout,
             @Override MethodHandle getHandle,
             Function<? super T, ? extends R> toMapper
-    ) implements SegmentMapper<R>, HasLookup {
+    ) implements SegmentMapper<R> {
 
         static final MethodHandle SET_OPERATIONS_UNSUPPORTED;
 
@@ -454,7 +451,7 @@ public final class SegmentInterfaceMapper<T>
         @Override
         public <R1> SegmentMapper<R1> map(Class<R1> newType,
                                           Function<? super R, ? extends R1> toMapper) {
-            return of(this, newType, toMapper);
+            return of(lookup, this, newType, toMapper);
         }
 
         // Used reflective when obtaining a MethodHandle
@@ -467,16 +464,17 @@ public final class SegmentInterfaceMapper<T>
             return fromMapper.apply(r);
         }*/
 
-        static <T, R, O extends SegmentMapper<T> & HasLookup> Mapped<T, R> of(
-                O original,
-                Class<R> newType,
-                Function<? super T, ? extends R> toMapper) {
+        static <T, R> Mapped<T, R> of(MethodHandles.Lookup lookup,
+                                      SegmentMapper<T> original,
+                                      Class<R> newType,
+                                      Function<? super T, ? extends R> toMapper) {
 
+            Objects.requireNonNull(lookup);
             Objects.requireNonNull(original);
             Objects.requireNonNull(newType);
             Objects.requireNonNull(toMapper);
 
-            return new Mapped<>(original.lookup(),
+            return new Mapped<>(lookup,
                     newType,
                     original.layout(),
                     original.getHandle(),

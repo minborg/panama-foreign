@@ -557,6 +557,14 @@ final class TestInterfaceMapper {
         Point p1 = accessor.points(1);
         Point p2 = accessor.points(2);
 
+        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+            accessor.points(-1)
+        );
+
+        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+            accessor.points(3)
+        );
+
         assertEquals(1, p0.x());
         assertEquals(10, p0.y());
         assertEquals(2, p1.x());
@@ -671,6 +679,20 @@ final class TestInterfaceMapper {
             assertEquals('A', accessor.c(1, 1));
             assertEquals((short) 32766, accessor.s(1, 1));
             assertEquals((byte) 126, accessor.b(1, 1));
+
+            assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+                accessor.i(-1, 0)
+            );
+            assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+                accessor.i(0, -1)
+            );
+            assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+                accessor.i(3, 0)
+            );
+            assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+                accessor.i(0, 4)
+            );
+
         }
     }
 
@@ -711,8 +733,20 @@ final class TestInterfaceMapper {
         accessor.points(1, 2, new Point(-1, -2));
         assertEquals(-1, accessor.points(1, 2).x());
         assertEquals(-2, accessor.points(1, 2).y());
-    }
 
+        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+                accessor.points(-1, 0)
+        );
+        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+                accessor.points(0, -1)
+        );
+        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+                accessor.points(4, 0)
+        );
+        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+                accessor.points(0, 3)
+        );
+    }
 
     @Test
     void gap() {

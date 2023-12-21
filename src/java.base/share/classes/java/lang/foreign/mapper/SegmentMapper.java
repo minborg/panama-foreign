@@ -7,6 +7,7 @@ import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -392,6 +393,9 @@ public interface SegmentMapper<T> {
      *         {@linkplain MemorySegment#isReadOnly() read-only}
      * @throws UnsupportedOperationException if {@code value} is not a
      *         {@linkplain MemorySegment#isNative() native} segment
+     * @throws IndexOutOfBoundsException if an array length does not correspond to the
+     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
+     * @throws NullPointerException if a required parameter is {@code null}
      */
     default void set(MemorySegment segment, T t) {
         set(segment, 0L, t);
@@ -417,7 +421,10 @@ public interface SegmentMapper<T> {
      * @throws UnsupportedOperationException if
      *         this segment is {@linkplain MemorySegment#isReadOnly() read-only}
      * @throws UnsupportedOperationException if
-     *         {@code value} is not a {@linkplain MemorySegment#isNative() native} segment
+     *         {@code value} is not a {@linkplain MemorySegment#isNative() native} segment // Todo: only for pointers
+     * @throws IndexOutOfBoundsException if an array length does not correspond to the
+     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
+     * @throws NullPointerException if a required parameter is {@code null}
      */
     default void set(MemorySegment segment, long offset, T t) {
         try {
@@ -427,7 +434,8 @@ public interface SegmentMapper<T> {
                  WrongThreadException |
                  IllegalStateException |
                  IllegalArgumentException |
-                 UnsupportedOperationException rethrow) {
+                 UnsupportedOperationException |
+                 NullPointerException rethrow) {
             throw rethrow;
         } catch (Throwable e) {
             throw new RuntimeException("Unable to invoke setHandle() with " +
@@ -459,6 +467,9 @@ public interface SegmentMapper<T> {
      *         {@linkplain MemorySegment#isReadOnly() read-only}
      * @throws UnsupportedOperationException if {@code value} is not a
      *         {@linkplain MemorySegment#isNative() native} segment
+     * @throws IndexOutOfBoundsException if an array length does not correspond to the
+     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
+     * @throws NullPointerException if a required parameter is {@code null}
      */
     default void setAtIndex(MemorySegment segment, long index, T t) {
         set(segment, layout().byteSize() * index, t);

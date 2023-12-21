@@ -10,6 +10,9 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Array;
+
+import static jdk.internal.foreign.mapper.component.Util.REQUIRE_ARRAY_LENGTH;
 
 @ValueBased
 final class SetMethodHandleGenerator {
@@ -38,6 +41,7 @@ final class SetMethodHandleGenerator {
     public MethodHandle ofArrayValue(AccessorInfo accessorInfo) throws ReflectiveOperationException {
         ArrayInfo arrayInfo = accessorInfo.layoutInfo().arrayInfo().orElseThrow();
         if (arrayInfo.dimensions().size() == 1) {
+            int length = arrayInfo.dimensions().getFirst().intValue();
             MethodType methodType = MethodType.methodType(void.class,
                     Object.class, int.class, MemorySegment.class, ValueLayout.class, long.class, int.class);
             // (Object arr, int , MemorySegment, ValueLayout.ofx, long, int)void
@@ -47,11 +51,16 @@ final class SetMethodHandleGenerator {
             // -> (Object arr, MemorySegment, long, int)void
             mh = MethodHandles.insertArguments(mh, 2, arrayInfo.elementLayout());
             // (Object arr, MemorySegment, long, int)void -> (Object arr, MemorySegment, long)void
-            mh = MethodHandles.insertArguments(mh, 3, arrayInfo.dimensions().getFirst().intValue());
+            mh = MethodHandles.insertArguments(mh, 3, length);
 
             var newMt = MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class);
             // (Object arr, MemorySegment, long)void -> (MemorySegment, long, Object)void
             mh = MethodHandles.permuteArguments(mh, newMt, 2, 0, 1);
+
+            // Make sure the array length equals the sequence layout element count
+            MethodHandle requireArrayLength = MethodHandles.insertArguments(REQUIRE_ARRAY_LENGTH, 1, length);
+            mh = MethodHandles.filterArguments(mh, 2, requireArrayLength);
+
             // (MemorySegment, long, Object)void -> (MemorySegment, long, x[])void
             return mh.asType(mh.type().changeParameterType(2, accessorInfo.type()));
         }

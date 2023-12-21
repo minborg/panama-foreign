@@ -73,6 +73,10 @@ public final class Util {
     // (Set<X>)List<X>
     public static final MethodHandle LIST_AS_COPY_OF_SET;
 
+    // A MethodHandle of type (Object, int)Object that checks the
+    // array length
+    public static final MethodHandle REQUIRE_ARRAY_LENGTH;
+
     static {
         try {
             SUM_LONG = MethodHandles.publicLookup().findStatic(Long.class,
@@ -97,6 +101,10 @@ public final class Util {
                     "setAsCollection",
                     MethodType.methodType(Collection.class, Set.class));
             LIST_AS_COPY_OF_SET = MethodHandles.filterArguments(listCopyOf, 0, setAsCollection);
+
+            REQUIRE_ARRAY_LENGTH = LOOKUP.findStatic(Util.class,
+                    "requireArrayLength",
+                    MethodType.methodType(Object.class, Object.class, int.class));
 
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
@@ -476,4 +484,12 @@ public final class Util {
         }
     }
 
+    private static Object requireArrayLength(Object array, int expected) {
+        int actual = Array.getLength(array);
+        if (actual != expected) {
+            throw new ArrayIndexOutOfBoundsException(
+                    "Expected an array length of " + expected + " but it was actually " + actual);
+        }
+        return array;
+    }
 }

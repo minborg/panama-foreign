@@ -35,13 +35,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandles;
-import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
-import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -73,7 +68,7 @@ final class TestRecordMapper {
 
     @Test
     void point() {
-        MemorySegment segment = copy(POINT_SEGMENT);
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
         Point point = mapper.get(segment);
         assertEquals(3, point.x());
@@ -98,7 +93,7 @@ final class TestRecordMapper {
 
     @Test
     void mappedTinyPoint() {
-        MemorySegment segment = copy(POINT_SEGMENT);
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
         SegmentMapper<TinyPoint> tinyMapper =
                 mapper.map(TinyPoint.class,
@@ -118,7 +113,7 @@ final class TestRecordMapper {
 
     @Test
     void line() {
-        MemorySegment segment = copy(POINT_SEGMENT);
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
         SegmentMapper<Line> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Line.class, LINE_LAYOUT);
 
         Line point = mapper.get(segment);
@@ -167,8 +162,6 @@ final class TestRecordMapper {
 
     record SequenceBox(int before, int[] ints, int after) {
 
-        // Todo: Remove final!
-
         @Override
         public boolean equals(Object obj) {
             return obj instanceof SequenceBox(var otherBefore, var otherInts, var otherAfter) &&
@@ -182,6 +175,19 @@ final class TestRecordMapper {
                     ", ints=" + Arrays.toString(ints) +
                     ", after=" + after+"]";
         }
+
+        // Accessor similar to an interface mapper array accessor
+        public int ints(long i) {
+            return ints[Math.toIntExact(i)];
+        }
+
+        // Convenience method
+        public List<Integer> intsAsList() {
+            return Arrays.stream(ints)
+                    .boxed()
+                    .toList();
+        }
+
     }
 
     @Test
@@ -199,12 +205,100 @@ final class TestRecordMapper {
         SequenceBox sequenceBox = mapper.get(segment);
 
         assertEquals(new SequenceBox(0, new int[]{1, 2}, 3), sequenceBox);
+
+        var dstSegment = newCopyOf(segment);
+        mapper.set(dstSegment, new SequenceBox(10, new int[]{11, 12}, 13));
+
+        MapperTestUtil.assertContentEquals(IntStream.rangeClosed(10, 13).toArray(), dstSegment);
+
+        assertThrows(NullPointerException.class, () -> {
+            // The array is null
+            mapper.set(dstSegment, new SequenceBox(10, null, 13));
+        });
+
+        assertThrows(IndexOutOfBoundsException.class, () -> {
+            // The array is not of correct size
+            mapper.set(dstSegment, new SequenceBox(10, new int[]{11}, 13));
+        });
+        assertThrows(IndexOutOfBoundsException.class, () -> {
+            // The array is not of correct size
+            mapper.set(dstSegment, new SequenceBox(10, new int[]{11, 12, 13}, 13));
+        });
     }
 
+    record SequenceBox2D(int before, int[][] ints, int after) {
+
+        @Override
+        public boolean equals(Object obj) {
+            return obj instanceof SequenceBox2D(var otherBefore, var otherInts, var otherAfter) &&
+                    before == otherBefore &&
+                    Arrays.deepEquals(ints, otherInts) &&
+                    after == otherAfter;
+        }
+
+        @Override
+        public String toString() {
+            return SequenceBox.class.getSimpleName() +
+                    "[before=" + before +
+                    ", ints=" + Arrays.deepToString(ints) +
+                    ", after=" + after+"]";
+        }
+
+        // Accessor similar to an interface mapper array accessor
+        public int ints(long i, long j) {
+            return ints[Math.toIntExact(i)][Math.toIntExact(j)];
+        }
+
+        // Convenience method
+        public List<List<Integer>> intsAsList() {
+            return Arrays.stream(ints)
+                    .map(a -> Arrays.stream(a).boxed().toList())
+                    .toList();
+        }
+
+    }
+
+    @Test
+    public void testSequenceBox2D() {
+        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 1 + 2 * 3 + 1).toArray());
+
+        var layout = MemoryLayout.structLayout(
+                JAVA_INT.withName("before"),
+                MemoryLayout.sequenceLayout(2,
+                        MemoryLayout.sequenceLayout(3, JAVA_INT)
+                ).withName("ints"),
+                JAVA_INT.withName("after")
+        );
+
+        var mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, SequenceBox2D.class, layout);
+
+        SequenceBox2D sequenceBox = mapper.get(segment);
+
+        assertEquals(new SequenceBox2D(0, new int[][]{{1, 2, 3}, {4, 5, 6}}, 7), sequenceBox);
+
+        var dstSegment = newCopyOf(segment);
+        mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15, 16}}, 17));
+
+        MapperTestUtil.assertContentEquals(IntStream.rangeClosed(0, 1 + 2 * 3 + 1).map(i -> i + 10).toArray(), dstSegment);
+
+        assertThrows(NullPointerException.class, () -> {
+            // The array is null
+            mapper.set(dstSegment, new SequenceBox2D(10, null, 13));
+        });
+
+        assertThrows(IndexOutOfBoundsException.class, () -> {
+            // The array is not of correct size
+            mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}}, 13));
+        });
+        assertThrows(IndexOutOfBoundsException.class, () -> {
+            // The array is not of correct size
+            mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15}}, 13));
+        });
+    }
 
     // Support methods
 
-    private static MemorySegment copy(MemorySegment source) {
+    private static MemorySegment newCopyOf(MemorySegment source) {
         return Arena.ofAuto()
                 .allocate(source.byteSize())
                 .copyFrom(source);

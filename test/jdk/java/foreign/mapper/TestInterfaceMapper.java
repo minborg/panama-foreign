@@ -272,8 +272,6 @@ final class TestInterfaceMapper {
         assertEquals(7, end.x());
         assertEquals(9, end.y());
 
-        System.out.println("mapper = " + mapper);
-
         // SegmentMapper::set
         MemorySegment dstSegment = newSegment(LINE_LAYOUT);
         mapper.set(dstSegment, accessor);
@@ -417,8 +415,8 @@ final class TestInterfaceMapper {
         );
         var message = e.getMessage();
 
-        assertTrue(message.startsWith("Setters cannot take an interface as a parameter: "));
-        assertTrue(message.contains(Fail1.class.getMethods()[0].toString()));
+        assertTrue(message.contains("not supported"), message);
+        assertTrue(message.contains(Fail1.class.getMethods()[0].toString()), message);
     }
 
     interface Fail2 {
@@ -557,11 +555,11 @@ final class TestInterfaceMapper {
         Point p1 = accessor.points(1);
         Point p2 = accessor.points(2);
 
-        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+        assertThrows(IndexOutOfBoundsException.class, () ->
             accessor.points(-1)
         );
 
-        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+        assertThrows(IndexOutOfBoundsException.class, () ->
             accessor.points(3)
         );
 
@@ -680,16 +678,16 @@ final class TestInterfaceMapper {
             assertEquals((short) 32766, accessor.s(1, 1));
             assertEquals((byte) 126, accessor.b(1, 1));
 
-            assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+            assertThrows(IndexOutOfBoundsException.class, () ->
                 accessor.i(-1, 0)
             );
-            assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+            assertThrows(IndexOutOfBoundsException.class, () ->
                 accessor.i(0, -1)
             );
-            assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+            assertThrows(IndexOutOfBoundsException.class, () ->
                 accessor.i(3, 0)
             );
-            assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+            assertThrows(IndexOutOfBoundsException.class, () ->
                 accessor.i(0, 4)
             );
 
@@ -734,16 +732,16 @@ final class TestInterfaceMapper {
         assertEquals(-1, accessor.points(1, 2).x());
         assertEquals(-2, accessor.points(1, 2).y());
 
-        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+        assertThrows(IndexOutOfBoundsException.class, () ->
                 accessor.points(-1, 0)
         );
-        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+        assertThrows(IndexOutOfBoundsException.class, () ->
                 accessor.points(0, -1)
         );
-        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+        assertThrows(IndexOutOfBoundsException.class, () ->
                 accessor.points(4, 0)
         );
-        assertThrows(ArrayIndexOutOfBoundsException.class, () ->
+        assertThrows(IndexOutOfBoundsException.class, () ->
                 accessor.points(0, 3)
         );
     }

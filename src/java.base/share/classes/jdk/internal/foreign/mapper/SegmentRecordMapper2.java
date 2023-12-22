@@ -40,7 +40,7 @@ import java.lang.invoke.MethodType;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
+
 import java.util.SequencedCollection;
 import java.util.function.Function;
 import java.util.stream.IntStream;
@@ -54,13 +54,31 @@ public final class SegmentRecordMapper2<T extends Record>
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
+    private final MethodHandle getHandle;
+    private final MethodHandle setHandle;
+
     SegmentRecordMapper2(MethodHandles.Lookup lookup,
                          Class<T> type,
                          GroupLayout layout,
                          boolean leaf) {
         super(lookup, type, layout, leaf,
                 ValueType.RECORD, MapperUtil::requireRecordType, Accessors::ofRecord);
+        this.getHandle = computeGetHandle();
+        this.setHandle = computeSetHandle();
+        // No need for this now
+        this.accessors = null;
     }
+
+    @Override
+    public MethodHandle getHandle() {
+        return getHandle;
+    }
+
+    @Override
+    public MethodHandle setHandle() {
+        return setHandle;
+    }
+
 
     @Override
     public <R> SegmentMapper<R> map(Class<R> newType,

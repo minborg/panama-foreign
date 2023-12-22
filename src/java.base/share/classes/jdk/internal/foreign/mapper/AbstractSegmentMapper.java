@@ -45,10 +45,8 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
     private final Class<T> type;
     private final GroupLayout layout;
     private final boolean leaf;
-    private final MethodHandle getHandle;
-    private final MethodHandle setHandle;
     private final MapperCache mapperCache;
-    private Accessors accessors;
+    protected Accessors accessors;
 
     protected AbstractSegmentMapper(MethodHandles.Lookup lookup,
                                     Class<T> type,
@@ -73,11 +71,13 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
         }
         MapperUtil.assertMappingsCorrectAndTotal(type, layout, accessors);
 
+/*
         this.getHandle = computeGetHandle();
         this.setHandle = computeSetHandle();
+*/
 
         // We do not need the accessors anymore
-        this.accessors = null;
+/*        this.accessors = null;*/
     }
 
     @Override
@@ -90,24 +90,13 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
         return layout;
     }
 
-    @Override
-    public final MethodHandle getHandle() {
-        return getHandle;
-    }
-
-    @Override
-    public final MethodHandle setHandle() {
-        return setHandle;
-    }
 
     @Override
     public final String toString() {
         return getClass().getSimpleName() + "[" +
                 "lookup=" + lookup + ", " +
                 "type=" + type + ", " +
-                "layout=" + layout + ", " +
-                "getHandle=" + getHandle + ", " +
-                "setHandle=" + setHandle + ']';
+                "layout=" + layout + "]";
     }
 
     // Protected methods

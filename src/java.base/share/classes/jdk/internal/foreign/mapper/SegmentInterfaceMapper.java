@@ -32,6 +32,7 @@ import jdk.internal.foreign.mapper.accessor.AccessorInfo.Key;
 import jdk.internal.foreign.mapper.accessor.Accessors;
 import jdk.internal.foreign.mapper.component.Util;
 import jdk.internal.foreign.mapper.accessor.ValueType;
+import jdk.internal.vm.annotation.Stable;
 
 import java.io.IOException;
 import java.lang.constant.ClassDesc;
@@ -64,7 +65,10 @@ public final class SegmentInterfaceMapper<T>
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
+    @Stable
     private final Class<T> implClass;
+    private final MethodHandle getHandle;
+    private final MethodHandle setHandle;
     private final MethodHandle segmentGetHandle;
     private final MethodHandle offsetGetHandle;
     private final List<AffectedMemory> affectedMemories;
@@ -84,6 +88,8 @@ public final class SegmentInterfaceMapper<T>
                 .forEach(affectedMemories::add);
 
         this.implClass = generateClass();
+        this.getHandle = computeGetHandle();
+        this.setHandle = computeSetHandle();
 
         try {
             this.segmentGetHandle = lookup.unreflect(implClass.getMethod(MapperUtil.SECRET_SEGMENT_METHOD_NAME))
@@ -93,11 +99,24 @@ public final class SegmentInterfaceMapper<T>
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }
+        // No need for this now
+        this.accessors = null;
+    }
+
+    @Override
+    public MethodHandle getHandle() {
+        return getHandle;
+    }
+
+    @Override
+    public MethodHandle setHandle() {
+        return setHandle;
     }
 
     @Override
     public Optional<MemorySegment> segment(T source) {
-        if (isImplClass(source)) {
+        // Implicit null check of source
+        if (implClass == source.getClass()) {
             try {
                 return Optional.of((MemorySegment) segmentGetHandle.invokeExact(source));
             } catch (Throwable _) {
@@ -108,22 +127,14 @@ public final class SegmentInterfaceMapper<T>
 
     @Override
     public OptionalLong offset(T source) {
-        if (isImplClass(source)) {
+        // Implicit null check of source
+        if (implClass == source.getClass()) {
             try {
                 return OptionalLong.of((long) offsetGetHandle.invokeExact(source));
             } catch (Throwable _) {
             }
         }
         return OptionalLong.empty();
-    }
-
-    List<AffectedMemory> affectedMemories() {
-        return affectedMemories;
-    }
-
-    boolean isImplClass(T source) {
-        // Implicit null check of source
-        return implClass == source.getClass();
     }
 
     @Override
@@ -137,6 +148,56 @@ public final class SegmentInterfaceMapper<T>
                                     Function<? super R, ? extends T> fromMapper) {
         throw twoWayMappersUnsupported();
     }
+
+    @Override
+    protected MethodHandle computeGetHandle() {
+        try {
+            // (MemorySegment, long)void
+            var ctor = lookup().findConstructor(implClass, MethodType.methodType(void.class, MemorySegment.class, long.class));
+            // -> (MemorySegment, long)Object
+            ctor = ctor.asType(ctor.type().changeReturnType(Object.class));
+            return ctor;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException("Unable to find constructor for " + implClass, e);
+        }
+    }
+
+    // This method will return a MethodHandle that will update memory that
+    // is mapped to a setter. Memory that is not mapped to a setter will be
+    // unaffected.
+    @Override
+    protected MethodHandle computeSetHandle() {
+        List<AffectedMemory> fragments = affectedMemories.stream()
+                .sorted(Comparator.comparingLong(AffectedMemory::offset))
+                .toList();
+
+        fragments = AffectedMemory.coalesce(fragments);
+
+        try {
+            return switch (fragments.size()) {
+                case 0 -> MethodHandles.empty(Util.SET_TYPE);
+                case 1 -> {
+                    MethodType mt = MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class);
+                    yield LOCAL_LOOKUP.findVirtual(SegmentInterfaceMapper.class, "setAll", mt)
+                            .bindTo(this);
+                }
+                default -> {
+                    MethodType mt = MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class, List.class);
+                    MethodHandle mh = LOCAL_LOOKUP.findVirtual(SegmentInterfaceMapper.class, "setFragments", mt)
+                            .bindTo(this);
+                    yield MethodHandles.insertArguments(mh, 3, fragments);
+                }
+            };
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException("Unable to find setter", e);
+        }
+    }
+
+    List<AffectedMemory> affectedMemories() {
+        return affectedMemories;
+    }
+
+    // Private methods and classes
 
     private Class<T> generateClass() {
         ClassDesc classDesc = ClassDesc.of(type().getSimpleName() + "InterfaceMapper");
@@ -231,14 +292,18 @@ public final class SegmentInterfaceMapper<T>
             List<MethodHandle> classData = virtualMethods.stream()
                     .map(a -> switch (a.key()) {
                                 case SCALAR_INTERFACE_GETTER,
-                                     ARRAY_INTERFACE_GETTER -> mapperCache().interfaceGetMethodHandleFor(a, affectedMemories::add);
+                                     ARRAY_INTERFACE_GETTER ->
+                                        mapperCache().interfaceGetMethodHandleFor(a, affectedMemories::add);
                                 case SCALAR_RECORD_GETTER,
-                                     ARRAY_RECORD_GETTER    -> mapperCache().recordGetMethodHandleFor(a);
+                                     ARRAY_RECORD_GETTER ->
+                                        changeReturnTypeToObject(mapperCache().recordGetMethodHandleFor(a));
                                 case SCALAR_RECORD_SETTER,
-                                     ARRAY_RECORD_SETTER    -> mapperCache().recordSetMethodHandleFor(a);
+                                     ARRAY_RECORD_SETTER ->
+                                        changeParam2ToObject(mapperCache().recordSetMethodHandleFor(a));
                                 default -> throw new InternalError("Should not reach here " + a);
                             }
-                    ).toList();
+                    )
+                    .toList();
 
             if (MapperUtil.isDebug()) {
                 Path path = Path.of( classDesc.displayName() + ".class");
@@ -261,53 +326,13 @@ public final class SegmentInterfaceMapper<T>
         }
     }
 
-
-
-    @Override
-    protected MethodHandle computeGetHandle() {
-        try {
-            // (MemorySegment, long)void
-            var ctor = lookup().findConstructor(implClass, MethodType.methodType(void.class, MemorySegment.class, long.class));
-            // -> (MemorySegment, long)Object
-            ctor = ctor.asType(ctor.type().changeReturnType(Object.class));
-            return ctor;
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("Unable to find constructor for " + implClass, e);
-        }
+    private MethodHandle changeReturnTypeToObject(MethodHandle mh) {
+        return mh.asType(mh.type().changeReturnType(Object.class));
     }
 
-    // This method will return a MethodHandle that will update memory that
-    // is mapped to a setter. Memory that is not mapped to a setter will be
-    // unaffected.
-    @Override
-    protected MethodHandle computeSetHandle() {
-        List<AffectedMemory> fragments = affectedMemories.stream()
-                .sorted(Comparator.comparingLong(AffectedMemory::offset))
-                .toList();
-
-        fragments = AffectedMemory.coalesce(fragments);
-
-        try {
-            return switch (fragments.size()) {
-                case 0 -> MethodHandles.empty(Util.SET_TYPE);
-                case 1 -> {
-                    MethodType mt = MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class);
-                    yield LOCAL_LOOKUP.findVirtual(SegmentInterfaceMapper.class, "setAll", mt)
-                            .bindTo(this);
-                }
-                default -> {
-                    MethodType mt = MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class, List.class);
-                    MethodHandle mh = LOCAL_LOOKUP.findVirtual(SegmentInterfaceMapper.class, "setFragments", mt)
-                            .bindTo(this);
-                    yield MethodHandles.insertArguments(mh, 3, fragments);
-                }
-            };
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("Unable to find setter", e);
-        }
+    private MethodHandle changeParam2ToObject(MethodHandle mh) {
+        return mh.asType(mh.type().changeParameterType(2, Object.class));
     }
-
-    // Private methods and classes
 
     // Invoked reflectively
     private void setAll(MemorySegment segment, long offset, T t) {

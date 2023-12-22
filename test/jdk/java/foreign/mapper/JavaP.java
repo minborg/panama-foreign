@@ -29,7 +29,7 @@
  *          java.base/jdk.internal.classfile.constantpool
  *          java.base/jdk.internal.classfile.instruction
  *          java.base/jdk.internal.classfile.impl
- * @run junit/othervm -Djava.lang.foreign.mapper.debug= TestInterfaceMapper
+ * @run junit/othervm -Djava.lang.foreign.mapper.debug= JavaP
  */
 
 import jdk.internal.classfile.AccessFlags;
@@ -75,19 +75,12 @@ import jdk.internal.classfile.instruction.ReturnInstruction;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.lang.foreign.Arena;
-import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.mapper.SegmentMapper;
-import java.lang.invoke.MethodHandles;
 import java.lang.reflect.AccessFlag;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.BinaryOperator;
 import java.util.stream.Collectors;
@@ -97,13 +90,7 @@ import static java.lang.foreign.ValueLayout.*;
 import static java.util.stream.Collectors.joining;
 import static org.junit.jupiter.api.Assertions.*;
 
-
 final class JavaP {
-
-    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
-
-
-
 
     // Todo: Remove
     @SuppressWarnings("unchecked")

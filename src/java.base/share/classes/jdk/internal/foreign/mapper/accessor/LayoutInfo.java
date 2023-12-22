@@ -27,6 +27,7 @@ package jdk.internal.foreign.mapper.accessor;
 
 import jdk.internal.classfile.CodeBuilder;
 
+import java.lang.foreign.AddressLayout;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.SequenceLayout;
@@ -36,10 +37,10 @@ import java.util.function.Consumer;
 import java.util.function.ObjIntConsumer;
 
 public record LayoutInfo(MemoryLayout layout,
-                  Optional<ScalarInfo> scalarInfo,
-                  Optional<ArrayInfo> arrayInfo,
-                  Consumer<CodeBuilder> returnOp,
-                  ObjIntConsumer<CodeBuilder> paramOp) {
+                         Optional<ScalarInfo> scalarInfo,
+                         Optional<ArrayInfo> arrayInfo,
+                         Consumer<CodeBuilder> returnOp,
+                         ObjIntConsumer<CodeBuilder> paramOp) {
 
     public static LayoutInfo of(ValueLayout layout) {
         return switch (layout) {
@@ -60,8 +61,8 @@ public record LayoutInfo(MemoryLayout layout,
                     LayoutInfo.ofScalar(lo, "JAVA_LONG", ValueLayout.OfLong.class, CodeBuilder::lreturn, CodeBuilder::lload);
             case ValueLayout.OfDouble db ->
                     LayoutInfo.ofScalar(db, "JAVA_DOUBLE", ValueLayout.OfDouble.class, CodeBuilder::dreturn, CodeBuilder::dload);
-            default ->
-                    throw new IllegalArgumentException("Unable to map to a LayoutInfo: " + layout);
+            case AddressLayout ad ->
+                    LayoutInfo.ofScalar(ad, "ADDRESS", AddressLayout.class, CodeBuilder::areturn, CodeBuilder::aload);
         };
     }
 

@@ -215,11 +215,11 @@ final class TestRecordMapper {
             mapper.set(dstSegment, new SequenceBox(10, null, 13));
         });
 
-        assertThrows(IndexOutOfBoundsException.class, () -> {
+        assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
             mapper.set(dstSegment, new SequenceBox(10, new int[]{11}, 13));
         });
-        assertThrows(IndexOutOfBoundsException.class, () -> {
+        assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
             mapper.set(dstSegment, new SequenceBox(10, new int[]{11, 12, 13}, 13));
         });
@@ -285,11 +285,11 @@ final class TestRecordMapper {
             mapper.set(dstSegment, new SequenceBox2D(10, null, 13));
         });
 
-        assertThrows(IndexOutOfBoundsException.class, () -> {
+        assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
             mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}}, 13));
         });
-        assertThrows(IndexOutOfBoundsException.class, () -> {
+        assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
             mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15}}, 13));
         });
@@ -333,11 +333,11 @@ final class TestRecordMapper {
             mapper.set(dstSegment, new Polygon(null));
         });
 
-        assertThrows(IndexOutOfBoundsException.class, () -> {
+        assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
             mapper.set(dstSegment, new Polygon(new Point[]{new Point(1, 1), new Point(2, 2)}));
         });
-        assertThrows(IndexOutOfBoundsException.class, () -> {
+        assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
             Point[] points = IntStream.range(0, 4).mapToObj(_ -> new Point(1, 1)).toArray(Point[]::new);
             mapper.set(dstSegment, new Polygon(points));

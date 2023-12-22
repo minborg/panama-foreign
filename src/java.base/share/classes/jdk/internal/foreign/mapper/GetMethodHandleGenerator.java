@@ -6,6 +6,7 @@ import jdk.internal.foreign.mapper.accessor.ArrayInfo;
 import jdk.internal.foreign.mapper.component.Transpose;
 import jdk.internal.foreign.mapper.component.Util;
 
+import java.lang.foreign.AddressLayout;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
@@ -22,6 +23,8 @@ final class GetMethodHandleGenerator {
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
     private static final MethodHandle TO_2D_VALUE_ARRAY;
     private static final MethodHandle TO_RECORD_ARRAY;
+    // There is no MemorySegment[] MemorySegment.toArray(AddressLayout layout) method
+    private static final MethodHandle ADDRESS_LAYOUT_TO_ARRAY;
 
     static {
         try {
@@ -33,6 +36,9 @@ final class GetMethodHandleGenerator {
                     "toRecordArray",
                     MethodType.methodType(Object.class, MemorySegment.class, long.class,
                             Class.class, int.class, GroupLayout.class, MethodHandle.class));
+            ADDRESS_LAYOUT_TO_ARRAY = LOCAL_LOOKUP.findStatic(GetMethodHandleGenerator.class,
+                    "toArray",
+                    MethodType.methodType(MemorySegment[].class, MemorySegment.class, AddressLayout.class));
         } catch (Exception e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -144,9 +150,14 @@ final class GetMethodHandleGenerator {
                                                 MemoryLayout elementLayout,
                                                 MemoryLayout sequenceLayout,
                                                 long offset) throws ReflectiveOperationException {
-        MethodType methodType = MethodType.methodType(type, interfaceType);
-        // (MemorySegment, ValueLayout.ofx)x[]
-        var mh = MethodHandles.publicLookup().findVirtual(MemorySegment.class, "toArray", methodType);
+        MethodHandle mh;
+        if (elementLayout instanceof AddressLayout) {
+            mh = ADDRESS_LAYOUT_TO_ARRAY;
+        } else {
+            MethodType methodType = MethodType.methodType(type, interfaceType);
+            // (MemorySegment, ValueLayout.ofx)x[]
+            mh = MethodHandles.publicLookup().findVirtual(MemorySegment.class, "toArray", methodType);
+        }
         // (MemorySegment, ValueLayout.ofx)x[] -> (MemorySegment)x[]
         mh = MethodHandles.insertArguments(mh, 1, elementLayout);
         // (MemorySegment)x[] -> (MemorySegment, long, MemoryLayout)x[]
@@ -156,6 +167,13 @@ final class GetMethodHandleGenerator {
         return Transpose.transposeOffset(mh, offset);
     }
 
+
+    // Reflective use
+    private static MemorySegment[] toArray(MemorySegment segment, AddressLayout layout) {
+        return segment.elements(layout)
+                .map(s -> s.get(layout, 0))
+                .toArray(MemorySegment[]::new);
+    }
 
     // Reflective use
     private static Object toRecordArray(MemorySegment segment, long offset,

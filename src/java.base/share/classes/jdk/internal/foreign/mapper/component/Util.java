@@ -495,7 +495,7 @@ public final class Util {
     public static Object requireArrayLength(Object array, int expected) {
         int actual = Array.getLength(array);
         if (actual != expected) {
-            throw new ArrayIndexOutOfBoundsException(
+            throw new IllegalArgumentException(
                     "Expected an array length of " + expected + " but it was actually " + actual);
         }
         return array;

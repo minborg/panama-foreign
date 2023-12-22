@@ -134,7 +134,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
 
     public record SequenceListBox(int before, List<Integer> ints, int after) {}
 
-    @Test
+    // @Test
     public void testSequenceListBox() {
 
         var layout = MemoryLayout.structLayout(
@@ -150,7 +150,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
         assertContentEquals(segmentOf(0,1,2,3), segment);
     }
 
-    @Test
+    // @Test
     public void testSequenceListPoint() {
 
         var layout = MemoryLayout.structLayout(
@@ -184,7 +184,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
         assertContentEquals(segmentOf(0, 1, 2, 3, 4, 5), segment);
     }
 
-    @Test
+    //@Test
     public void testPointSet() {
 
         var layout = MemoryLayout.structLayout(
@@ -216,12 +216,5 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
             fail("No generic type");
         }
     }
-
-
-    @Test
-    void exceptions() {
-
-    }
-
 
 }

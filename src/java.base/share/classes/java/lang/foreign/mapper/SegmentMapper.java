@@ -393,7 +393,7 @@ public interface SegmentMapper<T> {
      *         {@linkplain MemorySegment#isReadOnly() read-only}
      * @throws UnsupportedOperationException if {@code value} is not a
      *         {@linkplain MemorySegment#isNative() native} segment
-     * @throws IndexOutOfBoundsException if an array length does not correspond to the
+     * @throws IllegalArgumentException if an array length does not correspond to the
      *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
      * @throws NullPointerException if a required parameter is {@code null}
      */
@@ -422,7 +422,7 @@ public interface SegmentMapper<T> {
      *         this segment is {@linkplain MemorySegment#isReadOnly() read-only}
      * @throws UnsupportedOperationException if
      *         {@code value} is not a {@linkplain MemorySegment#isNative() native} segment // Todo: only for pointers
-     * @throws IndexOutOfBoundsException if an array length does not correspond to the
+     * @throws IllegalArgumentException if an array length does not correspond to the
      *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
      * @throws NullPointerException if a required parameter is {@code null}
      */
@@ -467,7 +467,7 @@ public interface SegmentMapper<T> {
      *         {@linkplain MemorySegment#isReadOnly() read-only}
      * @throws UnsupportedOperationException if {@code value} is not a
      *         {@linkplain MemorySegment#isNative() native} segment
-     * @throws IndexOutOfBoundsException if an array length does not correspond to the
+     * @throws IllegalArgumentException if an array length does not correspond to the
      *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
      * @throws NullPointerException if a required parameter is {@code null}
      */

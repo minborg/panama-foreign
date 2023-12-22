@@ -35,6 +35,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Method;
+import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -345,6 +347,17 @@ final class TestRecordMapper {
 
     }
 
+    record PolygonList(List<Point> points) {}
+
+    interface PolygonAccessor {
+        List<Point> points(); // This should be a lazy list
+    }
+
+    @Test
+    void listOfGeneric() throws NoSuchMethodException {
+        Method m = PolygonAccessor.class.getDeclaredMethod("points");
+        Type gt = m.getGenericReturnType(); // java.util.List<TestRecordMapper$Point>
+    }
 
     // Support methods
 

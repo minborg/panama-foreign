@@ -137,7 +137,7 @@ public final class MapperUtil {
 
         var typeMethods = type.isRecord()
                 ? Arrays.stream(type.getRecordComponents()).map(RecordComponent::getAccessor).toList()
-                : Arrays.stream(type.getMethods()).toList();
+                : Arrays.stream(type.getMethods()).filter(m -> Modifier.isAbstract(m.getModifiers())).toList();
 
         var missing = typeMethods.stream()
                 .filter(Predicate.not(accessorMethods::contains))

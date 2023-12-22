@@ -29,7 +29,7 @@
  *          java.base/jdk.internal.classfile.constantpool
  *          java.base/jdk.internal.classfile.instruction
  *          java.base/jdk.internal.classfile.impl
- * @run junit/othervm -Djava.lang.foreign.mapper.debug= TestInterfaceMapper
+ * @run junit/othervm -Djava.lang.foreign.mapper.debug=true TestInterfaceMapper
  */
 
 import org.junit.jupiter.api.Test;
@@ -42,10 +42,7 @@ import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandles;
 import java.util.Arrays;
 import java.util.Set;
-import java.util.function.BiPredicate;
-import java.util.function.BinaryOperator;
 import java.util.stream.Collectors;
-import java.util.stream.Gatherer;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -58,7 +55,7 @@ import static org.junit.jupiter.api.Assertions.*;
 // Note: the order in which interface methods appears is unspecified.
 final class TestInterfaceMapper {
 
-    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
+    private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
     private static final double EPSILON = 1e-6;
 
@@ -69,7 +66,7 @@ final class TestInterfaceMapper {
 
     @Test
     void point() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         BaseTest.PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
 
@@ -94,7 +91,7 @@ final class TestInterfaceMapper {
 
     @Test
     void segmentBacked() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         long offset = POINT_LAYOUT.byteSize();
         BaseTest.PointAccessor accessor = mapper.get(segment, offset);
@@ -145,7 +142,7 @@ final class TestInterfaceMapper {
 
     @Test
     void mixedBag() {
-        SegmentMapper<MixedBag> mapper = SegmentMapper.ofInterface(LOOKUP, MixedBag.class, MIXED_LAYOUT);
+        SegmentMapper<MixedBag> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, MixedBag.class, MIXED_LAYOUT);
         try (var arena = Arena.ofConfined()) {
             MemorySegment segment = arena.allocate(MIXED_LAYOUT);
 
@@ -216,7 +213,7 @@ final class TestInterfaceMapper {
 
     @Test
     void xyAccessor() {
-        SegmentMapper<XYAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, XYAccessor.class, POINT_LAYOUT);
+        SegmentMapper<XYAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, XYAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         XYAccessor accessor = mapper.get(segment, 0);
         assertEquals(3, accessor.x());
@@ -226,7 +223,7 @@ final class TestInterfaceMapper {
 
     @Test
     void yAccessor() {
-        SegmentMapper<YAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, YAccessor.class, POINT_LAYOUT);
+        SegmentMapper<YAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, YAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         YAccessor accessor = mapper.get(segment, 0);
         assertEquals(4, accessor.y());
@@ -249,7 +246,7 @@ final class TestInterfaceMapper {
     void line() {
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
-        SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, LineAccessor.class, LINE_LAYOUT);
+        SegmentMapper<LineAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, LineAccessor.class, LINE_LAYOUT);
         LineAccessor accessor = mapper.get(segment);
 
         var begin = accessor.begin();
@@ -292,7 +289,7 @@ final class TestInterfaceMapper {
                 LINE_LAYOUT.withName("first"),
                 LINE_LAYOUT.withName("second")
         );
-        SegmentMapper<LinesAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, LinesAccessor.class, linesLayout);
+        SegmentMapper<LinesAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, LinesAccessor.class, linesLayout);
 
         LinesAccessor accessor = mapper.get(segment);
 
@@ -331,49 +328,6 @@ final class TestInterfaceMapper {
                 dstSegment);
     }
 
-    // Todo: Remove
-    @SuppressWarnings("unchecked")
-    static <T> Gatherer<T, ?, T> coalesce(
-            BiPredicate<? super T, ? super T> mergeCondition,
-            BinaryOperator<T> merger) {
-        return Gatherer.ofSequential(
-                () -> (T[]) new Object[1],
-                (current, element, downstream) -> {
-                    if (current[0] == null) {
-                        current[0] = element;
-                    } else {
-                        if (mergeCondition.test(current[0], element)) {
-                            current[0] = merger.apply(current[0], element);
-                        } else {
-                            var x = current[0];
-                            current[0] = element;
-                            return downstream.push(x);
-                        }
-                    }
-                    return true;
-                },
-                (current, downstream) -> {
-                    if (current[0] != null) {
-                        downstream.push(current[0]);
-                    }
-                }
-        );
-    }
-
-    // Todo: Remove
-    @Test
-    void dedupCars() {
-
-        var dedup = "AAABCCCAABCC".chars()
-                .mapToObj(i -> (char) i)
-                .gather(coalesce((a, b) -> a == b, (a, b) -> a))
-                .map(Object::toString)
-                .collect(Collectors.joining());
-
-        assertEquals("ABCABC", dedup);
-    }
-
-
     interface Empty {
     }
 
@@ -381,7 +335,7 @@ final class TestInterfaceMapper {
     void empty() {
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
-        SegmentMapper<Empty> mapper = SegmentMapper.ofInterface(LOOKUP, Empty.class, LINE_LAYOUT);
+        SegmentMapper<Empty> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, Empty.class, LINE_LAYOUT);
         Empty accessor = mapper.get(segment);
 
         assertToString(accessor, mapper.type(), Set.of());
@@ -411,7 +365,7 @@ final class TestInterfaceMapper {
     @Test
     void fail1() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
-                SegmentMapper.ofInterface(LOOKUP, Fail1.class, LINE_LAYOUT)
+                SegmentMapper.ofInterface(LOCAL_LOOKUP, Fail1.class, LINE_LAYOUT)
         );
         var message = e.getMessage();
 
@@ -427,7 +381,7 @@ final class TestInterfaceMapper {
     @Test
     void fail2() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
-                SegmentMapper.ofInterface(LOOKUP, Fail2.class, POINT_LAYOUT)
+                SegmentMapper.ofInterface(LOCAL_LOOKUP, Fail2.class, POINT_LAYOUT)
         );
         var message = e.getMessage();
         assertTrue(message.contains("Object"), message);
@@ -451,7 +405,7 @@ final class TestInterfaceMapper {
     void mapToRecord() {
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
-        SegmentMapper<LineRecordAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, LineRecordAccessor.class, LINE_LAYOUT);
+        SegmentMapper<LineRecordAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, LineRecordAccessor.class, LINE_LAYOUT);
         LineRecordAccessor accessor = mapper.get(segment);
 
         Point begin = accessor.begin();
@@ -486,7 +440,7 @@ final class TestInterfaceMapper {
                 MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
         );
         MemorySegment segment = MemorySegment.ofArray(new int[]{1, 10, 2, 11, 3, 9});
-        SegmentMapper<PolygonAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PolygonAccessor.class, triangleLayout);
+        SegmentMapper<PolygonAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PolygonAccessor.class, triangleLayout);
         PolygonAccessor accessor = mapper.get(segment, 0);
 
         BaseTest.PointAccessor p0 = accessor.points(0);
@@ -520,7 +474,7 @@ final class TestInterfaceMapper {
                 3, 12,  4, 13,  5, 11,
                 4, 14,  5, 14,  6, 12
         });
-        SegmentMapper<PolygonAccessor2Dim> mapper = SegmentMapper.ofInterface(LOOKUP, PolygonAccessor2Dim.class, triangleLayout);
+        SegmentMapper<PolygonAccessor2Dim> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PolygonAccessor2Dim.class, triangleLayout);
         PolygonAccessor2Dim accessor = mapper.get(segment, 0);
 
         for (int i = 0; i < 4; i++) {
@@ -548,7 +502,7 @@ final class TestInterfaceMapper {
                 MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
         );
         MemorySegment segment = MemorySegment.ofArray(new int[]{1, 10, 2, 11, 3, 9});
-        SegmentMapper<PolygonRecordAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, PolygonRecordAccessor.class, triangleLayout);
+        SegmentMapper<PolygonRecordAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PolygonRecordAccessor.class, triangleLayout);
         PolygonRecordAccessor accessor = mapper.get(segment, 0);
 
         Point p0 = accessor.points(0);
@@ -634,7 +588,7 @@ final class TestInterfaceMapper {
 
     @Test
     void mixedBagArray() {
-        SegmentMapper<MixedBagArray> mapper = SegmentMapper.ofInterface(LOOKUP, MixedBagArray.class, MIXED_LAYOUT_ARRAY);
+        SegmentMapper<MixedBagArray> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, MixedBagArray.class, MIXED_LAYOUT_ARRAY);
         try (var arena = Arena.ofConfined()) {
             MemorySegment segment = arena.allocate(MIXED_LAYOUT_ARRAY);
 
@@ -712,7 +666,7 @@ final class TestInterfaceMapper {
                 3, 12,  4, 13,  5, 11,
                 4, 14,  5, 14,  6, 12
         });
-        SegmentMapper<PointRecord2Dim> mapper = SegmentMapper.ofInterface(LOOKUP, PointRecord2Dim.class, triangleLayout);
+        SegmentMapper<PointRecord2Dim> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointRecord2Dim.class, triangleLayout);
         PointRecord2Dim accessor = mapper.get(segment, 0);
 
         for (int i = 0; i < 4; i++) {
@@ -766,7 +720,7 @@ final class TestInterfaceMapper {
                 JAVA_INT.withName("second"), // Not mapped to any setter
                 JAVA_INT.withName("third")
         );
-        SegmentMapper<Ints> mapper = SegmentMapper.ofInterface(LOOKUP, Ints.class, layout);
+        SegmentMapper<Ints> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, Ints.class, layout);
         Ints accessor = mapper.get(segment, 0);
 
         assertEquals(1, accessor.first());
@@ -818,7 +772,7 @@ final class TestInterfaceMapper {
 
     @Test
     void map() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
         SegmentMapper<LongPointAccessor> longMapper = mapper.map(LongPointAccessor.class, LongPointAccessor::new);
@@ -878,11 +832,94 @@ final class TestInterfaceMapper {
 
     @Test
     void map2() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
         assertThrows(UnsupportedOperationException.class, () ->
                 mapper.map(LongPointAccessor.class, LongPointAccessor::new, PointAccessorImpl::new)
         );
     }
+
+    interface Super {
+        Object point();
+    }
+
+    interface PointAccessorWithSuper extends Super {
+        // Covariant override
+        Point point();
+    }
+
+    @Test
+    void supertype() {
+        GroupLayout groupLayout = MemoryLayout.structLayout(
+                POINT_LAYOUT.withName("point")
+        );
+        SegmentMapper<PointAccessorWithSuper> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessorWithSuper.class, groupLayout);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        PointAccessorWithSuper accessor = mapper.get(segment, groupLayout.byteSize());
+
+        assertEquals(new Point(6, 8), accessor.point());
+        assertToString(accessor, PointAccessorWithSuper.class, Set.of("x=6", "y=8"));
+
+        /*
+
+        assertEquals(1, accessor.x());
+        assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
+        assertEquals(2, accessor.y());
+        assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
+        assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
+
+        // SegmentMapper::set
+        MemorySegment dstSegment = newSegment(POINT_LAYOUT);
+        mapper.set(dstSegment, accessor);
+        BaseTest.assertContentEquals(BaseTest.segmentOf(1, 2), dstSegment);*/
+    }
+
+    interface AccessorA {
+        Point point();
+    }
+
+    interface A {
+        AccessorA pointAccessor();
+    }
+
+    interface AccessorB extends AccessorA {
+        Point point();
+    }
+
+    interface B {
+        AccessorB pointAccessor();
+    }
+
+    interface C extends A, B {  }; // mapper for this
+
+    @Test
+    void mixin() {
+        GroupLayout groupLayout = MemoryLayout.structLayout(
+                MemoryLayout.structLayout(
+                        POINT_LAYOUT.withName("point")
+                ).withName("pointAccessor")
+        );
+        SegmentMapper<C> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, C.class, groupLayout);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        C accessor = mapper.get(segment, groupLayout.byteSize());
+
+
+        assertEquals(new Point(6, 8), accessor.pointAccessor().point());
+        assertToString(accessor, C.class, Set.of("x=6", "y=8"));
+
+        /*
+
+        assertEquals(1, accessor.x());
+        assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
+        assertEquals(2, accessor.y());
+        assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
+        assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
+
+        // SegmentMapper::set
+        MemorySegment dstSegment = newSegment(POINT_LAYOUT);
+        mapper.set(dstSegment, accessor);
+        BaseTest.assertContentEquals(BaseTest.segmentOf(1, 2), dstSegment);*/
+    }
+
 
     static MemorySegment newSegment(MemoryLayout layout) {
         return Arena.ofAuto().allocate(layout);

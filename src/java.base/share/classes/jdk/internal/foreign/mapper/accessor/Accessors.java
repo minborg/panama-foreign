@@ -107,8 +107,7 @@ public final class Accessors {
 
     public static Accessors ofInterface(Class<?> type, GroupLayout layout) {
         return new Accessors(Arrays.stream(type.getMethods())
-                .filter(m -> !Modifier.isStatic(m.getModifiers()))
-                .filter(m -> !m.isDefault())
+                .filter(m -> Modifier.isAbstract(m.getModifiers()))
                 .map(m -> accessorInfo(type, layout, m))
                 .collect(Collectors.groupingBy(AccessorInfo::key)));
     }

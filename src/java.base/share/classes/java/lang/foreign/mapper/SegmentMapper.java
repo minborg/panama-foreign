@@ -237,6 +237,10 @@ import java.util.stream.Stream;
  *
  *  TBW.
  *
+ * <h2 id="restrictions">Restrictions</h2>
+ * Generic interfaces and records need to have their generic types (if any) know at
+ * compile time. This applies to all extended interfaces recursively.
+ *
  * @param <T> the type this mapper converts MemorySegments from and to.
  *
  * @implSpec Implementations of this interface are immutable, thread-safe and
@@ -251,10 +255,13 @@ import java.util.stream.Stream;
 // Todo: segment() and type() return values for composed mappers
 // Todo: How do we handle "extra" getters for interfaces? They should not append
 // Todo: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
+//       This can be fixed using double-buffering. Maybe provide a scratch segment somehow that tracks where writes
+//       has been made (via a separate class BufferedMapper?)
 // Todo: Python "Panda(s)" (tables), Tabular access from array, Joins etc. <- TEST
 // Cerializer
 // Todo: Check all exceptions in JavaDocs: See TestScopedOperations
 // Todo: Consider generating a graphics rendering.
+// Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
 public interface SegmentMapper<T> {
 
     /**

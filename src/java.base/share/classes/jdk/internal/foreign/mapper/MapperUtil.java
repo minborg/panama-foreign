@@ -38,6 +38,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
+import java.lang.reflect.TypeVariable;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +75,7 @@ public final class MapperUtil {
         if (type.isSealed()) {
             throw newIae(type, "a sealed interface");
         }
+        assertNotDeclaringTypeParameters(type);
         return type;
     }
 
@@ -85,9 +87,16 @@ public final class MapperUtil {
         if (type.equals(Record.class)) {
             throw newIae(type, "not a real Record");
         }
+        assertNotDeclaringTypeParameters(type);
         @SuppressWarnings("unchecked")
         Class<T> result = (Class<T>) type;
         return result;
+    }
+
+    private static void assertNotDeclaringTypeParameters(Class<?> type) {
+        if (type.getTypeParameters().length != 0) {
+            throw newIae(type, "directly declaring type parameters: " + type.toGenericString());
+        }
     }
 
     static IllegalArgumentException newIae(Class<?> type, String trailingInfo) {

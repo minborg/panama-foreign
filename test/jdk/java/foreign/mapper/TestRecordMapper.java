@@ -359,6 +359,24 @@ final class TestRecordMapper {
         Type gt = m.getGenericReturnType(); // java.util.List<TestRecordMapper$Point>
     }
 
+    @Test
+    void create() {
+        try (var arena = Arena.ofConfined()) {
+            SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+            Point point = mapper.create(arena);
+            assertEquals(new Point(0, 0), point);
+        }
+    }
+
+    record GenericPoint<T>(int x, int y) {}
+
+    @Test
+    void genericRecord() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            SegmentMapper.ofRecord(LOCAL_LOOKUP, GenericPoint.class, POINT_LAYOUT);
+        });
+    }
+
     // Support methods
 
     private static MemorySegment newCopyOf(MemorySegment source) {

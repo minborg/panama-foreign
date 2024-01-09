@@ -5,7 +5,9 @@ import jdk.internal.foreign.mapper.SegmentInterfaceMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
@@ -248,20 +250,24 @@ import java.util.stream.Stream;
  *
  * @since 23
  */
-// Todo: Interfaces with internal segments should be directly available via separate factory methods
+
 // Todo: Map components to MemorySegment (escape hatch)
 // Todo: Discuss non-exact mapping (e.g. int -> String), invokeExact vs. invoke
 // Todo: map() can be dropped in favour of "manual mapping"
 // Todo: segment() and type() return values for composed mappers
 // Todo: How do we handle "extra" getters for interfaces? They should not append
-// Todo: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
-//       This can be fixed using double-buffering. Maybe provide a scratch segment somehow that tracks where writes
-//       has been made (via a separate class BufferedMapper?)
 // Todo: Python "Panda(s)" (tables), Tabular access from array, Joins etc. <- TEST
 // Cerializer
 // Todo: Check all exceptions in JavaDocs: See TestScopedOperations
 // Todo: Consider generating a graphics rendering.
 // Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
+
+// Done: Interfaces with internal segments should be directly available via separate factory methods
+//       -> Fixed via SegmentMapper::create
+// Done: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
+//       This can be fixed using double-buffering. Maybe provide a scratch segment somehow that tracks where writes
+//       has been made (via a separate class BufferedMapper?)
+//       -> Fixed via TestInterfaceMapper::doubleBuffered
 public interface SegmentMapper<T> {
 
     /**
@@ -282,8 +288,39 @@ public interface SegmentMapper<T> {
     // Convenience methods
 
     /**
-     * {@return a new instance of type T projected from the provided
+     * {@return a new instance of type T projected at an internal {@code segment} at
+     *          offset zero created by means of invoking the provided {@code arena}}
+     * <p>
+     * Calling this method is equivalent to the following code:
+     * {@snippet lang = java:
+     *    get(arena.allocate(layout()));
+     * }
+     *
+     * @param  arena from which to {@linkplain Arena#allocate(MemoryLayout) allocate} an
+     *         internal memory segment.
+     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
+     *         associated with the provided segment is not
+     *         {@linkplain MemorySegment.Scope#isAlive() alive}
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     *         such that {@code isAccessibleBy(T) == false}
+     * @throws IllegalArgumentException if the access operation is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
+     *         of the {@link #layout()}
+     * @throws IndexOutOfBoundsException if
+     *         {@code layout().byteSize() > segment.byteSize()}
+     */
+    default T create(Arena arena) {
+        return get(arena.allocate(layout()));
+    }
+
+    /**
+     * {@return a new instance of type T projected at the provided
      *          external {@code segment} at offset zero}
+     * <p>
+     * Calling this method is equivalent to the following code:
+     * {@snippet lang = java:
+     *    get(segment, 0L);
+     * }
      *
      * @param segment the external segment to be projected to the new instance
      * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
@@ -302,10 +339,10 @@ public interface SegmentMapper<T> {
     }
 
     /**
-     * {@return a new instance of type T projected from the provided
+     * {@return a new instance of type T projected from at provided
      *          external {@code segment} at the provided {@code offset}}
      *
-     * @param segment the external segment to be projected to the new instance
+     * @param segment the external segment to be projected at the new instance
      * @param offset  from where in the segment to project the new instance
      * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
      *         associated with the provided segment is not
@@ -336,9 +373,14 @@ public interface SegmentMapper<T> {
     }
 
     /**
-     * {@return a new instance of type T projected from the provided external
+     * {@return a new instance of type T projected at the provided external
      *          {@code segment} at the given {@code index} scaled by the
      *          {@code layout().byteSize()}}
+     * <p>
+     * Calling this method is equivalent to the following code:
+     * {@snippet lang = java:
+     *    get(segment, layout().byteSize() * index);
+     * }
      *
      * @param segment the external segment to be projected to the new instance
      * @param index a logical index, the offset in bytes (relative to the provided
@@ -384,6 +426,11 @@ public interface SegmentMapper<T> {
     /**
      * Writes the provided instance {@code t} of type T into the provided {@code segment}
      * at offset zero.
+     * <p>
+     * Calling this method is equivalent to the following code:
+     * {@snippet lang = java:
+     *    set(segment, 0L, t);
+     * }
      *
      * @param segment in which to write the provided {@code t}
      * @param t instance to write into the provided segment
@@ -455,7 +502,11 @@ public interface SegmentMapper<T> {
     /**
      * Writes the provided {@code t} instance of type T into the provided {@code segment}
      * at the provided {@code index} scaled by the {@code layout().byteSize()}}.
-     *
+     * <p>
+     * Calling this method is equivalent to the following code:
+     * {@snippet lang = java:
+     *    set(segment, layout().byteSize() * index, t);
+     * }
      * @param segment in which to write the provided {@code t}
      * @param index a logical index, the offset in bytes (relative to the provided
      *              segment address) at which the access operation will occur can be
@@ -485,7 +536,7 @@ public interface SegmentMapper<T> {
     // Basic methods
 
     /**
-     * {@return a method handle that returns new instances of type T projected from
+     * {@return a method handle that returns new instances of type T projected at
      *          a provided external {@code MemorySegment} at a provided {@code long} offset}
      * <p>
      * The returned method handle has the following characteristics:
@@ -590,6 +641,11 @@ public interface SegmentMapper<T> {
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
      *          to the provided interface {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
+     * <p>
+     * The provided {@code type} must not directly declare any generic type parameter and
+     * must not implement (directly and/or via inheritance) more than one abstract method
+     * with the same name and erased parameter types. Hence, covariant overriding is not
+     * supported.
      *
      * @implNote The order in which methods appear (e.g. in the {@code toString} method)
      *           is unspecified.
@@ -602,6 +658,8 @@ public interface SegmentMapper<T> {
      * @throws IllegalArgumentException if the provided {@code type} is not an interface
      * @throws IllegalArgumentException if the provided {@code type} is a hidden interface
      * @throws IllegalArgumentException if the provided {@code type} is a sealed interface
+     * @throws IllegalArgumentException if the provided interface {@code type} directly
+     *         declares any generic type parameter
      * @throws IllegalArgumentException if the provided interface {@code type} cannot be
      *         reflectively analysed using the provided {@code lookup}
      * @throws IllegalArgumentException if the provided interface {@code type} contains
@@ -624,13 +682,20 @@ public interface SegmentMapper<T> {
      * <p>
      * Reflective analysis on the provided {@code type} will be made using the
      * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
+     * <p>
+     * The provided {@code type} must not directly declare any generic type parameter and
+     * must not implement (directly and/or via inheritance) more than one abstract method
+     * with the same name and erased parameter types. Hence, covariant overriding is not
+     * supported.
      *
      * @param type to map memory segment from and to
      * @param layout to be used when mapping the provided {@code type}
      * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided interface {@code type} is
+     * @throws IllegalArgumentException if the provided record {@code type} directly
+     *         declares any generic type parameter
+     * @throws IllegalArgumentException if the provided record {@code type} is
      *         {@linkplain java.lang.Record}
-     * @throws IllegalArgumentException if the provided interface {@code type} cannot
+     * @throws IllegalArgumentException if the provided record {@code type} cannot
      *         be reflectively analysed using
      *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
      * @throws IllegalArgumentException if the provided interface {@code type} contains
@@ -648,15 +713,22 @@ public interface SegmentMapper<T> {
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
      *          to the provided record {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
+     * <p>
+     * The provided {@code type} must not directly declare any generic type parameter and
+     * must not implement (directly and/or via inheritance) more than one abstract method
+     * with the same name and erased parameter types. Hence, covariant overriding is not
+     * supported.
      *
      * @param lookup to use when performing reflective analysis on the
      *                provided {@code type}
      * @param type to map memory segment from and to
      * @param layout to be used when mapping the provided {@code type}
      * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided interface {@code type} is
+     * @throws IllegalArgumentException if the provided record {@code type} directly
+     *         declares any generic type parameter
+     * @throws IllegalArgumentException if the provided record {@code type} is
      *         {@linkplain java.lang.Record}
-     * @throws IllegalArgumentException if the provided interface {@code type} cannot
+     * @throws IllegalArgumentException if the provided record {@code type} cannot
      *         be reflectively analysed using the provided {@code lookup}
      * @throws IllegalArgumentException if the provided interface {@code type} contains
      *         components for which there are no exact mapping (of names and types) in

@@ -40,7 +40,11 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -63,6 +67,41 @@ final class TestInterfaceMapper {
             JAVA_INT.withName("x"),
             JAVA_INT.withName("y")
     );
+
+
+    interface TestGenerics {
+        List<List<Integer>> listOfListOfIntegers();
+    }
+
+    @Test
+    void generics() {
+        Method method = TestGenerics.class.getMethods()[0];
+        Type type =  method.getGenericReturnType();
+        if (type instanceof ParameterizedType pt) {
+            ListType listType = listType(pt);
+            System.out.println("listType = " + listType);
+
+            System.out.println("pt.getRawType() = " + pt.getRawType());
+            Type[] types = pt.getActualTypeArguments();
+            System.out.println("Arrays.toString(types) = " + Arrays.toString(types));
+        }
+        System.out.println("type.getTypeName() = " + type.getTypeName());
+        System.out.println("type.getClass().getName() = " + type.getClass().getName());
+        //fail(type.toString());
+    }
+
+    static ListType listType(ParameterizedType pt) {
+        return listType(new ListType(0, pt.getRawType(), pt));
+    }
+
+    static ListType listType(ListType type) {
+        if (type.elementType instanceof ParameterizedType pt) {
+            return listType(new ListType(type.depth+1, type.rawType(), pt.getActualTypeArguments()[0]));
+        }
+        return type;
+    }
+
+    record ListType(int depth, Type rawType, Type elementType){}
 
     @Test
     void point() {
@@ -838,6 +877,63 @@ final class TestInterfaceMapper {
         );
     }
 
+    interface PointWithTrapDoor {
+        int x();
+        void x(int x);
+        int y();
+        void y(int y);
+        default void trapDoor() {
+            throw new UnsupportedOperationException("gotcha");
+        }
+    }
+
+    @Test
+    void create() {
+        try (var arena = Arena.ofConfined()) {
+            SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+            BaseTest.PointAccessor accessor = mapper.create(arena);
+            accessor.x(3);
+            accessor.y(4);
+            var internalSegment = mapper.segment(accessor).orElseThrow();
+            BaseTest.assertContentEquals(BaseTest.segmentOf(3,4), internalSegment);
+        }
+    }
+
+    @Test
+    void doubleBuffered() {
+        int firstInt = 0x01020304;
+        int secondInt = 0x05060708;
+        try (var arena = Arena.ofConfined()) {
+            var targetSegment = arena.allocate(POINT_LAYOUT);
+            targetSegment.setAtIndex(JAVA_INT, 0, firstInt);
+            targetSegment.setAtIndex(JAVA_INT, 1, secondInt);
+            SegmentMapper<PointWithTrapDoor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointWithTrapDoor.class, POINT_LAYOUT);
+            var scratchSegment = arena.allocate(POINT_LAYOUT);
+            scratchSegment.copyFrom(targetSegment);
+            PointWithTrapDoor p = mapper.get(scratchSegment);
+            try {
+                p.y(4);
+                p.trapDoor();
+                mapper.set(targetSegment, 0, p);
+            } catch (RuntimeException e) {
+                // Will always end up here
+            }
+            // No update to the target segment
+            assertEquals(firstInt, targetSegment.getAtIndex(JAVA_INT, 0));
+            assertEquals(secondInt, targetSegment.getAtIndex(JAVA_INT, 1));
+            try {
+                p.y(4);
+                mapper.set(targetSegment, 0, p);
+            } catch (RuntimeException e) {
+                // Will never end up here
+            }
+            // Only y shall be updated
+            assertEquals(firstInt, targetSegment.getAtIndex(JAVA_INT, 0));
+            assertEquals(4, targetSegment.getAtIndex(JAVA_INT, 1));
+        }
+
+    }
+
     interface Super {
         Object point();
     }
@@ -920,13 +1016,40 @@ final class TestInterfaceMapper {
         BaseTest.assertContentEquals(BaseTest.segmentOf(1, 2), dstSegment);*/
     }
 
+    interface Generic<T extends BaseTest.PointAccessor> {
+        T pointAccessor();
+    }
+
+    interface FixedGeneric extends Generic<BaseTest.PointAccessor> {}
+
+    @Test
+    void fixedGeneric() {
+        GroupLayout groupLayout = MemoryLayout.structLayout(
+                POINT_LAYOUT.withName("pointAccessor")
+        );
+        SegmentMapper<FixedGeneric> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, FixedGeneric.class, groupLayout);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        Generic<?> accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+
+        assertEquals(6, accessor.pointAccessor().x());
+        assertEquals(8, accessor.pointAccessor().y());
+        assertToString(accessor, FixedGeneric.class, Set.of("x()=6", " y()=8]"));
+    }
+
+    @Test
+    void generic() {
+        GroupLayout groupLayout = MemoryLayout.structLayout(
+                POINT_LAYOUT.withName("pointAccessor")
+        );
+        IllegalArgumentException iae = assertThrows(IllegalArgumentException.class, () ->
+            SegmentMapper.ofInterface(LOCAL_LOOKUP, Generic.class, groupLayout)
+        );
+        assertTrue(iae.getMessage().contains("is directly declaring type parameters"));
+        assertTrue(iae.getMessage().contains("Generic<T extends BaseTest$PointAccessor>"));
+    }
 
     static MemorySegment newSegment(MemoryLayout layout) {
         return Arena.ofAuto().allocate(layout);
-    }
-
-    static MemorySegment newSegment(int size) {
-        return Arena.ofAuto().allocate(size);
     }
 
     void assertToString(Object o,

@@ -877,16 +877,6 @@ final class TestInterfaceMapper {
         );
     }
 
-    interface PointWithTrapDoor {
-        int x();
-        void x(int x);
-        int y();
-        void y(int y);
-        default void trapDoor() {
-            throw new UnsupportedOperationException("gotcha");
-        }
-    }
-
     @Test
     void create() {
         try (var arena = Arena.ofConfined()) {
@@ -897,6 +887,86 @@ final class TestInterfaceMapper {
             var internalSegment = mapper.segment(accessor).orElseThrow();
             BaseTest.assertContentEquals(BaseTest.segmentOf(3,4), internalSegment);
         }
+    }
+
+    private static class PointBean {
+
+        private int x;
+        private int y;
+
+        int x() {
+            return x;
+        }
+        void x(int x) {
+            this.x = x;
+        }
+
+        int y() {
+            return y;
+        }
+        void y(int y) {
+            this.y = y;
+        }
+
+        @Override
+        public String toString() {
+            return "PointBean[" +
+                    "x=" + x() +
+                    ", y=" + y() +
+                    ']';
+        }
+    }
+
+    private static class PointBeanExtender extends PointBean {
+
+        private final BaseTest.PointAccessor accessor;
+
+        public PointBeanExtender(BaseTest.PointAccessor accessor) {
+            this.accessor = accessor;
+        }
+
+        @Override
+        int x() {
+            return accessor.x();
+        }
+
+        @Override
+        void x(int x) {
+            accessor.x(x);
+        }
+
+        @Override
+        int y() {
+            return accessor.y();
+        }
+
+        @Override
+        void y(int y) {
+            accessor.y(y);
+        }
+    }
+
+    @Test
+    void bean() {
+        try (var arena = Arena.ofConfined()) {
+            SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+            SegmentMapper<PointBean> beanMapper = mapper.map(PointBean.class, PointBeanExtender::new);
+            PointBean pointBean = beanMapper.create(arena);
+            pointBean.x(3);
+            pointBean.y(4);
+            assertEquals("PointBean[x=3, y=4]", pointBean.toString());
+        }
+    }
+
+    interface PointWithTrapDoor {
+        int x();
+        void x(int x);
+        int y();
+        void y(int y);
+        default void trapDoor() {
+            throw new UnsupportedOperationException("gotcha");
+        }
+
     }
 
     @Test

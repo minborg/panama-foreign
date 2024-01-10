@@ -184,8 +184,10 @@ import java.util.stream.Stream;
  * }
  *
  * SegmentMapper<NarrowedPointAccessor> narrowedPointMapper =
- *          SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT)
- *                 .map(NarrowedPointAccessor.class, NarrowedPointAccessor::fromPointAccessor);
+ *          // SegmentMapper<PointAccessor>
+ *           SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT)
+ *                   // SegmentMapper<NarrowedPointAccessor>
+ *                  .map(NarrowedPointAccessor.class, NarrowedPointAccessor::fromPointAccessor);
  *
  * MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
  *
@@ -237,11 +239,17 @@ import java.util.stream.Stream;
  *
  * <h2 id="formal-mapping">Formal mapping description</h2>
  *
- *  TBW.
+ * Components and layouts are matched with respect to their name and the exact return type and/or
+ * the exact parameter types. No widening or narrowing is employed.
  *
  * <h2 id="restrictions">Restrictions</h2>
- * Generic interfaces and records need to have their generic types (if any) know at
- * compile time. This applies to all extended interfaces recursively.
+ *
+ * Generic interfaces and records need to have their generic type parameters (if any)
+ * know at compile time. This applies to all extended interfaces recursively.
+ * <p>
+ * Interfaces and records must not implement (directly and/or via inheritance) more than
+ * one abstract method with the same name and erased parameter types. Hence, covariant
+ * overriding is not supported.
  *
  * @param <T> the type this mapper converts MemorySegments from and to.
  *
@@ -252,16 +260,15 @@ import java.util.stream.Stream;
  */
 
 // Todo: Map components to MemorySegment (escape hatch)
-// Todo: Discuss non-exact mapping (e.g. int -> String), invokeExact vs. invoke
-// Todo: map() can be dropped in favour of "manual mapping"
-// Todo: segment() and type() return values for composed mappers
-// Todo: How do we handle "extra" getters for interfaces? They should not append
-// Todo: Python "Panda(s)" (tables), Tabular access from array, Joins etc. <- TEST
+// Todo: How do we handle "extra" setters for interfaces? They should not append
+// Todo: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST
 // Cerializer
 // Todo: Check all exceptions in JavaDocs: See TestScopedOperations
 // Todo: Consider generating a graphics rendering.
 // Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
+// Todo: The generated interface classes should be @ValueBased
 
+// No: ~map() can be dropped in favour of "manual mapping"~
 // Done: Interfaces with internal segments should be directly available via separate factory methods
 //       -> Fixed via SegmentMapper::create
 // Done: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
@@ -641,14 +648,16 @@ public interface SegmentMapper<T> {
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
      *          to the provided interface {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
-     * <p>
-     * The provided {@code type} must not directly declare any generic type parameter and
-     * must not implement (directly and/or via inheritance) more than one abstract method
-     * with the same name and erased parameter types. Hence, covariant overriding is not
-     * supported.
      *
      * @implNote The order in which methods appear (e.g. in the {@code toString} method)
      *           is unspecified.
+     *
+     * @implNote The returned class can be a
+     *           <a href="{@docRoot}/java.base/java/lang/doc-files/ValueBased.html">value-based</a>
+     *           class; programmers should treat instances that are
+     *           {@linkplain Object#equals(Object) equal} as interchangeable and should
+     *           not use instances for synchronization, or unpredictable behavior may
+     *           occur. For example, in a future release, synchronization may fail.
      *
      * @param lookup to use when performing reflective analysis on the
      *               provided {@code type}
@@ -682,11 +691,6 @@ public interface SegmentMapper<T> {
      * <p>
      * Reflective analysis on the provided {@code type} will be made using the
      * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
-     * <p>
-     * The provided {@code type} must not directly declare any generic type parameter and
-     * must not implement (directly and/or via inheritance) more than one abstract method
-     * with the same name and erased parameter types. Hence, covariant overriding is not
-     * supported.
      *
      * @param type to map memory segment from and to
      * @param layout to be used when mapping the provided {@code type}
@@ -713,11 +717,6 @@ public interface SegmentMapper<T> {
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
      *          to the provided record {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
-     * <p>
-     * The provided {@code type} must not directly declare any generic type parameter and
-     * must not implement (directly and/or via inheritance) more than one abstract method
-     * with the same name and erased parameter types. Hence, covariant overriding is not
-     * supported.
      *
      * @param lookup to use when performing reflective analysis on the
      *                provided {@code type}

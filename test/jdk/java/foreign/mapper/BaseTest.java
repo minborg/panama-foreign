@@ -61,7 +61,7 @@ public abstract class BaseTest {
         int x();
         void x(int x);
         int y();
-        void y(int x);
+        void y(int y);
     }
 
     public interface LineAccessor {

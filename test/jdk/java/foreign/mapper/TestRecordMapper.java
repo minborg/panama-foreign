@@ -347,6 +347,55 @@ final class TestRecordMapper {
 
     }
 
+    private static class PointBean {
+
+        private int x;
+        private int y;
+
+        int x() {
+            return x;
+        }
+        void x(int x) {
+            this.x = x;
+        }
+
+        int y() {
+            return y;
+        }
+        void y(int y) {
+            this.y = y;
+        }
+
+        @Override
+        public String toString() {
+            return "PointBean[" +
+                    "x=" + x() +
+                    ", y=" + y() +
+                    ']';
+        }
+
+    }
+
+    static Point beanToPoint(PointBean bean) {
+        return new Point(bean.x(), bean.y());
+    }
+
+    static PointBean pointToBean(Point point) {
+        PointBean pointBean = new PointBean();
+        pointBean.x(point.x());
+        pointBean.y(point.y());
+        return pointBean;
+    }
+
+    @Test
+    void bean() {
+        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        SegmentMapper<PointBean> beanMapper = mapper.map(PointBean.class, TestRecordMapper::pointToBean, TestRecordMapper::beanToPoint);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
+        PointBean pointBean = beanMapper.get(segment);
+        assertEquals("PointBean[x=3, y=4]", pointBean.toString());
+    }
+
     record PolygonList(List<Point> points) {}
 
     interface PolygonAccessor {

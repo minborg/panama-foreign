@@ -296,11 +296,7 @@ public final class SegmentRecordMapper2<T extends Record>
             MethodHandle toMh = findVirtual("mapTo").bindTo(this);
             this.getHandle = MethodHandles.filterReturnValue(getHandle, toMh);
             MethodHandle fromMh = findVirtual("mapFrom").bindTo(this);
-            if (setHandle != null) {
-                this.setHandle = MethodHandles.filterArguments(setHandle, 2, fromMh);
-            } else {
-                this.setHandle = null;
-            }
+            this.setHandle = MethodHandles.filterArguments(setHandle, 2, fromMh);
         }
 
         @Override

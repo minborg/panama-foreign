@@ -261,13 +261,15 @@ import java.util.stream.Stream;
 
 // Todo: Map components to MemorySegment (escape hatch)
 // Todo: How do we handle "extra" setters for interfaces? They should not append
-// Todo: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST
+
 // Cerializer
 // Todo: Check all exceptions in JavaDocs: See TestScopedOperations
 // Todo: Consider generating a graphics rendering.
 // Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
 // Todo: The generated interface classes should be @ValueBased
 
+// Done: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST
+//       -> See TestDataProcessingRecord and TestDataProcessingInterface
 // No: ~map() can be dropped in favour of "manual mapping"~
 // Done: Interfaces with internal segments should be directly available via separate factory methods
 //       -> Fixed via SegmentMapper::create

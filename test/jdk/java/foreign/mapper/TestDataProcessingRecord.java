@@ -77,9 +77,10 @@ final class TestDataProcessingRecord {
      * the other data columns are represented with a number of `float` values.
      * The columns are stored in a large table in binary form in a MemorySegment:
      *
-     * e5 d6 34 01  9d 41 3a 3f  a0 e8 5f 3d  bb e7 2e 3f
-     * e6 d6 34 01  00 5c 44 3d  78 10 9e 3e  bb 2b 71 3f
-     * e7 d6 34 01  3a dd 8d 3e  85 2c 35 3f  6a 61 2a 3f
+     *|    date    |      a      |      b      |      c     |
+     * e5 d6 34 01   9d 41 3a 3f   a0 e8 5f 3d   bb e7 2e 3f
+     * e6 d6 34 01   00 5c 44 3d   78 10 9e 3e   bb 2b 71 3f
+     * e7 d6 34 01   3a dd 8d 3e   85 2c 35 3f   6a 61 2a 3f
      * ...
      *
      * There is also another table with just two columns:
@@ -120,12 +121,12 @@ final class TestDataProcessingRecord {
     @Test
     void dumpRaw() {
         HexFormat f = HexFormat.ofDelimiter(" ");
-        for (int i = 0; i < 10; i++) {
-            byte[] segmentsAsArray =
-                    SEGMENT.asSlice(MEASUREMENT_LAYOUT.scale(0, i), MEASUREMENT_LAYOUT.byteSize())
-                    .toArray(JAVA_BYTE);
-            println(f.formatHex(segmentsAsArray));
-        }
+
+        SEGMENT.elements(MEASUREMENT_LAYOUT)
+                .limit(10)
+                .map(s -> s.toArray(JAVA_BYTE))
+                .map(f::formatHex)
+                .forEachOrdered(this::println);
 
         String expected = """
                 e5 d6 34 01 9d 41 3a 3f a0 e8 5f 3d bb e7 2e 3f
@@ -522,7 +523,7 @@ final class TestDataProcessingRecord {
                 TestDataProcessingRecord::measurements,
                 TestDataProcessingRecord::smallMeasurements,
                 Both::new,
-                both -> both.measurement.date() == both.smallMeasurement.date()
+                both -> both.measurement().date() == both.smallMeasurement().date()
         );
 
         drawTable(Both.class, () -> boths
@@ -594,7 +595,7 @@ final class TestDataProcessingRecord {
     // Support methods
 
     // Produces the cartesian product first x second and then
-    // filters that is profoundly inefficient
+    // filters. This is profoundly inefficient and could be better handled with indices
     static <R, T, U> Stream<R> join(Supplier<Stream<T>> first,
                                     Supplier<Stream<U>> second,
                                     BiFunction<T, U, R> mapper,
@@ -719,23 +720,5 @@ final class TestDataProcessingRecord {
         return Arrays.stream(type.getRecordComponents())
                 .map(RecordComponent::getName);
     }
-
-
-
-    /*    public interface Measurement {
-        int date();
-
-        float a();
-
-        float b();
-
-        float c();
-
-        void a(float a);
-
-        void b(float b);
-
-        void c(float c);
-    }*/
 
 }

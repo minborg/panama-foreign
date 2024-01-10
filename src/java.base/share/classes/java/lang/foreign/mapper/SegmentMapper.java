@@ -431,6 +431,37 @@ public interface SegmentMapper<T> {
     }
 
     /**
+     * {@return a new sequential {@code Stream} of {@code pageSize} elements of
+     *          type T starting at the element {@code pageNumber * pageSize}}
+     * <p>
+     * Calling this method is equivalent to the following code:
+     * {@snippet lang=java :
+     * stream(segment)
+     *     .skip(pageNumber * pageSize)
+     *     .limit(pageSize);
+     * }
+     * but may be much more efficient for large page numbers.
+     *
+     * @param segment    to carve out instances from
+     * @param pageSize   the size of each page
+     * @param pageNumber the page number to which to skip
+     * @throws IllegalArgumentException if {@code layout().byteSize() == 0}.
+     * @throws IllegalArgumentException if {@code segment.byteSize() % layout().byteSize() != 0}.
+     * @throws IllegalArgumentException if {@code layout().byteSize() % layout().byteAlignment() != 0}.
+     * @throws IllegalArgumentException if this segment is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the
+     *         alignment constraint</a> in the layout of this segment mapper.
+     */
+    default Stream<T> page(MemorySegment segment,
+                           long pageSize,
+                           long pageNumber) {
+        long skipBytes = Math.min(segment.byteSize(), layout().scale(0, pageNumber * pageSize));
+        MemorySegment skippedSegment = segment.asSlice(skipBytes);
+        return stream(skippedSegment)
+                .limit(pageSize);
+    }
+
+    /**
      * Writes the provided instance {@code t} of type T into the provided {@code segment}
      * at offset zero.
      * <p>

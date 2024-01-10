@@ -290,7 +290,7 @@ final class TestRecordDataProcessing {
     @Test
     void paging() {
         drawTable(Measurement.class, () ->
-                page(MAPPER, SEGMENT, 20, 3));
+                MAPPER.page(SEGMENT, 20, 3));
 
         String expected = """
                 +-----------+-------+-------+-------+
@@ -320,15 +320,6 @@ final class TestRecordDataProcessing {
                 """;
 
         assertEquals(expected, lines());
-    }
-
-    static <T> Stream<T> page(SegmentMapper<T> mapper,
-                              MemorySegment segment,
-                              long pageSize,
-                              long page) {
-        long skipBytes = Math.min(segment.byteSize(), mapper.layout().scale(0, page * pageSize));
-        MemorySegment skippedSegment = segment.asSlice(skipBytes);
-        return mapper.stream(skippedSegment).limit(pageSize);
     }
 
     @Test
@@ -618,12 +609,13 @@ final class TestRecordDataProcessing {
     // Initialization of segments
 
     static MemorySegment initMeasurements() {
+        var mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
         MemorySegment segment = Arena.ofAuto().allocate(MEASUREMENT_LAYOUT, DAYS);
         Random rnd = new Random(42);
         for (int i = 0; i < DAYS; i++) {
             Instant day = FIRST_DAY.plusSeconds(24L * 3600 * i);
             int date = Integer.parseInt(day.toString().substring(0, 10).replace("-", ""));
-            MAPPER.setAtIndex(segment, i, new Measurement(date, rnd.nextFloat(), rnd.nextFloat(), rnd.nextFloat()));
+            mapper.setAtIndex(segment, i, new Measurement(date, rnd.nextFloat(), rnd.nextFloat(), rnd.nextFloat()));
         }
         return segment;
     }

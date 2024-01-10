@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,10 +23,11 @@
 
 /*
  * @test
- * @run junit/othervm --enable-native-access=ALL-UNNAMED TestRecordDataProcessing
+ * @run junit/othervm --enable-native-access=ALL-UNNAMED TestDataProcessingInterface
  */
 
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
@@ -34,8 +35,8 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.DoubleSummaryStatistics;
@@ -45,6 +46,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -52,12 +54,14 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static java.lang.foreign.ValueLayout.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-final class TestRecordDataProcessing {
+final class TestDataProcessingInterface {
 
     private static final String NL = System.lineSeparator();
     private static final double EPSILON = 1e-6;
+
+    // See TestDataProcessingRecord first
 
     /*
      * The data in this demo reflects various measurements and is organized
@@ -117,74 +121,43 @@ final class TestRecordDataProcessing {
 
     // Tests
 
-    @Test
-    void dumpRaw() {
-        HexFormat f = HexFormat.ofDelimiter(" ");
-        for (int i = 0; i < 10; i++) {
-            byte[] segmentsAsArray =
-                    SEGMENT.asSlice(MEASUREMENT_LAYOUT.scale(0, i), MEASUREMENT_LAYOUT.byteSize())
-                    .toArray(JAVA_BYTE);
-            println(f.formatHex(segmentsAsArray));
-        }
+    // The order in which methods appear in an interface is
+    // unspecified
+    private static final Map<Class<?>, List<String>> METHOD_ORDERS =
+            Map.of(Measurement.class, (List.of("date", "a", "b", "c")),
+                    SmallMeasurement.class, List.of("date", "d"),
+                    Both.class, List.of("measurement", "smallMeasurement"),
+                    PivotRow.class, List.of("month", "r0to25", "r25to50", "r50to75", "r75to100"),
+                    Selection.class, List.of("date", "a", "d")
+    );
 
-        String expected = """
-                e5 d6 34 01 9d 41 3a 3f a0 e8 5f 3d bb e7 2e 3f
-                e6 d6 34 01 00 5c 44 3d 78 10 9e 3e bb 2b 71 3f
-                e7 d6 34 01 3a dd 8d 3e 85 2c 35 3f 6a 61 2a 3f
-                e8 d6 34 01 60 08 bb 3d 67 43 67 3f 2e 0b e7 3e
-                e9 d6 34 01 1c d1 bc 3e b8 66 c3 3e d8 2e 8d 3e
-                ea d6 34 01 be bf 30 3f 00 64 ed 3e 57 18 43 3f
-                eb d6 34 01 40 6c 48 3f a1 88 7f 3f 10 59 6b 3f
-                ec d6 34 01 f0 9a 1b 3e be 7b df 3e 70 2d e1 3e
-                ed d6 34 01 d9 f9 3f 3f d8 3d 6e 3f 16 ec c5 3e
-                ee d6 34 01 83 5c 4c 3f b4 a2 35 3e 1c 29 1a 3e
-                """;
-             /*|    date   |     a     |     b     |     c     |*/
-
-        assertEquals(expected, lines());
+    // Date will end up at the tail in OpenJDK...
+    public interface Date {
+        int date();
+        void date(int date);
     }
 
-    private static final VarHandle DATE = MEASUREMENT_LAYOUT.varHandle(PathElement.groupElement("date"));
-    private static final VarHandle A = MEASUREMENT_LAYOUT.varHandle(PathElement.groupElement("a"));
-    private static final VarHandle B = MEASUREMENT_LAYOUT.varHandle(PathElement.groupElement("b"));
-    private static final VarHandle C = MEASUREMENT_LAYOUT.varHandle(PathElement.groupElement("c"));
+    public interface Measurement extends Date {
+        float a();
+        float b();
+        float c();
+
+        void a(float a);
+        void b(float b);
+        void c(float c);
+    }
 
     @Test
-    void dumpImperative() {
-
-        for (int i = 0; i < 10; i++) {
-            MemorySegment segment =
-                    SEGMENT.asSlice(MEASUREMENT_LAYOUT.scale(0, i), MEASUREMENT_LAYOUT.byteSize());
-            println((int) DATE.get(segment, 0) + " " +
-                    (float) A.get(segment, 0) + " " +
-                    (float) B.get(segment, 0) + " " +
-                    (float) C.get(segment, 0));
-        }
-
-        String expected = """
-                20240101 0.7275637 0.054665208 0.6832234
-                20240102 0.0479393 0.3087194 0.9420735
-                20240103 0.27707845 0.70771056 0.6655489
-                20240104 0.09132457 0.9033722 0.45125717
-                20240105 0.36878288 0.38164306 0.275748
-                20240106 0.69042575 0.46365356 0.76209015
-                20240107 0.78290176 0.99817854 0.91932774
-                20240108 0.15195823 0.43649095 0.4397998
-                20240109 0.7499061 0.93063116 0.38656682
-                20240110 0.7982866 0.17737848 0.15054744
-                """;
-
-        assertEquals(expected, lines());
+    void order() {
+        var names = getters(Measurement.class, METHOD_ORDERS::get)
+                .map(Method::getName)
+                .toList();
+        System.out.println("names = " + names);
     }
 
-    // Enter the SegmentMapper
-
-    // Here is a record that can be used to view data
-    public record Measurement(int date, float a, float b, float c) {
-    }
 
     private static final SegmentMapper<Measurement> MAPPER =
-            SegmentMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
+            SegmentMapper.ofInterface(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
 
 
     @Test
@@ -194,24 +167,25 @@ final class TestRecordDataProcessing {
                 .forEachOrdered(this::println);
 
         String expected = """
-                Measurement[date=20240101, a=0.7275637, b=0.054665208, c=0.6832234]
-                Measurement[date=20240102, a=0.0479393, b=0.3087194, c=0.9420735]
-                Measurement[date=20240103, a=0.27707845, b=0.70771056, c=0.6655489]
-                Measurement[date=20240104, a=0.09132457, b=0.9033722, c=0.45125717]
-                Measurement[date=20240105, a=0.36878288, b=0.38164306, c=0.275748]
-                Measurement[date=20240106, a=0.69042575, b=0.46365356, c=0.76209015]
-                Measurement[date=20240107, a=0.78290176, b=0.99817854, c=0.91932774]
-                Measurement[date=20240108, a=0.15195823, b=0.43649095, c=0.4397998]
-                Measurement[date=20240109, a=0.7499061, b=0.93063116, c=0.38656682]
-                Measurement[date=20240110, a=0.7982866, b=0.17737848, c=0.15054744]
+                Measurement[b()=0.054665208, c()=0.6832234, a()=0.7275637, date()=20240101]
+                Measurement[b()=0.3087194, c()=0.9420735, a()=0.0479393, date()=20240102]
+                Measurement[b()=0.70771056, c()=0.6655489, a()=0.27707845, date()=20240103]
+                Measurement[b()=0.9033722, c()=0.45125717, a()=0.09132457, date()=20240104]
+                Measurement[b()=0.38164306, c()=0.275748, a()=0.36878288, date()=20240105]
+                Measurement[b()=0.46365356, c()=0.76209015, a()=0.69042575, date()=20240106]
+                Measurement[b()=0.99817854, c()=0.91932774, a()=0.78290176, date()=20240107]
+                Measurement[b()=0.43649095, c()=0.4397998, a()=0.15195823, date()=20240108]
+                Measurement[b()=0.93063116, c()=0.38656682, a()=0.7499061, date()=20240109]
+                Measurement[b()=0.17737848, c()=0.15054744, a()=0.7982866, date()=20240110]
                 """;
 
-        assertEquals(expected, lines());
+        // The order is unspecified
+        // assertEquals(expected, lines());
     }
 
     @Test
     void printHead() {
-        drawTable(Measurement.class, () ->
+        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
                 MAPPER.stream(SEGMENT)      // Stream<Measurement>
                         .limit(10)  // Stream<Measurement>
         );
@@ -241,7 +215,7 @@ final class TestRecordDataProcessing {
         // Better than using Stream::skip
         var slice = SEGMENT.asSlice(MEASUREMENT_LAYOUT.scale(0, DAYS - 10));
 
-        drawTable(Measurement.class, () ->
+        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
                 MAPPER.stream(slice)); // Stream<Measurement>
 
         String expected = """
@@ -289,7 +263,7 @@ final class TestRecordDataProcessing {
 
     @Test
     void paging() {
-        drawTable(Measurement.class, () ->
+        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
                 MAPPER.page(SEGMENT, 20, 3));
 
         String expected = """
@@ -377,7 +351,7 @@ final class TestRecordDataProcessing {
                 .collect(Collectors.groupingBy(m -> month(m.date()),
                         Collectors.groupingBy(m -> (int) (m.a() * 4), Collectors.counting())));
 
-        drawTable(PivotRow.class, () -> pivot.entrySet().stream()
+        drawTable(PivotRow.class, METHOD_ORDERS::get, () -> pivot.entrySet().stream()
                 .map(e -> {
                     var map = e.getValue();
                     return new PivotRow(e.getKey(),
@@ -416,16 +390,18 @@ final class TestRecordDataProcessing {
             JAVA_FLOAT.withName("d")
     );
 
-    public record SmallMeasurement(int date, float d) {
+    public interface SmallMeasurement extends Date {
+        float d();
+        void d(float d);
     }
 
     private static final SegmentMapper<SmallMeasurement> SMALL_MAPPER =
-            SegmentMapper.ofRecord(MethodHandles.lookup(), SmallMeasurement.class, SMALL_MEASUREMENT_LAYOUT);
+            SegmentMapper.ofInterface(MethodHandles.lookup(), SmallMeasurement.class, SMALL_MEASUREMENT_LAYOUT);
 
     private static final MemorySegment SMALL_SEGMENT = initSmallMeasurements();
 
     @Test
-    void dumpSMallRaw() {
+    void dumpSmallRaw() {
         HexFormat f = HexFormat.ofDelimiter(" ");
         for (int i = 0; i < 10; i++) {
             byte[] segmentsAsArray = SMALL_SEGMENT
@@ -458,24 +434,24 @@ final class TestRecordDataProcessing {
                 .forEachOrdered(this::println);
 
         String expected = """
-                SmallMeasurement[date=20240101, d=0.7275637]
-                SmallMeasurement[date=20240103, d=0.054665208]
-                SmallMeasurement[date=20240105, d=0.6832234]
-                SmallMeasurement[date=20240107, d=0.0479393]
-                SmallMeasurement[date=20240109, d=0.3087194]
-                SmallMeasurement[date=20240111, d=0.9420735]
-                SmallMeasurement[date=20240113, d=0.27707845]
-                SmallMeasurement[date=20240115, d=0.70771056]
-                SmallMeasurement[date=20240117, d=0.6655489]
-                SmallMeasurement[date=20240119, d=0.09132457]
+                SmallMeasurement[d()=0.7275637, date()=20240101]
+                SmallMeasurement[d()=0.054665208, date()=20240103]
+                SmallMeasurement[d()=0.6832234, date()=20240105]
+                SmallMeasurement[d()=0.0479393, date()=20240107]
+                SmallMeasurement[d()=0.3087194, date()=20240109]
+                SmallMeasurement[d()=0.9420735, date()=20240111]
+                SmallMeasurement[d()=0.27707845, date()=20240113]
+                SmallMeasurement[d()=0.70771056, date()=20240115]
+                SmallMeasurement[d()=0.6655489, date()=20240117]
+                SmallMeasurement[d()=0.09132457, date()=20240119]
                 """;
-
-        assertEquals(expected, lines());
+        // The order is unspecified
+        //assertEquals(expected, lines());
     }
 
     @Test
     void printSmallHead() {
-        drawTable(SmallMeasurement.class, () ->
+        drawTable(SmallMeasurement.class, METHOD_ORDERS::get, () ->
                 SMALL_MAPPER.stream(SMALL_SEGMENT)  // Stream<SmallMeasurement>
                         .limit(10)          // Stream<SmallMeasurement>
         );
@@ -519,13 +495,13 @@ final class TestRecordDataProcessing {
     void join() {
 
         Stream<Both> boths = join(
-                TestRecordDataProcessing::measurements,
-                TestRecordDataProcessing::smallMeasurements,
+                TestDataProcessingInterface::measurements,
+                TestDataProcessingInterface::smallMeasurements,
                 Both::new,
                 both -> both.measurement.date() == both.smallMeasurement.date()
         );
 
-        drawTable(Both.class, () -> boths
+        drawTable(Both.class, METHOD_ORDERS::get, () -> boths
                 .limit(10)
         );
 
@@ -550,25 +526,29 @@ final class TestRecordDataProcessing {
         assertEquals(expected, lines());
     }
 
-    record Selection(int date, float a, float d) {
-        public Selection(Both both) {
-            this(both.measurement().date(), both.measurement().a(), both.smallMeasurement().d());
-        }
+    interface Selection {
+        int date();
+        float a();
+        float d();
     }
 
     @Test
     void joinWithProjection() {
 
         Stream<Both> boths = join(
-                TestRecordDataProcessing::measurements,
-                TestRecordDataProcessing::smallMeasurements,
+                TestDataProcessingInterface::measurements,
+                TestDataProcessingInterface::smallMeasurements,
                 Both::new,
                 both -> both.measurement.date() == both.smallMeasurement.date()
         );
 
-        drawTable(Selection.class, () -> boths
+        drawTable(Selection.class, METHOD_ORDERS::get, () -> boths
                 .limit(10)
-                .map(Selection::new)
+                .map(both -> new Selection() {
+                    @Override public int date() { return both.measurement().date(); }
+                    @Override public float a()  { return both.measurement().a(); }
+                    @Override public float d()  { return both.smallMeasurement().d(); }
+                })
         );
 
         String expected = """
@@ -591,6 +571,7 @@ final class TestRecordDataProcessing {
         assertEquals(expected, lines());
     }
 
+
     // Support methods
 
     // Produces the cartesian product first x second and then
@@ -609,13 +590,17 @@ final class TestRecordDataProcessing {
     // Initialization of segments
 
     static MemorySegment initMeasurements() {
-        var mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
+        var mapper = SegmentMapper.ofInterface(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
         MemorySegment segment = Arena.ofAuto().allocate(MEASUREMENT_LAYOUT, DAYS);
         Random rnd = new Random(42);
         for (int i = 0; i < DAYS; i++) {
             Instant day = FIRST_DAY.plusSeconds(24L * 3600 * i);
             int date = Integer.parseInt(day.toString().substring(0, 10).replace("-", ""));
-            mapper.setAtIndex(segment, i, new Measurement(date, rnd.nextFloat(), rnd.nextFloat(), rnd.nextFloat()));
+            Measurement m = mapper.getAtIndex(segment, i);
+            m.date(date);
+            m.a(rnd.nextFloat());
+            m.b(rnd.nextFloat());
+            m.c(rnd.nextFloat());
         }
         return segment;
     }
@@ -626,7 +611,9 @@ final class TestRecordDataProcessing {
         for (int i = 0; i < DAYS / 2; i++) {
             Instant day = FIRST_DAY.plusSeconds(24L * 3600 * i * 2);
             int date = Integer.parseInt(day.toString().substring(0, 10).replace("-", ""));
-            SMALL_MAPPER.setAtIndex(segment, i, new SmallMeasurement(date, rnd.nextFloat()));
+            SmallMeasurement m = SMALL_MAPPER.getAtIndex(segment, i);
+            m.date(date);
+            m.d(rnd.nextFloat());
         }
         return segment;
     }
@@ -650,40 +637,43 @@ final class TestRecordDataProcessing {
 
     // Utility methods for drawing
 
-    <T extends Record> void drawTable(Class<T> type, Supplier<Stream<T>> rowSupplier) {
-        drawTable(this::println, type, rowSupplier);
+    <T> void drawTable(Class<T> type,
+                       Function<Class<?>, List<String>> orderLookup,
+                       Supplier<Stream<T>> rowSupplier) {
+        drawTable(this::println, type, orderLookup, rowSupplier);
     }
 
-    static <T extends Record> void drawTable(Consumer<String> consumer,
-                                             Class<T>  type,
-                                             Supplier<Stream<T>> rowSupplier) {
-        consumer.accept(delimiter(type));
-        consumer.accept(header(type));
-        consumer.accept(delimiter(type));
+    static <T> void drawTable(Consumer<String> consumer,
+                              Class<T> type,
+                              Function<Class<?>, List<String>> orderLookup,
+                              Supplier<Stream<T>> rowSupplier) {
+        consumer.accept(delimiter(type, orderLookup));
+        consumer.accept(header(type, orderLookup));
+        consumer.accept(delimiter(type, orderLookup));
         rowSupplier.get()
-                .map(TestRecordDataProcessing::asLine)
+                .map(TestDataProcessingInterface::asLine)
                 .forEachOrdered(consumer);
-        consumer.accept(delimiter(type));
+        consumer.accept(delimiter(type, orderLookup));
     }
 
-    static <R extends Record> String delimiter(Class<R> type) {
-        return delimiters(type)
+    static <T> String delimiter(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return delimiters(type, orderLookup)
                 .collect(Collectors.joining("+", "+", "+"));
     }
 
-    static <R extends Record> String header(Class<R> type) {
-        int[] columWidths = columWidths(type).toArray();
-        List<String> names = headers(type).toList();
+    static <T> String header(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        int[] columWidths = columWidths(type, orderLookup).toArray();
+        List<String> names = headers(type, orderLookup).toList();
         return IntStream.range(0, names.size())
                 .mapToObj(i -> " ".repeat(columWidths[i] - names.get(i).length()) + names.get(i))
                 .collect(Collectors.joining("|", "|", "|"));
     }
 
-    static <R extends Record> String asLine(R line) {
+    static <T> String asLine(T line) {
         return asLine0(line) + "|";
     }
 
-    static <R extends Record> String asLine0(R line) {
+    static <T> String asLine0(T line) {
         return switch (line) {
             // This is a bit of cheating. However, it would be possible to derive a printer function
             // from a record class.
@@ -696,14 +686,14 @@ final class TestRecordDataProcessing {
         };
     }
 
-    static <R extends Record> Stream<String> delimiters(Class<R> type) {
-        return columWidths(type)
+    static <T> Stream<String> delimiters(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return columWidths(type, orderLookup)
                 .mapToObj("-"::repeat);
     }
 
-    static <R extends Record> IntStream columWidths(Class<R> type) {
-        return Arrays.stream(type.getRecordComponents())
-                .map(RecordComponent::getType)
+    static <T> IntStream columWidths(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return getters(type, orderLookup)
+                .map(Method::getReturnType)
                 .map(Class::getSimpleName)
                 .mapToInt(n -> switch(n) {
                     case "int" -> 11;
@@ -715,27 +705,17 @@ final class TestRecordDataProcessing {
                 });
     }
 
-    static <R extends Record> Stream<String> headers(Class<R> type) {
-        return Arrays.stream(type.getRecordComponents())
-                .map(RecordComponent::getName);
+    static <T> Stream<Method> getters(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return orderLookup.apply(type).stream()
+                .flatMap(n -> Arrays.stream(type.getMethods()).filter(m -> m.getName().equals(n)))
+                .filter(m -> Modifier.isAbstract(m.getModifiers()) || type.isRecord())
+                .filter(m -> m.getReturnType() != void.class)
+                .filter(m -> m.getParameterCount() == 0);
     }
 
-
-
-    /*    public interface Measurement {
-        int date();
-
-        float a();
-
-        float b();
-
-        float c();
-
-        void a(float a);
-
-        void b(float b);
-
-        void c(float c);
-    }*/
+    static <T> Stream<String> headers(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return getters(type, orderLookup)
+                .map(Method::getName);
+    }
 
 }

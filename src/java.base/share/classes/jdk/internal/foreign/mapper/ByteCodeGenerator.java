@@ -252,24 +252,15 @@ final class ByteCodeGenerator {
 
     void toString_(List<AccessorInfo> getters) {
 
-        // We want the components to appear in the order reported by Class::getMethods
-        // So, we first construct a map that we can use to lookup MethodInfo objects
-        Map<Method, AccessorInfo> methods = getters.stream()
-                .collect(Collectors.toMap(AccessorInfo::method, Function.identity()));
-        List<AccessorInfo> sortedGetters = Arrays.stream(type.getMethods())
-                .map(methods::get)
-                .filter(Objects::nonNull) // Unmapped methods discarded (e.g. static methods)
-                .toList();
-
         // Foo[g0()=\u0001, g1()=\u0001, ...]
-        var recipe = sortedGetters.stream()
+        var recipe = getters.stream()
                 .map(m -> m.layoutInfo().arrayInfo()
                         .map(ai -> String.format("%s()=%s%s", m.method().getName(), m.type().getSimpleName(), ai.dimensions()))
                         .orElse(String.format("%s()=\u0001", m.method().getName()))
                 )
                 .collect(Collectors.joining(", ", type.getSimpleName() + "[", "]"));
 
-        List<AccessorInfo> nonArrayGetters = sortedGetters.stream()
+        List<AccessorInfo> nonArrayGetters = getters.stream()
                 .filter(i -> i.layoutInfo().arrayInfo().isEmpty())
                 .toList();
 

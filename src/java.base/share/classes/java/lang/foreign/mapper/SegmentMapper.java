@@ -266,8 +266,8 @@ import java.util.stream.Stream;
 // Todo: Check all exceptions in JavaDocs: See TestScopedOperations
 // Todo: Consider generating a graphics rendering.
 // Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
-// Todo: The generated interface classes should be @ValueBased
 
+// Done: The generated interface classes should be @ValueBased
 // Done: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST
 //       -> See TestDataProcessingRecord and TestDataProcessingInterface
 // No: ~map() can be dropped in favour of "manual mapping"~
@@ -683,7 +683,7 @@ public interface SegmentMapper<T> {
      *          and using the provided {@code lookup}}
      *
      * @implNote The order in which methods appear (e.g. in the {@code toString} method)
-     *           is unspecified.
+     *           is derived from the provided {@code layout}.
      *
      * @implNote The returned class can be a
      *           <a href="{@docRoot}/java.base/java/lang/doc-files/ValueBased.html">value-based</a>
@@ -691,6 +691,8 @@ public interface SegmentMapper<T> {
      *           {@linkplain Object#equals(Object) equal} as interchangeable and should
      *           not use instances for synchronization, or unpredictable behavior may
      *           occur. For example, in a future release, synchronization may fail.
+     *
+     * @implNote The returned class can be a {@linkplain Class#isHidden() hidden} class.
      *
      * @param lookup to use when performing reflective analysis on the
      *               provided {@code type}
@@ -725,6 +727,9 @@ public interface SegmentMapper<T> {
      * Reflective analysis on the provided {@code type} will be made using the
      * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
      *
+     * @implNote The order in which components appear (e.g. in the {@code toString} method)
+     *           conforms to the order in which components are declared by the record class.
+     *
      * @param type to map memory segment from and to
      * @param layout to be used when mapping the provided {@code type}
      * @param <T> the type the returned mapper converts MemorySegments from and to
@@ -750,6 +755,9 @@ public interface SegmentMapper<T> {
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
      *          to the provided record {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
+     *
+     * @implNote The order in which components appear (e.g. in the {@code toString} method)
+     *           conforms to the order in which components are declared by the record class.
      *
      * @param lookup to use when performing reflective analysis on the
      *                provided {@code type}

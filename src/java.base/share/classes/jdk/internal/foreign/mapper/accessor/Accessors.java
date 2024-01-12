@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2023, 2024 Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,6 +38,7 @@ import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -105,11 +106,28 @@ public final class Accessors {
                 .flatMap(Collection::stream);
     }
 
+    // The order of methods should conform to the order in which names
+    // appears in the layout
     public static Accessors ofInterface(Class<?> type, GroupLayout layout) {
-        return new Accessors(Arrays.stream(type.getMethods())
+        Map<String, List<Method>> methods = Arrays.stream(type.getMethods())
+                .collect(Collectors.groupingBy(Method::getName));
+
+        return new Accessors(layout.memberLayouts().stream()
+                .map(MemoryLayout::name)
+                .filter(Optional::isPresent)
+                // Get the name of the element layout
+                .map(Optional::get)
+                // Lookup class methods using the element name
+                .map(methods::get)
+                // Ignore unmapped elements
+                .filter(Objects::nonNull)
+                // Flatten the list of Methods (e.g. getters and setters)
+                .flatMap(Collection::stream)
+                // Only consider abstract methods (e.g. ignore default methods)
                 .filter(m -> Modifier.isAbstract(m.getModifiers()))
                 .map(m -> accessorInfo(type, layout, m))
-                .collect(Collectors.groupingBy(AccessorInfo::key)));
+                // Retain insertion order
+                .collect(Collectors.groupingBy(AccessorInfo::key, LinkedHashMap::new, Collectors.toList())));
     }
 
     public static Accessors ofRecord(Class<?> type, GroupLayout layout) {

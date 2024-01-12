@@ -29,9 +29,11 @@
  *          java.base/jdk.internal.classfile.constantpool
  *          java.base/jdk.internal.classfile.instruction
  *          java.base/jdk.internal.classfile.impl
+ *          java.base/jdk.internal
  * @run junit/othervm -Djava.lang.foreign.mapper.debug=true TestInterfaceMapper
  */
 
+import jdk.internal.ValueBased;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -45,8 +47,6 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -56,7 +56,6 @@ import static org.junit.jupiter.api.Assertions.*;
 // Todo: Check unions
 // Todo: Prevent recursive definitions (and check for this explicitly)
 
-// Note: the order in which interface methods appears is unspecified.
 final class TestInterfaceMapper {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
@@ -111,7 +110,7 @@ final class TestInterfaceMapper {
 
         assertEquals(6, accessor.x());
         assertEquals(8, accessor.y());
-        assertToString(accessor, BaseTest.PointAccessor.class, Set.of("x()=6", "y()=8"));
+        assertToString(accessor, mapper, "x()=6, y()=8");
 
         accessor.x(1);
         accessor.y(2);
@@ -120,7 +119,7 @@ final class TestInterfaceMapper {
         assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
         assertEquals(2, accessor.y());
         assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
-        assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
+        assertToString(accessor, mapper, "x()=1, y()=2");
 
         // SegmentMapper::set
         MemorySegment dstSegment = newSegment(POINT_LAYOUT);
@@ -203,9 +202,7 @@ final class TestInterfaceMapper {
             assertEquals((short) 32767, accessor.s());
             assertEquals((byte) 127, accessor.b());
 
-            Set<String> set = Arrays.stream("i()=13, b()=127, s()=32767, c()=B, f()=3.1415, l()=42, d()=123.4".split(", "))
-                    .collect(Collectors.toSet());
-            assertToString(accessor, MixedBag.class, set);
+            assertToString(accessor, mapper, "l()=42, d()=123.45, i()=13, f()=3.1415, c()=B, s()=32767, b()=127");
 
             accessor.b((byte) (accessor.b() - 1));
             accessor.s((short) (accessor.s() - 1));
@@ -215,9 +212,7 @@ final class TestInterfaceMapper {
             accessor.l(accessor.l() - 1);
             accessor.d(accessor.d() - 1);
 
-            Set<String> set2 = Arrays.stream("i()=12, b()=126, s()=32766, c()=A, f()=2.1415, l()=41, d()=122.4".split(", "))
-                    .collect(Collectors.toSet());
-            assertToString(accessor, mapper.type(), set2);
+            assertToString(accessor, mapper, "l()=41, d()=122.45, i()=12, f()=2.1415, c()=A, s()=32766, b()=126");
 
             // SegmentMapper::set
             MemorySegment dstSegment = newSegment(MIXED_LAYOUT);
@@ -257,7 +252,7 @@ final class TestInterfaceMapper {
         XYAccessor accessor = mapper.get(segment, 0);
         assertEquals(3, accessor.x());
         assertEquals(4, accessor.y());
-        assertToString(accessor, mapper.type(), Set.of("x()=3", "y()=4"));
+        assertToString(accessor, mapper, "x()=3, y()=4");
     }
 
     @Test
@@ -266,7 +261,7 @@ final class TestInterfaceMapper {
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         YAccessor accessor = mapper.get(segment, 0);
         assertEquals(4, accessor.y());
-        assertToString(accessor, mapper.type(), Set.of("y()=4"));
+        assertToString(accessor, mapper, "y()=4");
 
         // SegmentMapper::set
         MemorySegment dstSegment = newSegment(POINT_LAYOUT);
@@ -296,7 +291,7 @@ final class TestInterfaceMapper {
         assertEquals(6, end.x());
         assertEquals(8, end.y());
 
-        assertToString(accessor, mapper.type(), Set.of("begin()=PointAccessor[", "end()=PointAccessor["));
+        assertToString(accessor, mapper, "begin()=PointAccessor[x()=3, y()=4], end()=PointAccessor[x()=6, y()=8]");
 
         begin.x(4);
         begin.y(5);
@@ -377,7 +372,7 @@ final class TestInterfaceMapper {
         SegmentMapper<Empty> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, Empty.class, LINE_LAYOUT);
         Empty accessor = mapper.get(segment);
 
-        assertToString(accessor, mapper.type(), Set.of());
+        assertToString(accessor, mapper, "");
 
         // SegmentMapper::set
         MemorySegment dstSegment = MemorySegment.ofArray(new int[]{1});
@@ -455,8 +450,7 @@ final class TestInterfaceMapper {
         assertEquals(6, end.x());
         assertEquals(8, end.y());
 
-        // Records have a deterministic order
-        assertToString(accessor, mapper.type(), Set.of("begin()=Point[x=3, y=4]", "end()=Point[x=6, y=8]"));
+        assertToString(accessor, mapper, "begin()=Point[x=3, y=4], end()=Point[x=6, y=8]");
 
         accessor.begin(new Point(1, 2));
         accessor.end(new Point(3, 4));
@@ -466,7 +460,7 @@ final class TestInterfaceMapper {
         assertEquals(3, accessor.end().x());
         assertEquals(4, accessor.end().y());
 
-        assertToString(accessor, mapper.type(), Set.of("begin()=Point[x=1, y=2]", "end()=Point[x=3, y=4]"));
+        assertToString(accessor, mapper, "begin()=Point[x=1, y=2], end()=Point[x=3, y=4]");
     }
 
     public interface PolygonAccessor {
@@ -650,9 +644,7 @@ final class TestInterfaceMapper {
             assertEquals((short) 32767, accessor.s(1, 1));
             assertEquals((byte) 127, accessor.b(1, 1));
 
-            Set<String> set = Arrays.stream("[i()=int[2, 3], b()=byte[2, 3], s()=short[2, 3], c()=char[2, 3], f()=float[2, 3], l()=long[2, 3], d()=double[2, 3]".split(", "))
-                    .collect(Collectors.toSet());
-            assertToString(accessor, MixedBagArray.class, set);
+            assertToString(accessor, mapper, "l()=long[2, 3], d()=double[2, 3], i()=int[2, 3], f()=float[2, 3], c()=char[2, 3], s()=short[2, 3], b()=byte[2, 3]");
 
             // Decrease every (1, 1) value by one
             accessor.b(1, 1, (byte) (accessor.b(1, 1) - 1));
@@ -803,7 +795,7 @@ final class TestInterfaceMapper {
         @Override
         public String toString() {
             return "LongPointAccessor[" +
-                    "x()=" + x() +
+                    "x()=" + x() + ", "+
                     "y()=" + y() +
                     ']';
         }
@@ -827,7 +819,7 @@ final class TestInterfaceMapper {
         assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
         assertEquals(2L, accessor.y());
         assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
-        assertToString(accessor, LongPointAccessor.class, Set.of("x()=1", "y()=2"));
+        assertToString(accessor, LongPointAccessor.class, "x()=1, y()=2");
 
         // SegmentMapper::set
         MemorySegment dstSegment = newSegment(POINT_LAYOUT);
@@ -1023,7 +1015,7 @@ final class TestInterfaceMapper {
         PointAccessorWithSuper accessor = mapper.get(segment, groupLayout.byteSize());
 
         assertEquals(new Point(6, 8), accessor.point());
-        assertToString(accessor, PointAccessorWithSuper.class, Set.of("x=6", "y=8"));
+        assertToString(accessor, PointAccessorWithSuper.class, "point()=Point[x=6, y=8]");
 
         /*
 
@@ -1070,7 +1062,7 @@ final class TestInterfaceMapper {
 
 
         assertEquals(new Point(6, 8), accessor.pointAccessor().point());
-        assertToString(accessor, C.class, Set.of("x=6", "y=8"));
+        assertToString(accessor, C.class,"pointAccessor()=AccessorA[point()=Point[x=6, y=8]], pointAccessor()=AccessorB[point()=Point[x=6, y=8]]");
 
         /*
 
@@ -1103,7 +1095,7 @@ final class TestInterfaceMapper {
 
         assertEquals(6, accessor.pointAccessor().x());
         assertEquals(8, accessor.pointAccessor().y());
-        assertToString(accessor, FixedGeneric.class, Set.of("x()=6", " y()=8]"));
+        assertToString(accessor, mapper, "pointAccessor()=PointAccessor[x()=6, y()=8]");
     }
 
     @Test
@@ -1118,20 +1110,33 @@ final class TestInterfaceMapper {
         assertTrue(iae.getMessage().contains("Generic<T extends BaseTest$PointAccessor>"));
     }
 
+
+    @Test
+    void classProperties() {
+        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        BaseTest.PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+        Class<?> clazz = accessor.getClass();
+        assertNotNull(clazz.getAnnotation(ValueBased.class), "not @ValueBased");
+        assertTrue(clazz.isHidden(), "Not hidden");
+        assertTrue(clazz.getName().contains("PointAccessorInterfaceMapper"));
+    }
+
     static MemorySegment newSegment(MemoryLayout layout) {
         return Arena.ofAuto().allocate(layout);
     }
 
-    void assertToString(Object o,
-                        Class<?> clazz, Set<String> fragments) {
-        String s = o.toString();
-        var start = clazz.getSimpleName() + "[";
-        assertTrue(s.startsWith(start), s + " does not start with " + start);
-        for (var fragment : fragments) {
-            assertTrue(s.contains(fragment), s + " does not contain " + fragment);
-        }
-        var end = "]";
-        assertTrue(s.endsWith(end), s + " does not end with " + end);
+    <T> void assertToString(T o,
+                            SegmentMapper<? extends T> mapper,
+                            String values) {
+        assertToString(o, mapper.type(), values);
+    }
+
+    <T> void assertToString(T o,
+                            Class<?> mapperType,
+                            String values) {
+        String expected = mapperType.getSimpleName() + "[" + values + "]";
+        assertEquals(expected, o.toString());
     }
 
 }

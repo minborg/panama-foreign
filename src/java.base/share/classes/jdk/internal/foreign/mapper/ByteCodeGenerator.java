@@ -26,9 +26,11 @@
 package jdk.internal.foreign.mapper;
 
 import jdk.internal.ValueBased;
+import jdk.internal.classfile.Annotation;
 import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
+import jdk.internal.classfile.attribute.RuntimeVisibleAnnotationsAttribute;
 import jdk.internal.foreign.mapper.accessor.ArrayInfo;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 import jdk.internal.foreign.mapper.accessor.ScalarInfo;
@@ -80,6 +82,9 @@ final class ByteCodeGenerator {
     }
 
     void classDefinition() {
+        // @ValueBased
+        Annotation valueBased = Annotation.of(desc(ValueBased.class));
+        cb.with(RuntimeVisibleAnnotationsAttribute.of(valueBased));
         // public final
         cb.withFlags(ACC_PUBLIC | ACC_FINAL | ACC_SUPER);
         // extends Object

@@ -67,9 +67,15 @@ public final class SegmentInterfaceMapper<T>
 
     @Stable
     private final Class<T> implClass;
+    @Stable
     private final MethodHandle getHandle;
+    @Stable
     private final MethodHandle setHandle;
+    @Stable
+    // Capability to extract the segment from an instance of the generated implClass
     private final MethodHandle segmentGetHandle;
+    @Stable
+    // Capability to extract the offset from an instance of the generated implClass
     private final MethodHandle offsetGetHandle;
     private final List<AffectedMemory> affectedMemories;
 
@@ -82,7 +88,7 @@ public final class SegmentInterfaceMapper<T>
                 ValueType.INTERFACE, MapperUtil::requireImplementableInterfaceType, Accessors::ofInterface);
         this.affectedMemories = affectedMemories;
 
-        // Add affected memory for all the setters seen on this level
+        // Add affected memory for all the setters seen on this level (mutation)
         accessors().stream(AccessorType.SETTER)
                 .map(AffectedMemory::from)
                 .forEach(affectedMemories::add);

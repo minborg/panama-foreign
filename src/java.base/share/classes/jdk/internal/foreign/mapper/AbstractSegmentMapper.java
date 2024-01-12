@@ -28,6 +28,7 @@ package jdk.internal.foreign.mapper;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 import jdk.internal.foreign.mapper.accessor.Accessors;
 import jdk.internal.foreign.mapper.accessor.ValueType;
+import jdk.internal.vm.annotation.Stable;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.mapper.SegmentMapper;
@@ -41,8 +42,11 @@ import java.util.function.UnaryOperator;
 
 abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
 
+    @Stable
     private final MethodHandles.Lookup lookup;
+    @Stable
     private final Class<T> type;
+    @Stable
     private final GroupLayout layout;
     private final boolean leaf;
     private final MapperCache mapperCache;
@@ -70,14 +74,6 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
                     "The following accessors are not supported for " + valueType + ": " + unsupportedAccessors);
         }
         MapperUtil.assertMappingsCorrectAndTotal(type, layout, accessors);
-
-/*
-        this.getHandle = computeGetHandle();
-        this.setHandle = computeSetHandle();
-*/
-
-        // We do not need the accessors anymore
-/*        this.accessors = null;*/
     }
 
     @Override

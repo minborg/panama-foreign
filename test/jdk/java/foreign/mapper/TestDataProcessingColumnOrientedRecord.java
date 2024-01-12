@@ -21,35 +21,40 @@
  * questions.
  */
 
-/*
- * @test
- * @run junit/othervm --enable-native-access=ALL-UNNAMED TestDataProcessingColumnOrientedRecord
- */
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.SegmentTable;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.RecordComponent;
+import java.nio.channels.FileChannel;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.DoubleSummaryStatistics;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 import java.util.stream.Stream;
 
 import static java.lang.foreign.ValueLayout.*;
@@ -78,10 +83,28 @@ final class TestDataProcessingColumnOrientedRecord {
      * the other data columns are represented with a number of `float` values.
      * The columns are stored in a column oriented table in binary form in four MemorySegments:
      *
-     *|    date    |      a      |      b      |      c     |
-     * e5 d6 34 01   9d 41 3a 3f   a0 e8 5f 3d   bb e7 2e 3f
-     * e6 d6 34 01   00 5c 44 3d   78 10 9e 3e   bb 2b 71 3f
-     * e7 d6 34 01   3a dd 8d 3e   85 2c 35 3f   6a 61 2a 3f
+     *|    date   |
+     * e5 d6 34 01
+     * e6 d6 34 01
+     * e7 d6 34 01
+     * ...
+     *
+     *|      a     |
+     *  9d 41 3a 3f
+     *  00 5c 44 3d
+     *  3a dd 8d 3e
+     * ...
+     *
+     *|      b     |
+     *  a0 e8 5f 3d
+     *  78 10 9e 3e
+     *  85 2c 35 3f
+     * ...
+     *
+     *|     c     |
+     * bb e7 2e 3f
+     * bb 2b 71 3f
+     * 6a 61 2a 3f
      * ...
      *
      * There is also another table with just two columns:
@@ -113,85 +136,86 @@ final class TestDataProcessingColumnOrientedRecord {
             JAVA_FLOAT.withName("c")
     );
 
-    // This might as well be a memory mapped file
-    private static final MemorySegment SEGMENT = initMeasurements();
+    // The order in which methods appear in an interface is
+    // unspecified
 
+    // Todo: Replace this map with something that is using the mappers layout()
+
+    private static final Map<Class<?>, List<String>> METHOD_ORDERS =
+            Map.of(TestDataProcessingInterface.Measurement.class, (List.of("date", "a", "b", "c")),
+                    TestDataProcessingInterface.SmallMeasurement.class, List.of("date", "d"),
+                    TestDataProcessingInterface.Both.class, List.of("measurement", "smallMeasurement"),
+                    TestDataProcessingInterface.PivotRow.class, List.of("month", "r0to25", "r25to50", "r50to75", "r75to100"),
+                    TestDataProcessingInterface.Selection.class, List.of("date", "a", "d")
+            );
+
+
+    private static final SegmentTable.Stencil<Measurement> STENCIL =
+            SegmentTable.ofInterface(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
+
+    // Common interface for both tables
+    public interface Date {
+        int date();
+        void date(int date);
+    }
+
+    public interface Measurement extends TestDataProcessingInterface.Date {
+        float a();
+        float b();
+        float c();
+
+        void a(float a);
+        void b(float b);
+        void c(float c);
+    }
 
     // Tests
 
     @Test
-    void dumpRaw() {
-        HexFormat f = HexFormat.ofDelimiter(" ");
-
-        SEGMENT.elements(MEASUREMENT_LAYOUT)
-                .limit(10)
-                .map(s -> s.toArray(JAVA_BYTE))
-                .map(f::formatHex)
-                .forEachOrdered(this::println);
-
-        String expected = """
-                e5 d6 34 01 9d 41 3a 3f a0 e8 5f 3d bb e7 2e 3f
-                e6 d6 34 01 00 5c 44 3d 78 10 9e 3e bb 2b 71 3f
-                e7 d6 34 01 3a dd 8d 3e 85 2c 35 3f 6a 61 2a 3f
-                e8 d6 34 01 60 08 bb 3d 67 43 67 3f 2e 0b e7 3e
-                e9 d6 34 01 1c d1 bc 3e b8 66 c3 3e d8 2e 8d 3e
-                ea d6 34 01 be bf 30 3f 00 64 ed 3e 57 18 43 3f
-                eb d6 34 01 40 6c 48 3f a1 88 7f 3f 10 59 6b 3f
-                ec d6 34 01 f0 9a 1b 3e be 7b df 3e 70 2d e1 3e
-                ed d6 34 01 d9 f9 3f 3f d8 3d 6e 3f 16 ec c5 3e
-                ee d6 34 01 83 5c 4c 3f b4 a2 35 3e 1c 29 1a 3e
-                """;
-             /*|    date   |     a     |     b     |     c     |*/
-
-        assertEquals(expected, lines());
+    void createFromBlankSegments() {
+        try (var arena = Arena.ofConfined()){
+            SegmentTable<Measurement> table = STENCIL.create(arena, DAYS);
+            assertEquals(DAYS, table.size());
+        }
     }
-
-    private static final VarHandle DATE = MEASUREMENT_LAYOUT.varHandle(PathElement.groupElement("date"));
-    private static final VarHandle A = MEASUREMENT_LAYOUT.varHandle(PathElement.groupElement("a"));
-    private static final VarHandle B = MEASUREMENT_LAYOUT.varHandle(PathElement.groupElement("b"));
-    private static final VarHandle C = MEASUREMENT_LAYOUT.varHandle(PathElement.groupElement("c"));
 
     @Test
-    void dumpImperative() {
-
-        for (int i = 0; i < 10; i++) {
-            MemorySegment segment =
-                    SEGMENT.asSlice(MEASUREMENT_LAYOUT.scale(0, i), MEASUREMENT_LAYOUT.byteSize());
-            println((int) DATE.get(segment, 0) + " " +
-                    (float) A.get(segment, 0) + " " +
-                    (float) B.get(segment, 0) + " " +
-                    (float) C.get(segment, 0));
+    void ingresFromStream() {
+        try (var arena = Arena.ofConfined()){
+            SegmentTable<Measurement> table = STENCIL.create(arena, initialMeasurements());
+            assertEquals(DAYS, table.size());
         }
-
-        String expected = """
-                20240101 0.7275637 0.054665208 0.6832234
-                20240102 0.0479393 0.3087194 0.9420735
-                20240103 0.27707845 0.70771056 0.6655489
-                20240104 0.09132457 0.9033722 0.45125717
-                20240105 0.36878288 0.38164306 0.275748
-                20240106 0.69042575 0.46365356 0.76209015
-                20240107 0.78290176 0.99817854 0.91932774
-                20240108 0.15195823 0.43649095 0.4397998
-                20240109 0.7499061 0.93063116 0.38656682
-                20240110 0.7982866 0.17737848 0.15054744
-                """;
-
-        assertEquals(expected, lines());
     }
 
-    // Enter the SegmentMapper
-
-    // Here is a record that can be used to view data
-    public record Measurement(int date, float a, float b, float c) {
+    @Test
+    void mapExistingSegmentsFromPersistedFiles() {
+        try (var arena = Arena.ofConfined()){
+            // Files "date", "a", "b" and "c" each of byte size 4 * DAYS = 1464 bytes
+            SegmentTable<Measurement> table = STENCIL.create(fromMappedFiles(arena, MEASUREMENT_LAYOUT, DAYS));
+        }
     }
 
-    private static final SegmentMapper<Measurement> MAPPER =
-            SegmentMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
+    private Function<List<PathElement>, MemorySegment> fromMappedFiles(Arena arena,
+                                                                       GroupLayout layout,
+                                                                       long rows) {
+        return pathElements -> {
+            MemoryLayout l = layout.select(pathElements.getFirst());
+            String fileName = l.name().orElseThrow();
+            try (FileChannel fc = FileChannel.open(Path.of(fileName), StandardOpenOption.WRITE)) {
+                return fc.map(FileChannel.MapMode.READ_WRITE, 0, l.byteSize() * rows, arena);
+            } catch (IOException ioe) {
+                throw new UncheckedIOException(ioe);
+            }
+        };
+    }
 
+
+    private static final SegmentTable<Measurement> TABLE = STENCIL.create(Arena.ofAuto(), initialMeasurements());
 
     @Test
     void dumpFirstTen() {
-        MAPPER.stream(SEGMENT)      // Stream<Measurement>
+
+        TABLE.stream()              // Stream<Measurement>
                 .limit(10)  // Stream<Measurement>
                 .forEachOrdered(this::println);
 
@@ -213,9 +237,9 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void printHead() {
-        drawTable(Measurement.class, () ->
-                MAPPER.stream(SEGMENT)      // Stream<Measurement>
-                        .limit(10)  // Stream<Measurement>
+        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+                TABLE.stream()             // Stream<Measurement>
+                        .limit(10) // Stream<Measurement>);
         );
 
         String expected = """
@@ -240,11 +264,10 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void printTail() {
-        // Better than using Stream::skip
-        var slice = SEGMENT.asSlice(MEASUREMENT_LAYOUT.scale(0, DAYS - 10));
-
-        drawTable(Measurement.class, () ->
-                MAPPER.stream(slice)); // Stream<Measurement>
+        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+                LongStream.range(DAYS - 10, DAYS) // LongStream
+                        .mapToObj(TABLE::get)     // Stream<Measurement>
+        );
 
         String expected = """
                 +-----------+-------+-------+-------+
@@ -268,7 +291,8 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void sumA() {
-        double sumA = MAPPER.stream(SEGMENT)  // Stream<Measurement>
+        // Does not materialize the entire carrier
+        double sumA = TABLE.stream()          // Stream<Measurement>
                 .mapToDouble(Measurement::a)  // DoubleStream
                 .sum();
 
@@ -277,8 +301,8 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void statisticsB() {
-        DoubleSummaryStatistics statB = MAPPER.stream(SEGMENT) // Stream<Measurement>
-                .mapToDouble(Measurement::b)                   // DoubleStream
+        DoubleSummaryStatistics statB = TABLE.stream()     // Stream<Measurement>
+                .mapToDouble(Measurement::b)               // DoubleStream
                 .summaryStatistics();
 
         assertEquals(366, statB.getCount());
@@ -291,8 +315,10 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void paging() {
-        drawTable(Measurement.class, () ->
-                MAPPER.page(SEGMENT, 20, 3));
+        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+                LongStream.range(20 * 3, 20 * 4)
+                        .mapToObj(TABLE::get)
+        );
 
         String expected = """
                 +-----------+-------+-------+-------+
@@ -329,7 +355,7 @@ final class TestDataProcessingColumnOrientedRecord {
 
         // Partitions even and odd days and calculates the average Measurement::a
 
-        Map<Boolean, Double> evenOddDayAverageA = MAPPER.stream(SEGMENT)
+        Map<Boolean, Double> evenOddDayAverageA = TABLE.stream()
                 .collect(Collectors.partitioningBy(m -> m.date() % 2 == 0,
                         Collectors.averagingDouble(Measurement::a)));
 
@@ -345,7 +371,7 @@ final class TestDataProcessingColumnOrientedRecord {
 
         // For each month, computes summary statistics for Measurement:a
 
-        Map<Integer, DoubleSummaryStatistics> groups = MAPPER.stream(SEGMENT)
+        Map<Integer, DoubleSummaryStatistics> groups = TABLE.stream()
                 .collect(Collectors.groupingBy(
                         (Measurement m) -> month(m.date()),
                         Collectors.summarizingDouble(Measurement::a)));
@@ -375,11 +401,11 @@ final class TestDataProcessingColumnOrientedRecord {
         // [0, 25%), [25%, 50%), [50%, 75%) and [75%, 100%) and we count the occurrences in
         // each bracket for each distinct month
 
-        Map<Integer, Map<Integer, Long>> pivot = MAPPER.stream(SEGMENT)
+        Map<Integer, Map<Integer, Long>> pivot = TABLE.stream()
                 .collect(Collectors.groupingBy(m -> month(m.date()),
                         Collectors.groupingBy(m -> (int) (m.a() * 4), Collectors.counting())));
 
-        drawTable(PivotRow.class, () -> pivot.entrySet().stream()
+        drawTable(PivotRow.class, METHOD_ORDERS::get, () -> pivot.entrySet().stream()
                 .map(e -> {
                     var map = e.getValue();
                     return new PivotRow(e.getKey(),
@@ -418,45 +444,50 @@ final class TestDataProcessingColumnOrientedRecord {
             JAVA_FLOAT.withName("d")
     );
 
-    public record SmallMeasurement(int date, float d) {
+    public interface SmallMeasurement {
+         int date();
+         float d();
     }
 
-    private static final SegmentMapper<SmallMeasurement> SMALL_MAPPER =
-            SegmentMapper.ofRecord(MethodHandles.lookup(), SmallMeasurement.class, SMALL_MEASUREMENT_LAYOUT);
+    private static final SegmentTable.Stencil<SmallMeasurement> SMALL_STENCIL =
+            SegmentTable.ofInterface(MethodHandles.lookup(), SmallMeasurement.class, SMALL_MEASUREMENT_LAYOUT);
 
-    private static final MemorySegment SMALL_SEGMENT = initSmallMeasurements();
+    private static final SegmentTable<SmallMeasurement> SMALL_TABLE =
+            SMALL_STENCIL.create(Arena.ofAuto(), initSmallMeasurements());
 
     @Test
-    void dumpSMallRaw() {
+    void dumpSmallRaw() {
         HexFormat f = HexFormat.ofDelimiter(" ");
-        for (int i = 0; i < 10; i++) {
-            byte[] segmentsAsArray = SMALL_SEGMENT
-                    .asSlice(SMALL_MEASUREMENT_LAYOUT.scale(0, i), SMALL_MEASUREMENT_LAYOUT.byteSize())
-                    .toArray(JAVA_BYTE);
-            println(f.formatHex(segmentsAsArray));
-        }
+
+        MemorySegment segment = TABLE.segments()
+                .get(List.of(PathElement.groupElement("date")));
+
+        segment.elements(JAVA_INT)
+                .map(s -> s.toArray(JAVA_BYTE))
+                .map(f::formatHex)
+                .forEachOrdered(this::println);
 
         String expected = """
-                e5 d6 34 01 9d 41 3a 3f
-                e7 d6 34 01 a0 e8 5f 3d
-                e9 d6 34 01 bb e7 2e 3f
-                eb d6 34 01 00 5c 44 3d
-                ed d6 34 01 78 10 9e 3e
-                ef d6 34 01 bb 2b 71 3f
-                f1 d6 34 01 3a dd 8d 3e
-                f3 d6 34 01 85 2c 35 3f
-                f5 d6 34 01 6a 61 2a 3f
-                f7 d6 34 01 60 08 bb 3d
+                e5 d6 34 01
+                e7 d6 34 01
+                e9 d6 34 01
+                eb d6 34 01
+                ed d6 34 01
+                ef d6 34 01
+                f1 d6 34 01
+                f3 d6 34 01
+                f5 d6 34 01
+                f7 d6 34 01
                 """;
-            /* |   date    |     d     | */
+            /* |   date    | */
 
         assertEquals(expected, lines());
     }
 
     @Test
     void dumpSmallFirstTen() {
-        SMALL_MAPPER.stream(SMALL_SEGMENT)   // Stream<SmallMeasurement>
-                .limit(10)           // Stream<SmallMeasurement>
+        SMALL_TABLE.stream()            // Stream<SmallMeasurement>
+                .limit(10)      // Stream<SmallMeasurement>
                 .forEachOrdered(this::println);
 
         String expected = """
@@ -477,9 +508,9 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void printSmallHead() {
-        drawTable(SmallMeasurement.class, () ->
-                SMALL_MAPPER.stream(SMALL_SEGMENT)  // Stream<SmallMeasurement>
-                        .limit(10)          // Stream<SmallMeasurement>
+        drawTable(SmallMeasurement.class,METHOD_ORDERS::get, () ->
+                SMALL_TABLE.stream()          // Stream<SmallMeasurement>
+                        .limit(10)    // Stream<SmallMeasurement>
         );
 
         String expected = """
@@ -504,16 +535,6 @@ final class TestDataProcessingColumnOrientedRecord {
 
     // Joins
 
-    // Table of measurements
-    static Stream<Measurement> measurements() {
-        return MAPPER.stream(SEGMENT);
-    }
-
-    // Table of small measurements
-    static Stream<SmallMeasurement> smallMeasurements() {
-        return SMALL_MAPPER.stream(SMALL_SEGMENT);
-    }
-
     record Both(Measurement measurement, SmallMeasurement smallMeasurement) {
     }
 
@@ -521,16 +542,15 @@ final class TestDataProcessingColumnOrientedRecord {
     void join() {
 
         Stream<Both> boths = join(
-                TestDataProcessingColumnOrientedRecord::measurements,
-                TestDataProcessingColumnOrientedRecord::smallMeasurements,
+                TABLE::stream,
+                SMALL_TABLE::stream,
                 Both::new,
                 both -> both.measurement().date() == both.smallMeasurement().date()
         );
 
-        drawTable(Both.class, () -> boths
+        drawTable(Both.class, METHOD_ORDERS::get, () -> boths
                 .limit(10)
         );
-
 
         String expected = """
                 +-----------------------------------+-------------------+
@@ -562,13 +582,13 @@ final class TestDataProcessingColumnOrientedRecord {
     void joinWithProjection() {
 
         Stream<Both> boths = join(
-                TestDataProcessingColumnOrientedRecord::measurements,
-                TestDataProcessingColumnOrientedRecord::smallMeasurements,
+                TABLE::stream,
+                SMALL_TABLE::stream,
                 Both::new,
                 both -> both.measurement.date() == both.smallMeasurement.date()
         );
 
-        drawTable(Selection.class, () -> boths
+        drawTable(Selection.class, METHOD_ORDERS::get, () -> boths
                 .limit(10)
                 .map(Selection::new)
         );
@@ -610,27 +630,42 @@ final class TestDataProcessingColumnOrientedRecord {
 
     // Initialization of segments
 
-    static MemorySegment initMeasurements() {
-        var mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
-        MemorySegment segment = Arena.ofAuto().allocate(MEASUREMENT_LAYOUT, DAYS);
+    static Stream<Measurement> initialMeasurements() {
         Random rnd = new Random(42);
-        for (int i = 0; i < DAYS; i++) {
-            Instant day = FIRST_DAY.plusSeconds(24L * 3600 * i);
-            int date = Integer.parseInt(day.toString().substring(0, 10).replace("-", ""));
-            mapper.setAtIndex(segment, i, new Measurement(date, rnd.nextFloat(), rnd.nextFloat(), rnd.nextFloat()));
-        }
-        return segment;
+        return LongStream.range(0, DAYS)
+                .mapToObj(i -> {
+                    Instant day = FIRST_DAY.plusSeconds(24L * 3600 * i);
+                    int date = Integer.parseInt(day.toString().substring(0, 10).replace("-", ""));
+                    float a = rnd.nextFloat();
+                    float b = rnd.nextFloat();
+                    float c = rnd.nextFloat();
+
+                    return new Measurement() {
+                        @Override  public float a() { return a; }
+                        @Override  public float b() { return b; }
+                        @Override  public float c() { return c; }
+                        @Override  public void a(float a) { throw new UnsupportedOperationException(); }
+                        @Override  public void b(float b) { throw new UnsupportedOperationException(); }
+                        @Override public void c(float c) { throw new UnsupportedOperationException(); }
+                        @Override  public int date() { return date; }
+                        @Override  public void date(int date) { throw new UnsupportedOperationException(); }
+                    };
+                });
     }
 
-    static MemorySegment initSmallMeasurements() {
-        MemorySegment segment = Arena.ofAuto().allocate(SMALL_MEASUREMENT_LAYOUT, DAYS / 2);
+    static Stream<SmallMeasurement> initSmallMeasurements() {
         Random rnd = new Random(42);
-        for (int i = 0; i < DAYS / 2; i++) {
-            Instant day = FIRST_DAY.plusSeconds(24L * 3600 * i * 2);
-            int date = Integer.parseInt(day.toString().substring(0, 10).replace("-", ""));
-            SMALL_MAPPER.setAtIndex(segment, i, new SmallMeasurement(date, rnd.nextFloat()));
-        }
-        return segment;
+        return LongStream.range(0, DAYS/2)
+                .map(i -> i *2)
+                .mapToObj(i -> {
+                    Instant day = FIRST_DAY.plusSeconds(24L * 3600 * i);
+                    int date = Integer.parseInt(day.toString().substring(0, 10).replace("-", ""));
+                    float d = rnd.nextFloat();
+                    return new SmallMeasurement() {
+                        @Override public int date() { return date; }
+                        @Override public float d() { return d; }
+                    };
+                });
     }
 
     // Enables capturing of output for the tests
@@ -652,60 +687,63 @@ final class TestDataProcessingColumnOrientedRecord {
 
     // Utility methods for drawing
 
-    <T extends Record> void drawTable(Class<T> type, Supplier<Stream<T>> rowSupplier) {
-        drawTable(this::println, type, rowSupplier);
+    <T> void drawTable(Class<T> type,
+                       Function<Class<?>, List<String>> orderLookup,
+                       Supplier<Stream<T>> rowSupplier) {
+        drawTable(this::println, type, orderLookup, rowSupplier);
     }
 
-    static <T extends Record> void drawTable(Consumer<String> consumer,
-                                             Class<T>  type,
-                                             Supplier<Stream<T>> rowSupplier) {
-        consumer.accept(delimiter(type));
-        consumer.accept(header(type));
-        consumer.accept(delimiter(type));
+    static <T> void drawTable(Consumer<String> consumer,
+                              Class<T> type,
+                              Function<Class<?>, List<String>> orderLookup,
+                              Supplier<Stream<T>> rowSupplier) {
+        consumer.accept(delimiter(type, orderLookup));
+        consumer.accept(header(type, orderLookup));
+        consumer.accept(delimiter(type, orderLookup));
         rowSupplier.get()
-                .map(TestDataProcessingColumnOrientedRecord::asLine)
+                .map(TestDataProcessingInterface::asLine)
                 .forEachOrdered(consumer);
-        consumer.accept(delimiter(type));
+        consumer.accept(delimiter(type, orderLookup));
     }
 
-    static <R extends Record> String delimiter(Class<R> type) {
-        return delimiters(type)
+    static <T> String delimiter(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return delimiters(type, orderLookup)
                 .collect(Collectors.joining("+", "+", "+"));
     }
 
-    static <R extends Record> String header(Class<R> type) {
-        int[] columWidths = columWidths(type).toArray();
-        List<String> names = headers(type).toList();
+    static <T> String header(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        int[] columWidths = columWidths(type, orderLookup).toArray();
+        List<String> names = headers(type, orderLookup).toList();
         return IntStream.range(0, names.size())
                 .mapToObj(i -> " ".repeat(columWidths[i] - names.get(i).length()) + names.get(i))
                 .collect(Collectors.joining("|", "|", "|"));
     }
 
-    static <R extends Record> String asLine(R line) {
+    static <T> String asLine(T line) {
         return asLine0(line) + "|";
     }
 
-    static <R extends Record> String asLine0(R line) {
+    static <T> String asLine0(T line) {
         return switch (line) {
             // This is a bit of cheating. However, it would be possible to derive a printer function
             // from a record class.
-            case Measurement m       -> String.format("|%11d| %.4f| %.4f| %.4f", m.date(), m.a(), m.b(), m.c());
-            case SmallMeasurement sm -> String.format("|%11d| %.4f", sm.date(), sm.d());
-            case Selection s         -> String.format("|%11d| %.4f| %.4f", s.date(), s.a(), s.d());
-            case Both b              -> asLine0(b.measurement()) + asLine0(b.smallMeasurement());
-            case PivotRow p          -> String.format("|%11d| %12d| %12d| %12d| %12d", p.month(), p.r0to25(), p.r25to50(), p.r75to100(), p.r75to100());
+            case TestDataProcessingInterface.Measurement m       -> String.format("|%11d| %.4f| %.4f| %.4f", m.date(), m.a(), m.b(), m.c());
+            case TestDataProcessingInterface.SmallMeasurement sm -> String.format("|%11d| %.4f", sm.date(), sm.d());
+            case TestDataProcessingInterface.Selection s         -> String.format("|%11d| %.4f| %.4f", s.date(), s.a(), s.d());
+            case TestDataProcessingInterface.Both b              -> asLine0(b.measurement()) + asLine0(b.smallMeasurement());
+            case TestDataProcessingInterface.PivotRow p          -> String.format("|%11d| %12d| %12d| %12d| %12d", p.month(), p.r0to25(), p.r25to50(), p.r75to100(), p.r75to100());
             default -> line.toString();
         };
     }
 
-    static <R extends Record> Stream<String> delimiters(Class<R> type) {
-        return columWidths(type)
+    static <T> Stream<String> delimiters(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return columWidths(type, orderLookup)
                 .mapToObj("-"::repeat);
     }
 
-    static <R extends Record> IntStream columWidths(Class<R> type) {
-        return Arrays.stream(type.getRecordComponents())
-                .map(RecordComponent::getType)
+    static <T> IntStream columWidths(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return getters(type, orderLookup)
+                .map(Method::getReturnType)
                 .map(Class::getSimpleName)
                 .mapToInt(n -> switch(n) {
                     case "int" -> 11;
@@ -717,9 +755,17 @@ final class TestDataProcessingColumnOrientedRecord {
                 });
     }
 
-    static <R extends Record> Stream<String> headers(Class<R> type) {
-        return Arrays.stream(type.getRecordComponents())
-                .map(RecordComponent::getName);
+    static <T> Stream<Method> getters(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return orderLookup.apply(type).stream()
+                .flatMap(n -> Arrays.stream(type.getMethods()).filter(m -> m.getName().equals(n)))
+                .filter(m -> Modifier.isAbstract(m.getModifiers()) || type.isRecord())
+                .filter(m -> m.getReturnType() != void.class)
+                .filter(m -> m.getParameterCount() == 0);
+    }
+
+    static <T> Stream<String> headers(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
+        return getters(type, orderLookup)
+                .map(Method::getName);
     }
 
 }

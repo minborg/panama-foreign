@@ -30,6 +30,7 @@ import jdk.internal.foreign.mapper.component.Transpose;
 import jdk.internal.foreign.mapper.component.Util;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 import jdk.internal.foreign.mapper.accessor.ValueType;
+import jdk.internal.vm.annotation.Stable;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemorySegment;
@@ -54,7 +55,9 @@ public final class SegmentRecordMapper2<T extends Record>
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
+    @Stable
     private final MethodHandle getHandle;
+    @Stable
     private final MethodHandle setHandle;
 
     SegmentRecordMapper2(MethodHandles.Lookup lookup,

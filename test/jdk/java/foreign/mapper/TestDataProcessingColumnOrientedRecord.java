@@ -136,20 +136,6 @@ final class TestDataProcessingColumnOrientedRecord {
             JAVA_FLOAT.withName("c")
     );
 
-    // The order in which methods appear in an interface is
-    // unspecified
-
-    // Todo: Replace this map with something that is using the mappers layout()
-
-    private static final Map<Class<?>, List<String>> METHOD_ORDERS =
-            Map.of(TestDataProcessingInterface.Measurement.class, (List.of("date", "a", "b", "c")),
-                    TestDataProcessingInterface.SmallMeasurement.class, List.of("date", "d"),
-                    TestDataProcessingInterface.Both.class, List.of("measurement", "smallMeasurement"),
-                    TestDataProcessingInterface.PivotRow.class, List.of("month", "r0to25", "r25to50", "r50to75", "r75to100"),
-                    TestDataProcessingInterface.Selection.class, List.of("date", "a", "d")
-            );
-
-
     private static final SegmentTable.Stencil<Measurement> STENCIL =
             SegmentTable.ofInterface(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
 
@@ -174,6 +160,7 @@ final class TestDataProcessingColumnOrientedRecord {
     @Test
     void createFromBlankSegments() {
         try (var arena = Arena.ofConfined()){
+            // This will create four backing segments
             SegmentTable<Measurement> table = STENCIL.create(arena, DAYS);
             assertEquals(DAYS, table.size());
         }
@@ -190,7 +177,7 @@ final class TestDataProcessingColumnOrientedRecord {
     @Test
     void mapExistingSegmentsFromPersistedFiles() {
         try (var arena = Arena.ofConfined()){
-            // Files "date", "a", "b" and "c" each of byte size 4 * DAYS = 1464 bytes
+            // Files "date", "a", "b" and "c" each of byte size 4 * DAYS = 1,464 bytes
             SegmentTable<Measurement> table = STENCIL.create(fromMappedFiles(arena, MEASUREMENT_LAYOUT, DAYS));
         }
     }
@@ -210,7 +197,8 @@ final class TestDataProcessingColumnOrientedRecord {
     }
 
 
-    private static final SegmentTable<Measurement> TABLE = STENCIL.create(Arena.ofAuto(), initialMeasurements());
+    private static final SegmentTable<Measurement> TABLE =
+            STENCIL.create(Arena.ofAuto(), initialMeasurements());
 
     @Test
     void dumpFirstTen() {
@@ -237,7 +225,7 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void printHead() {
-        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+        drawTable(Measurement.class, () ->
                 TABLE.stream()             // Stream<Measurement>
                         .limit(10) // Stream<Measurement>);
         );
@@ -264,7 +252,7 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void printTail() {
-        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+        drawTable(Measurement.class, () ->
                 LongStream.range(DAYS - 10, DAYS) // LongStream
                         .mapToObj(TABLE::get)     // Stream<Measurement>
         );
@@ -292,6 +280,7 @@ final class TestDataProcessingColumnOrientedRecord {
     @Test
     void sumA() {
         // Does not materialize the entire carrier
+        // Only accesses a single segment
         double sumA = TABLE.stream()          // Stream<Measurement>
                 .mapToDouble(Measurement::a)  // DoubleStream
                 .sum();
@@ -315,7 +304,7 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void paging() {
-        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+        drawTable(Measurement.class, () ->
                 LongStream.range(20 * 3, 20 * 4)
                         .mapToObj(TABLE::get)
         );
@@ -405,7 +394,7 @@ final class TestDataProcessingColumnOrientedRecord {
                 .collect(Collectors.groupingBy(m -> month(m.date()),
                         Collectors.groupingBy(m -> (int) (m.a() * 4), Collectors.counting())));
 
-        drawTable(PivotRow.class, METHOD_ORDERS::get, () -> pivot.entrySet().stream()
+        drawTable(PivotRow.class, () -> pivot.entrySet().stream()
                 .map(e -> {
                     var map = e.getValue();
                     return new PivotRow(e.getKey(),
@@ -508,7 +497,7 @@ final class TestDataProcessingColumnOrientedRecord {
 
     @Test
     void printSmallHead() {
-        drawTable(SmallMeasurement.class,METHOD_ORDERS::get, () ->
+        drawTable(SmallMeasurement.class, () ->
                 SMALL_TABLE.stream()          // Stream<SmallMeasurement>
                         .limit(10)    // Stream<SmallMeasurement>
         );
@@ -548,7 +537,7 @@ final class TestDataProcessingColumnOrientedRecord {
                 both -> both.measurement().date() == both.smallMeasurement().date()
         );
 
-        drawTable(Both.class, METHOD_ORDERS::get, () -> boths
+        drawTable(Both.class, () -> boths
                 .limit(10)
         );
 
@@ -588,7 +577,7 @@ final class TestDataProcessingColumnOrientedRecord {
                 both -> both.measurement.date() == both.smallMeasurement.date()
         );
 
-        drawTable(Selection.class, METHOD_ORDERS::get, () -> boths
+        drawTable(Selection.class, () -> boths
                 .limit(10)
                 .map(Selection::new)
         );
@@ -688,32 +677,30 @@ final class TestDataProcessingColumnOrientedRecord {
     // Utility methods for drawing
 
     <T> void drawTable(Class<T> type,
-                       Function<Class<?>, List<String>> orderLookup,
                        Supplier<Stream<T>> rowSupplier) {
-        drawTable(this::println, type, orderLookup, rowSupplier);
+        drawTable(this::println, type, rowSupplier);
     }
 
     static <T> void drawTable(Consumer<String> consumer,
                               Class<T> type,
-                              Function<Class<?>, List<String>> orderLookup,
                               Supplier<Stream<T>> rowSupplier) {
-        consumer.accept(delimiter(type, orderLookup));
-        consumer.accept(header(type, orderLookup));
-        consumer.accept(delimiter(type, orderLookup));
+        consumer.accept(delimiter(type));
+        consumer.accept(header(type));
+        consumer.accept(delimiter(type));
         rowSupplier.get()
                 .map(TestDataProcessingInterface::asLine)
                 .forEachOrdered(consumer);
-        consumer.accept(delimiter(type, orderLookup));
+        consumer.accept(delimiter(type));
     }
 
-    static <T> String delimiter(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return delimiters(type, orderLookup)
+    static <T> String delimiter(Class<T> type) {
+        return delimiters(type)
                 .collect(Collectors.joining("+", "+", "+"));
     }
 
-    static <T> String header(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        int[] columWidths = columWidths(type, orderLookup).toArray();
-        List<String> names = headers(type, orderLookup).toList();
+    static <T> String header(Class<T> type) {
+        int[] columWidths = columWidths(type).toArray();
+        List<String> names = headers(type).toList();
         return IntStream.range(0, names.size())
                 .mapToObj(i -> " ".repeat(columWidths[i] - names.get(i).length()) + names.get(i))
                 .collect(Collectors.joining("|", "|", "|"));
@@ -736,13 +723,13 @@ final class TestDataProcessingColumnOrientedRecord {
         };
     }
 
-    static <T> Stream<String> delimiters(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return columWidths(type, orderLookup)
+    static <T> Stream<String> delimiters(Class<T> type) {
+        return columWidths(type)
                 .mapToObj("-"::repeat);
     }
 
-    static <T> IntStream columWidths(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return getters(type, orderLookup)
+    static <T> IntStream columWidths(Class<T> type) {
+        return getters(type)
                 .map(Method::getReturnType)
                 .map(Class::getSimpleName)
                 .mapToInt(n -> switch(n) {
@@ -755,16 +742,27 @@ final class TestDataProcessingColumnOrientedRecord {
                 });
     }
 
-    static <T> Stream<Method> getters(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return orderLookup.apply(type).stream()
+    // Todo: Replace this map with something that is using the mappers layout()
+
+    private static final Map<Class<?>, List<String>> METHOD_ORDERS =
+            Map.of(TestDataProcessingInterface.Measurement.class, (List.of("date", "a", "b", "c")),
+                    TestDataProcessingInterface.SmallMeasurement.class, List.of("date", "d"),
+                    TestDataProcessingInterface.Both.class, List.of("measurement", "smallMeasurement"),
+                    TestDataProcessingInterface.PivotRow.class, List.of("month", "r0to25", "r25to50", "r50to75", "r75to100"),
+                    TestDataProcessingInterface.Selection.class, List.of("date", "a", "d")
+            );
+
+
+    static <T> Stream<Method> getters(Class<T> type) {
+        return METHOD_ORDERS.get(type).stream()
                 .flatMap(n -> Arrays.stream(type.getMethods()).filter(m -> m.getName().equals(n)))
                 .filter(m -> Modifier.isAbstract(m.getModifiers()) || type.isRecord())
                 .filter(m -> m.getReturnType() != void.class)
                 .filter(m -> m.getParameterCount() == 0);
     }
 
-    static <T> Stream<String> headers(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return getters(type, orderLookup)
+    static <T> Stream<String> headers(Class<T> type) {
+        return getters(type)
                 .map(Method::getName);
     }
 

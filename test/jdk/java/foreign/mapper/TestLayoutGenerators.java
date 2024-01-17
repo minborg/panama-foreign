@@ -91,6 +91,11 @@ final class TestLayoutGenerators extends BaseTest {
 
     // Arrays components
 
+    // The size of an array is not baked into the type system in Java
+    // So, there is no `int[4] nums' for example.
+    //
+    // One alternative would be to return an unboud sequence layout
+
     public record Foo(int[] nums) {}
 
     @Test

@@ -35,10 +35,12 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.IntStream;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -48,48 +50,198 @@ final class TestRecordMapper {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
+    // Suppose we want to work with native memory in the form:
+    //
+    // struct point {
+    //    int x;
+    //    int y;
+    // };
+    //
+    // struct line {
+    //    struct point begin;
+    //    struct point end;
+    // };
+
+    // Here is some memory containing three points as specified in the C `struct point` above
     private static final MemorySegment POINT_SEGMENT = MemorySegment.ofArray(new int[]{
-                    3, 4,
-                    6, 0,
-                    9, 4})
+                    3, 4,   // Point[x=3, y=4]
+                    6, 0,   // Point[x=6, y=0]
+                    9, 4})  // Point[x=9, y=4]
             .asReadOnly();
 
+    // Here is how we can model the layout of the C structs using a StructLayout
     private static final GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
-            JAVA_INT.withName("x"),
-            JAVA_INT.withName("y"));
+            JAVA_INT.withName("x"),  // An `int` named "x", with `ByteOrder.NATIVE_ORDER` aligned at 4 bytes
+            JAVA_INT.withName("y")); // Ditto but named "y"
 
-    record Point(int x, int y) {
+
+    // We can work with "raw" memory without any abstraction
+    @Test
+    void imperativeManipulation() {
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
+        int index = 1;
+        // Access the point at index 1 (Point[x=6, y=0])
+        int x = segment.get(JAVA_INT, POINT_LAYOUT.byteSize() * index + JAVA_INT.byteSize() * 0); // 6
+        int y = segment.get(JAVA_INT, POINT_LAYOUT.byteSize() * index + JAVA_INT.byteSize() * 1); // 0
+        assertEquals(6, x);
+        assertEquals(0, y);
+
+        // Update the point at index 1
+        segment.set(JAVA_INT, POINT_LAYOUT.byteSize() * index + JAVA_INT.byteSize() * 0, -1); // x=-1
+        segment.set(JAVA_INT, POINT_LAYOUT.byteSize() * index + JAVA_INT.byteSize() * 1, -2); // y=-2
+        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
     }
 
+    // A slight improvement can be done using `VarHandle` access.
+    // VarHandles are "type-less" and can have any coordinates and return any type.
+    // (VarHandles also allows us to work with various memory semantics such as volatile access and CAS operations).
+    private static final VarHandle X_HANDLE = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
+    private static final VarHandle Y_HANDLE = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
+
+    @Test
+    void varHandles() {
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
+        int index = 1;
+        // Access the point at index 1 (Point[x=6, y=0])
+        // The VarHandles have a built-in offset for the selected member in a group layout
+        int x = (int) X_HANDLE.get(segment, POINT_LAYOUT.byteSize() * index); // 6
+        int y = (int) Y_HANDLE.get(segment, POINT_LAYOUT.byteSize() * index); // 0
+        assertEquals(6, x);
+        assertEquals(0, y);
+
+        // Update the point at index 1
+        X_HANDLE.set(segment, POINT_LAYOUT.byteSize() * index, -1);
+        Y_HANDLE.set(segment, POINT_LAYOUT.byteSize() * index, -2);
+        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    }
+
+   // We can improve the situation by manually coding a class that abstracts away access:
+    public static final class MyPoint {
+
+        private static final VarHandle X_HANDLE = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
+       private static final VarHandle Y_HANDLE = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
+
+       // Holds the memory segment we are projecting members to/from
+       private final MemorySegment segment;
+
+       public MyPoint(MemorySegment segment) {
+           this.segment = Objects.requireNonNull(segment);
+       }
+
+       public int x() {
+           // Note the 0L as coordinates must match exactly in type
+           return (int) X_HANDLE.get(segment, 0L);
+       }
+
+       public int y() {
+           return (int) Y_HANDLE.get(segment, 0L);
+       }
+
+       public void x(int x) {
+           X_HANDLE.set(segment, 0L, x);
+       }
+
+       public void y(int y) {
+           Y_HANDLE.set(segment, 0L, y);
+       }
+
+       @Override
+       public boolean equals(Object obj) {
+           return  (obj instanceof MyPoint that) &&
+                   this.x() == that.x() &&
+                   this.y() == that.y();
+       }
+
+       @Override
+       public int hashCode() {
+           int result = x();
+           result = 31 * result + y();
+           return result;
+       }
+
+       @Override
+       public String toString() {
+           return "MyPoint{" +
+                   "x=" + x() +
+                   ", y=" + y() +
+                   '}';
+       }
+   }
+
+   // Here is what a more abstract access looks like using the custom class.
+   @Test
+   void customClass() {
+       MemorySegment segment = newCopyOf(POINT_SEGMENT);
+       int index = 1;
+       // This carves out a memory slice for the point at index 1
+       MemorySegment slice = segment.asSlice(POINT_LAYOUT.byteSize() * index, POINT_LAYOUT);
+       MyPoint point = new MyPoint(slice);
+
+       assertEquals(6, point.x());
+       assertEquals(0, point.y());
+
+       // Access the point at index 1 (Point[x=6, y=0])
+       point.x(6);
+       point.y(0);
+       assertEquals(6, point.x());
+       assertEquals(0, point.y());
+   }
+
+   // While custom wrappers are nice, they quickly become hard-to-read, prone to errors
+   // and expensive to maintain. VarHandles have no type-safety for example.
+   //
+   // Imagine writing wrappers for this layout... A line that consists of points ...
     private static final GroupLayout LINE_LAYOUT = MemoryLayout.structLayout(
             POINT_LAYOUT.withName("begin"),
             POINT_LAYOUT.withName("end"));
 
+    // So what can be done?
+
+    // Would it not be nice if we can connect this record to native memory using the POINT_LAYOUT?
+    record Point(int x, int y) {
+    }
+
+    // Even nicer if records can compose like this
     private record Line(Point begin, Point end) {
     }
+
+
+    // Enter the SegmentMapper!
+    //
+    // See doc-files/point.png
 
     @Test
     void point() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
+        // Automatically creates a mapper that can extract/write records to native memory.
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+
+        // Gets the point at index 0
         Point point = mapper.get(segment);
         assertEquals(3, point.x());
         assertEquals(4, point.y());
-        Point point2 = mapper.get(segment, POINT_LAYOUT.byteSize());
+
+        // Gets the point at index 1
+        Point point2 = mapper.getAtIndex(segment, 1);
         assertEquals(6, point2.x());
         assertEquals(0, point2.y());
 
+        // Stream all the points in the backing segment
         List<Point> points = mapper.stream(segment)
                 .toList();
+
         assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
 
         assertEquals(mapper.layout(), POINT_LAYOUT);
         assertEquals(mapper.type(), Point.class);
 
-        mapper.set(segment, POINT_LAYOUT.byteSize(), new Point(-1, -2));
+        mapper.setAtIndex(segment, 1L, new Point(-1, -2));
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
     }
 
+    // The mapper must exactly match the types! Imagine if not ... FFM is a low level library
+    // However, it is very easy to compose mappers.
+    // Here is a record that is using "narrowed" components
     public record TinyPoint(byte x, byte y) {
     }
 
@@ -113,6 +265,9 @@ final class TestRecordMapper {
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
     }
 
+    // Records of arbitrary depth are supported
+    // See doc-files/line.png
+
     @Test
     void line() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
@@ -128,38 +283,8 @@ final class TestRecordMapper {
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -3, -4, -6, 0}, segment);
     }
 
-    record BunchOfPoints(Point p0, Point p1, Point p2, Point p3,
-                         Point p4, Point p5, Point p6, Point p7) {
-    }
-
-    // This test is to make sure the iterative setter works (as opposed to the composed one).
-    @Test
-    void bunch() {
-        StructLayout layout = MemoryLayout.structLayout(IntStream.range(0, 8)
-                .mapToObj(i -> POINT_LAYOUT.withName("p"+i))
-                .toArray(MemoryLayout[]::new));
-
-        int noInts = (int) (layout.byteSize() / JAVA_INT.byteSize());
-
-        MemorySegment segment = MemorySegment.ofArray(IntStream.range(0, noInts).toArray());
-        SegmentMapper<BunchOfPoints> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, BunchOfPoints.class, layout);
-        BunchOfPoints bunchOfPoints = mapper.get(segment);
-
-        BunchOfPoints expected = new BunchOfPoints(
-                new Point(0 ,1), new Point(2, 3), new Point(4, 5), new Point(6, 7),
-                new Point(8 ,9), new Point(10, 11), new Point(12, 13), new Point(14, 15)
-        ) ;
-        assertEquals(expected, bunchOfPoints);
-
-        MemorySegment dstSegment = Arena.ofAuto().allocate(layout);
-
-        mapper.set(dstSegment, 0, new BunchOfPoints(
-                new Point(10 ,11), new Point(12, 13), new Point(14, 15), new Point(16, 17),
-                new Point(18 ,19), new Point(20, 21), new Point(22, 23), new Point(24, 25)
-        ));
-
-        MapperTestUtil.assertContentEquals(IntStream.range(0, noInts).map(i -> i + 10).toArray(), dstSegment);
-    }
+    // Arrays are supported where the length of the arrays is taken from the
+    // corresponding sequence layout
 
     record SequenceBox(int before, int[] ints, int after) {
 
@@ -193,6 +318,7 @@ final class TestRecordMapper {
 
     @Test
     public void testSequenceBox() {
+        // int[]{0, 1, 2, 3}
         var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 3).toArray());
 
         var layout = MemoryLayout.structLayout(
@@ -226,6 +352,8 @@ final class TestRecordMapper {
             mapper.set(dstSegment, new SequenceBox(10, new int[]{11, 12, 13}, 13));
         });
     }
+
+    // Arrays of arbitrary rank are supported
 
     record SequenceBox2D(int before, int[][] ints, int after) {
 
@@ -297,6 +425,8 @@ final class TestRecordMapper {
         });
     }
 
+    // Arrays can have record components
+
     record Polygon(Point[] points) {
 
         @Override
@@ -313,6 +443,17 @@ final class TestRecordMapper {
 
     @Test
     void triangle() {
+
+        //        y
+        //
+        //        |
+        //        | /\
+        //        | ‾‾
+        // -------+------- x
+        //        |
+        //        |
+        //        |
+
         var segment = MemorySegment.ofArray(new int[]{1, 1, 2, 2, 3, 1});
 
         GroupLayout layout = MemoryLayout.structLayout(
@@ -346,6 +487,8 @@ final class TestRecordMapper {
         });
 
     }
+
+    // Interoperability with POJOs
 
     private static class PointBean {
 
@@ -396,17 +539,7 @@ final class TestRecordMapper {
         assertEquals("PointBean[x=3, y=4]", pointBean.toString());
     }
 
-    record PolygonList(List<Point> points) {}
-
-    interface PolygonAccessor {
-        List<Point> points(); // This should be a lazy list
-    }
-
-    @Test
-    void listOfGeneric() throws NoSuchMethodException {
-        Method m = PolygonAccessor.class.getDeclaredMethod("points");
-        Type gt = m.getGenericReturnType(); // java.util.List<TestRecordMapper$Point>
-    }
+    // SegmentMapper::create is more geared towards interfaces but works for records too
 
     @Test
     void create() {
@@ -419,12 +552,72 @@ final class TestRecordMapper {
 
     record GenericPoint<T>(int x, int y) {}
 
+    // Generic interfaces and records need to have their generic type parameters (if any)
+    // know at compile time. This applies to all extended interfaces recursively.
+
     @Test
     void genericRecord() {
         assertThrows(IllegalArgumentException.class, () -> {
             SegmentMapper.ofRecord(LOCAL_LOOKUP, GenericPoint.class, POINT_LAYOUT);
         });
     }
+
+    // Future work ...
+
+    // Allow mapping of Lists
+    record PolygonList(List<Point> points) {}
+
+    // The same is true for interfaces
+    interface PolygonAccessor {
+        List<Point> points(); // This should be a lazy list
+    }
+
+    // Allow "escape hatches" in the form of MemorySegments
+    // This will map a slice of an underlying MemorySegment.
+    // Unfortunately, this means the record is still "attached" to a segment or portions thereof
+    record PartialPoint(int x, MemorySegment y){}
+
+    @Test
+    void listOfGeneric() throws NoSuchMethodException {
+        Method m = PolygonAccessor.class.getDeclaredMethod("points");
+        Type gt = m.getGenericReturnType(); // java.util.List<TestRecordMapper$Point>
+    }
+
+    // Misc tests
+
+    record BunchOfPoints(Point p0, Point p1, Point p2, Point p3,
+                         Point p4, Point p5, Point p6, Point p7) {
+    }
+
+    // This test is to make sure the iterative setter works (as opposed to the composed one).
+    @Test
+    void bunch() {
+        StructLayout layout = MemoryLayout.structLayout(IntStream.range(0, 8)
+                .mapToObj(i -> POINT_LAYOUT.withName("p"+i))
+                .toArray(MemoryLayout[]::new));
+
+        int noInts = (int) (layout.byteSize() / JAVA_INT.byteSize());
+
+        MemorySegment segment = MemorySegment.ofArray(IntStream.range(0, noInts).toArray());
+        SegmentMapper<BunchOfPoints> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, BunchOfPoints.class, layout);
+        BunchOfPoints bunchOfPoints = mapper.get(segment);
+
+        BunchOfPoints expected = new BunchOfPoints(
+                new Point(0 ,1), new Point(2, 3), new Point(4, 5), new Point(6, 7),
+                new Point(8 ,9), new Point(10, 11), new Point(12, 13), new Point(14, 15)
+        ) ;
+        assertEquals(expected, bunchOfPoints);
+
+        MemorySegment dstSegment = Arena.ofAuto().allocate(layout);
+
+        mapper.set(dstSegment, 0, new BunchOfPoints(
+                new Point(10 ,11), new Point(12, 13), new Point(14, 15), new Point(16, 17),
+                new Point(18 ,19), new Point(20, 21), new Point(22, 23), new Point(24, 25)
+        ));
+
+        MapperTestUtil.assertContentEquals(IntStream.range(0, noInts).map(i -> i + 10).toArray(), dstSegment);
+    }
+
 
     // Support methods
 

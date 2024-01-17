@@ -51,7 +51,7 @@ import java.util.List;
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-// Todo: check wrapper classes
+// Todo: Check wrapper classes
 // Todo: Check the SegmentMapper::map operation
 // Todo: Check unions
 // Todo: Prevent recursive definitions (and check for this explicitly)
@@ -67,51 +67,27 @@ final class TestInterfaceMapper {
             JAVA_INT.withName("y")
     );
 
+    // Interface mappers are "lazy" whereas record mappers are "eager"
 
-    interface TestGenerics {
-        List<List<Integer>> listOfListOfIntegers();
+    public interface PointAccessor {
+        int x();
+        void x(int x);
+        int y();
+        void y(int y);
     }
-
-    @Test
-    void generics() {
-        Method method = TestGenerics.class.getMethods()[0];
-        Type type =  method.getGenericReturnType();
-        if (type instanceof ParameterizedType pt) {
-            ListType listType = listType(pt);
-            System.out.println("listType = " + listType);
-
-            System.out.println("pt.getRawType() = " + pt.getRawType());
-            Type[] types = pt.getActualTypeArguments();
-            System.out.println("Arrays.toString(types) = " + Arrays.toString(types));
-        }
-        System.out.println("type.getTypeName() = " + type.getTypeName());
-        System.out.println("type.getClass().getName() = " + type.getClass().getName());
-        //fail(type.toString());
-    }
-
-    static ListType listType(ParameterizedType pt) {
-        return listType(new ListType(0, pt.getRawType(), pt));
-    }
-
-    static ListType listType(ListType type) {
-        if (type.elementType instanceof ParameterizedType pt) {
-            return listType(new ListType(type.depth+1, type.rawType(), pt.getActualTypeArguments()[0]));
-        }
-        return type;
-    }
-
-    record ListType(int depth, Type rawType, Type elementType){}
 
     @Test
     void point() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        BaseTest.PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+        // This accessor now "points" to `segment` at offset 8
+        PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
 
         assertEquals(6, accessor.x());
         assertEquals(8, accessor.y());
-        assertToString(accessor, mapper, "x()=6, y()=8");
+        assertToString(accessor, mapper, "x()=6, y()=8"); // PointAccessor[x()=6, y()=8]
 
+        // Update the underlying segment at offset 8 and 12 (int index 2 and 3)
         accessor.x(1);
         accessor.y(2);
 
@@ -128,15 +104,17 @@ final class TestInterfaceMapper {
     }
 
     @Test
-    void segmentBacked() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+    void accessTheUnderlyingSegmentAndOffset() {
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         long offset = POINT_LAYOUT.byteSize();
-        BaseTest.PointAccessor accessor = mapper.get(segment, offset);
+        PointAccessor accessor = mapper.get(segment, offset);
 
         assertSame(mapper.segment(accessor).orElseThrow(), segment);
         assertEquals(mapper.offset(accessor).orElseThrow(), offset);
     }
+
+    // Make sure all primitive types work
 
     GroupLayout MIXED_LAYOUT = MemoryLayout.structLayout(
             JAVA_LONG.withName("l"),
@@ -242,6 +220,8 @@ final class TestInterfaceMapper {
         int y();
     }
 
+    // Composable interfaces
+
     interface XYAccessor extends XAccessor, YAccessor {
     }
 
@@ -254,6 +234,8 @@ final class TestInterfaceMapper {
         assertEquals(4, accessor.y());
         assertToString(accessor, mapper, "x()=3, y()=4");
     }
+
+    // Partial mapping
 
     @Test
     void yAccessor() {
@@ -271,9 +253,9 @@ final class TestInterfaceMapper {
     }
 
     interface LineAccessor {
-        BaseTest.PointAccessor begin();
+        PointAccessor begin();
 
-        BaseTest.PointAccessor end();
+        PointAccessor end();
     }
 
     @Test
@@ -292,6 +274,7 @@ final class TestInterfaceMapper {
         assertEquals(8, end.y());
 
         assertToString(accessor, mapper, "begin()=PointAccessor[x()=3, y()=4], end()=PointAccessor[x()=6, y()=8]");
+        // LineAccessor[begin()=PointAccessor[x()=3, y()=4], end()=PointAccessor[x()=6, y()=8]]
 
         begin.x(4);
         begin.y(5);
@@ -328,11 +311,11 @@ final class TestInterfaceMapper {
         LinesAccessor accessor = mapper.get(segment);
 
         LineAccessor first = accessor.first();
-        BaseTest.PointAccessor firstBegin = first.begin();
-        BaseTest.PointAccessor firstEnd = first.end();
+        PointAccessor firstBegin = first.begin();
+        PointAccessor firstEnd = first.end();
         LineAccessor second = accessor.second();
-        BaseTest.PointAccessor secondBegin = second.begin();
-        BaseTest.PointAccessor secondEnd = second.end();
+        PointAccessor secondBegin = second.begin();
+        PointAccessor secondEnd = second.end();
 
         assertEquals(3, firstBegin.x());
         assertEquals(4, firstBegin.y());
@@ -384,11 +367,11 @@ final class TestInterfaceMapper {
 
     interface Fail1 {
         // Setters of accessor not allowed
-        void begin(BaseTest.PointAccessor pointAccessor);
+        void begin(PointAccessor pointAccessor);
     }
 
     // It would be dangerous to accept a class like this in Fail1::begin
-    final static class MyPointAccessor implements BaseTest.PointAccessor {
+    final static class MyPointAccessor implements PointAccessor {
         @Override public int x() { return 0; }
         @Override public int y() { return 0; }
         @Override public void x(int x) { }
@@ -421,6 +404,8 @@ final class TestInterfaceMapper {
         assertTrue(message.contains("Object"), message);
         assertTrue(message.contains(Fail2.class.getMethods()[0].toString()), message);
     }
+
+    // Interface mappers integrate with record mappers! (but not the other way around)
 
     public record Point(int x, int y) {
     }
@@ -463,8 +448,11 @@ final class TestInterfaceMapper {
         assertToString(accessor, mapper, "begin()=Point[x=1, y=2], end()=Point[x=3, y=4]");
     }
 
+    // It is not possible to have lazy arrays so instead extra index
+    // parameters are inserted corresponding to the rank of the array.
+
     public interface PolygonAccessor {
-        BaseTest.PointAccessor points(long index);
+        PointAccessor points(long index); // PointAccessor[] accessor
     }
 
     @Test
@@ -476,9 +464,9 @@ final class TestInterfaceMapper {
         SegmentMapper<PolygonAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PolygonAccessor.class, triangleLayout);
         PolygonAccessor accessor = mapper.get(segment, 0);
 
-        BaseTest.PointAccessor p0 = accessor.points(0);
-        BaseTest.PointAccessor p1 = accessor.points(1);
-        BaseTest.PointAccessor p2 = accessor.points(2);
+        PointAccessor p0 = accessor.points(0);
+        PointAccessor p1 = accessor.points(1);
+        PointAccessor p2 = accessor.points(2);
 
         assertEquals(1, p0.x());
         assertEquals(10, p0.y());
@@ -490,8 +478,10 @@ final class TestInterfaceMapper {
         assertEquals("PolygonAccessor[points()=PointAccessor[3]]", accessor.toString());
     }
 
+    // Rank = 2
+
     public interface PolygonAccessor2Dim {
-        BaseTest.PointAccessor points(long i, long j);
+        PointAccessor points(long i, long j);
     }
 
     @Test
@@ -512,7 +502,7 @@ final class TestInterfaceMapper {
 
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 3; j++) {
-                BaseTest.PointAccessor p = accessor.points(i, j);
+                PointAccessor p = accessor.points(i, j);
                 int index = 2 * 3 * i + 2 * j;
                 int expectedX = segment.getAtIndex(JAVA_INT, index);
                 int expectedY = segment.getAtIndex(JAVA_INT, index + 1);
@@ -524,13 +514,16 @@ final class TestInterfaceMapper {
         assertEquals("PolygonAccessor2Dim[points()=PointAccessor[4, 3]]", accessor.toString());
     }
 
+    // Sequences of records are also supported
+    // The arity of getters and setters are increased to reflect this
+
     public interface PolygonRecordAccessor {
         Point points(long index);
         void points(long index, Point point);
     }
 
     @Test
-    void triangleRecord() {
+    void triangleAccessor() {
         GroupLayout triangleLayout = MemoryLayout.structLayout(
                 MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
         );
@@ -679,6 +672,8 @@ final class TestInterfaceMapper {
         }
     }
 
+    // Arrays of rank 2 with record
+
     public interface PointRecord2Dim {
         Point points(long i, long j);
         void points(long i , long j, Point point);
@@ -731,6 +726,9 @@ final class TestInterfaceMapper {
         );
     }
 
+    // A region of a segments are excluded (transparent) for set() operations
+    // if no setter maps to that region (opaque region)
+
     @Test
     void gap() {
 
@@ -768,11 +766,14 @@ final class TestInterfaceMapper {
         BaseTest.assertContentEquals(BaseTest.segmentOf(11, 0, 13), dstSegment);
     }
 
+    // Mapping of interfaces. In this example, we view `int` variable as `long` variables
+
     static final class LongPointAccessor {
 
-        private final BaseTest.PointAccessor pointAccessor;
+        // Delegate
+        private final PointAccessor pointAccessor;
 
-        public LongPointAccessor(BaseTest.PointAccessor pointAccessor) {
+        public LongPointAccessor(PointAccessor pointAccessor) {
             this.pointAccessor = pointAccessor;
         }
 
@@ -803,9 +804,10 @@ final class TestInterfaceMapper {
 
     @Test
     void map() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
 
+        // One-way mapper
         SegmentMapper<LongPointAccessor> longMapper = mapper.map(LongPointAccessor.class, LongPointAccessor::new);
         LongPointAccessor accessor = longMapper.get(segment, POINT_LAYOUT.byteSize());
 
@@ -828,7 +830,7 @@ final class TestInterfaceMapper {
         ));
     }
 
-    static final class PointAccessorImpl implements BaseTest.PointAccessor {
+    static final class PointAccessorImpl implements PointAccessor {
 
         private final LongPointAccessor longPointAccessor;
 
@@ -861,25 +863,32 @@ final class TestInterfaceMapper {
         }
     }
 
+    // Two-way mapping for interfaces are not supported for the same reason
+    // setters taking an interface aren't allowed
+
     @Test
     void map2() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
         assertThrows(UnsupportedOperationException.class, () ->
                 mapper.map(LongPointAccessor.class, LongPointAccessor::new, PointAccessorImpl::new)
         );
     }
 
+    // Creates an accessor with a "hidden" segment with offset zero
+
     @Test
     void create() {
         try (var arena = Arena.ofConfined()) {
-            SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
-            BaseTest.PointAccessor accessor = mapper.create(arena);
+            SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
+            PointAccessor accessor = mapper.create(arena);
             accessor.x(3);
             accessor.y(4);
             var internalSegment = mapper.segment(accessor).orElseThrow();
             BaseTest.assertContentEquals(BaseTest.segmentOf(3,4), internalSegment);
         }
     }
+
+    // Can we map such that a Bean becomes lazily backed by a segment instead?
 
     private static class PointBean {
 
@@ -909,11 +918,13 @@ final class TestInterfaceMapper {
         }
     }
 
+    // Here is our implementation
+
     private static class PointBeanExtender extends PointBean {
 
-        private final BaseTest.PointAccessor accessor;
+        private final PointAccessor accessor;
 
-        public PointBeanExtender(BaseTest.PointAccessor accessor) {
+        public PointBeanExtender(PointAccessor accessor) {
             this.accessor = accessor;
         }
 
@@ -941,7 +952,7 @@ final class TestInterfaceMapper {
     @Test
     void bean() {
         try (var arena = Arena.ofConfined()) {
-            SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+            SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
             SegmentMapper<PointBean> beanMapper = mapper.map(PointBean.class, PointBeanExtender::new);
             PointBean pointBean = beanMapper.create(arena);
             pointBean.x(3);
@@ -949,6 +960,8 @@ final class TestInterfaceMapper {
             assertEquals("PointBean[x=3, y=4]", pointBean.toString());
         }
     }
+
+    // Double-buffering that can be used for transaction-like access
 
     interface PointWithTrapDoor {
         int x();
@@ -963,28 +976,41 @@ final class TestInterfaceMapper {
 
     @Test
     void doubleBuffered() {
+        // Magic values the target segment contains from the beginning
         int firstInt = 0x01020304;
         int secondInt = 0x05060708;
         try (var arena = Arena.ofConfined()) {
             var targetSegment = arena.allocate(POINT_LAYOUT);
             targetSegment.setAtIndex(JAVA_INT, 0, firstInt);
             targetSegment.setAtIndex(JAVA_INT, 1, secondInt);
+
             SegmentMapper<PointWithTrapDoor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointWithTrapDoor.class, POINT_LAYOUT);
+
+            // Copy the target segment and use it as a scratch area
+            // Todo: Consider a distinct method for this
             var scratchSegment = arena.allocate(POINT_LAYOUT);
             scratchSegment.copyFrom(targetSegment);
             PointWithTrapDoor p = mapper.get(scratchSegment);
+
+            // Transaction that fails
             try {
                 p.y(4);
-                p.trapDoor();
+                p.trapDoor(); // Oops
+                // Do more stuff here that is within a single transaction
                 mapper.set(targetSegment, 0, p);
             } catch (RuntimeException e) {
                 // Will always end up here
+                // Rollback: No update to the target segment
             }
-            // No update to the target segment
+
             assertEquals(firstInt, targetSegment.getAtIndex(JAVA_INT, 0));
             assertEquals(secondInt, targetSegment.getAtIndex(JAVA_INT, 1));
+
+            // Transaction that succeeds
             try {
                 p.y(4);
+                // No trapDoor()
+                // Do more stuff here that is within a single transaction
                 mapper.set(targetSegment, 0, p);
             } catch (RuntimeException e) {
                 // Will never end up here
@@ -996,40 +1022,7 @@ final class TestInterfaceMapper {
 
     }
 
-    interface Super {
-        Object point();
-    }
 
-    interface PointAccessorWithSuper extends Super {
-        // Covariant override
-        Point point();
-    }
-
-    @Test
-    void supertype() {
-        GroupLayout groupLayout = MemoryLayout.structLayout(
-                POINT_LAYOUT.withName("point")
-        );
-        SegmentMapper<PointAccessorWithSuper> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessorWithSuper.class, groupLayout);
-        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        PointAccessorWithSuper accessor = mapper.get(segment, groupLayout.byteSize());
-
-        assertEquals(new Point(6, 8), accessor.point());
-        assertToString(accessor, PointAccessorWithSuper.class, "point()=Point[x=6, y=8]");
-
-        /*
-
-        assertEquals(1, accessor.x());
-        assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
-        assertEquals(2, accessor.y());
-        assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
-        assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
-
-        // SegmentMapper::set
-        MemorySegment dstSegment = newSegment(POINT_LAYOUT);
-        mapper.set(dstSegment, accessor);
-        BaseTest.assertContentEquals(BaseTest.segmentOf(1, 2), dstSegment);*/
-    }
 
     interface AccessorA {
         Point point();
@@ -1078,11 +1071,11 @@ final class TestInterfaceMapper {
         BaseTest.assertContentEquals(BaseTest.segmentOf(1, 2), dstSegment);*/
     }
 
-    interface Generic<T extends BaseTest.PointAccessor> {
+    interface Generic<T extends PointAccessor> {
         T pointAccessor();
     }
 
-    interface FixedGeneric extends Generic<BaseTest.PointAccessor> {}
+    interface FixedGeneric extends Generic<PointAccessor> {}
 
     @Test
     void fixedGeneric() {
@@ -1099,6 +1092,23 @@ final class TestInterfaceMapper {
     }
 
     @Test
+    void classProperties() {
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+        Class<?> clazz = accessor.getClass();
+        // The implementation of the interface is a class that is `@ValueBased`
+        assertNotNull(clazz.getAnnotation(ValueBased.class), "not @ValueBased");
+        // The implementation of the interface is a class that `isHidden()`
+        assertTrue(clazz.isHidden(), "Not hidden");
+        // The implementation of the interface is a class that has a reasonable name
+        assertTrue(clazz.getName().contains("PointAccessorInterfaceMapper"));
+    }
+
+
+    // Limitations of the mapper
+
+    @Test
     void generic() {
         GroupLayout groupLayout = MemoryLayout.structLayout(
                 POINT_LAYOUT.withName("pointAccessor")
@@ -1107,20 +1117,80 @@ final class TestInterfaceMapper {
             SegmentMapper.ofInterface(LOCAL_LOOKUP, Generic.class, groupLayout)
         );
         assertTrue(iae.getMessage().contains("is directly declaring type parameters"));
-        assertTrue(iae.getMessage().contains("Generic<T extends BaseTest$PointAccessor>"));
+        assertTrue(iae.getMessage().contains("TestInterfaceMapper$Generic<T extends TestInterfaceMapper$PointAccessor>"));
     }
 
+    interface Super {
+        Object point();
+    }
+
+    interface PointAccessorWithSuper extends Super {
+        // Covariant override
+        Point point();
+    }
 
     @Test
-    void classProperties() {
-        SegmentMapper<BaseTest.PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, BaseTest.PointAccessor.class, POINT_LAYOUT);
+    void supertype() {
+        GroupLayout groupLayout = MemoryLayout.structLayout(
+                POINT_LAYOUT.withName("point")
+        );
+        SegmentMapper<PointAccessorWithSuper> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessorWithSuper.class, groupLayout);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        BaseTest.PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
-        Class<?> clazz = accessor.getClass();
-        assertNotNull(clazz.getAnnotation(ValueBased.class), "not @ValueBased");
-        assertTrue(clazz.isHidden(), "Not hidden");
-        assertTrue(clazz.getName().contains("PointAccessorInterfaceMapper"));
+        PointAccessorWithSuper accessor = mapper.get(segment, groupLayout.byteSize());
+
+        assertEquals(new Point(6, 8), accessor.point());
+        assertToString(accessor, PointAccessorWithSuper.class, "point()=Point[x=6, y=8]");
+
+        /*
+
+        assertEquals(1, accessor.x());
+        assertEquals(1, segment.getAtIndex(JAVA_INT, 2));
+        assertEquals(2, accessor.y());
+        assertEquals(2, segment.getAtIndex(JAVA_INT, 3));
+        assertToString(accessor, mapper.type(), Set.of("x()=1", "y()=2"));
+
+        // SegmentMapper::set
+        MemorySegment dstSegment = newSegment(POINT_LAYOUT);
+        mapper.set(dstSegment, accessor);
+        BaseTest.assertContentEquals(BaseTest.segmentOf(1, 2), dstSegment);*/
     }
+
+
+    // Future work...
+
+    interface TestGenerics {
+        List<List<Integer>> listOfListOfIntegers();
+    }
+
+    @Test
+    void generics() {
+        Method method = TestGenerics.class.getMethods()[0];
+        Type type =  method.getGenericReturnType();
+        if (type instanceof ParameterizedType pt) {
+            ListType listType = listType(pt);
+            System.out.println("listType = " + listType);
+
+            System.out.println("pt.getRawType() = " + pt.getRawType());
+            Type[] types = pt.getActualTypeArguments();
+            System.out.println("Arrays.toString(types) = " + Arrays.toString(types));
+        }
+        System.out.println("type.getTypeName() = " + type.getTypeName());
+        System.out.println("type.getClass().getName() = " + type.getClass().getName());
+        //fail(type.toString());
+    }
+
+    static ListType listType(ParameterizedType pt) {
+        return listType(new ListType(0, pt.getRawType(), pt));
+    }
+
+    static ListType listType(ListType type) {
+        if (type.elementType instanceof ParameterizedType pt) {
+            return listType(new ListType(type.depth+1, type.rawType(), pt.getActualTypeArguments()[0]));
+        }
+        return type;
+    }
+
+    record ListType(int depth, Type rawType, Type elementType){}
 
     static MemorySegment newSegment(MemoryLayout layout) {
         return Arena.ofAuto().allocate(layout);

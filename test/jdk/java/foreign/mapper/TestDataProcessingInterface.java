@@ -46,7 +46,6 @@ import java.util.Map;
 import java.util.Random;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -55,6 +54,7 @@ import java.util.stream.Stream;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 final class TestDataProcessingInterface {
 
@@ -123,19 +123,6 @@ final class TestDataProcessingInterface {
 
     // Todo: Avoid creating slices of the original segment
 
-    // The order in which methods appear in an interface is
-    // unspecified
-
-    // Todo: Replace this map with something that is using the mappers layout()
-
-    private static final Map<Class<?>, List<String>> METHOD_ORDERS =
-            Map.of(Measurement.class, (List.of("date", "a", "b", "c")),
-                    SmallMeasurement.class, List.of("date", "d"),
-                    Both.class, List.of("measurement", "smallMeasurement"),
-                    PivotRow.class, List.of("month", "r0to25", "r25to50", "r50to75", "r75to100"),
-                    Selection.class, List.of("date", "a", "d")
-    );
-
     // Common interface for both tables
     public interface Date {
         int date();
@@ -163,25 +150,25 @@ final class TestDataProcessingInterface {
                 .forEachOrdered(this::println);
 
         String expected = """
-                Measurement[b()=0.054665208, c()=0.6832234, a()=0.7275637, date()=20240101]
-                Measurement[b()=0.3087194, c()=0.9420735, a()=0.0479393, date()=20240102]
-                Measurement[b()=0.70771056, c()=0.6655489, a()=0.27707845, date()=20240103]
-                Measurement[b()=0.9033722, c()=0.45125717, a()=0.09132457, date()=20240104]
-                Measurement[b()=0.38164306, c()=0.275748, a()=0.36878288, date()=20240105]
-                Measurement[b()=0.46365356, c()=0.76209015, a()=0.69042575, date()=20240106]
-                Measurement[b()=0.99817854, c()=0.91932774, a()=0.78290176, date()=20240107]
-                Measurement[b()=0.43649095, c()=0.4397998, a()=0.15195823, date()=20240108]
-                Measurement[b()=0.93063116, c()=0.38656682, a()=0.7499061, date()=20240109]
-                Measurement[b()=0.17737848, c()=0.15054744, a()=0.7982866, date()=20240110]
+                Measurement[date()=20240101, a()=0.7275637, b()=0.054665208, c()=0.6832234]
+                Measurement[date()=20240102, a()=0.0479393, b()=0.3087194, c()=0.9420735]
+                Measurement[date()=20240103, a()=0.27707845, b()=0.70771056, c()=0.6655489]
+                Measurement[date()=20240104, a()=0.09132457, b()=0.9033722, c()=0.45125717]
+                Measurement[date()=20240105, a()=0.36878288, b()=0.38164306, c()=0.275748]
+                Measurement[date()=20240106, a()=0.69042575, b()=0.46365356, c()=0.76209015]
+                Measurement[date()=20240107, a()=0.78290176, b()=0.99817854, c()=0.91932774]
+                Measurement[date()=20240108, a()=0.15195823, b()=0.43649095, c()=0.4397998]
+                Measurement[date()=20240109, a()=0.7499061, b()=0.93063116, c()=0.38656682]
+                Measurement[date()=20240110, a()=0.7982866, b()=0.17737848, c()=0.15054744]
                 """;
 
-        // The order is unspecified
-        // assertEquals(expected, lines());
+        // The order is unspecified by the layout
+        assertEquals(expected, lines());
     }
 
     @Test
     void printHead() {
-        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+        drawTable(Measurement.class, () ->
                 MAPPER.stream(SEGMENT)      // Stream<Measurement>
                         .limit(10)  // Stream<Measurement>
         );
@@ -211,7 +198,7 @@ final class TestDataProcessingInterface {
         // Better than using Stream::skip
         var slice = SEGMENT.asSlice(MEASUREMENT_LAYOUT.scale(0, DAYS - 10));
 
-        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+        drawTable(Measurement.class, () ->
                 MAPPER.stream(slice)); // Stream<Measurement>
 
         String expected = """
@@ -259,7 +246,7 @@ final class TestDataProcessingInterface {
 
     @Test
     void paging() {
-        drawTable(Measurement.class, METHOD_ORDERS::get, () ->
+        drawTable(Measurement.class, () ->
                 MAPPER.page(SEGMENT, 20, 3));
 
         String expected = """
@@ -347,7 +334,7 @@ final class TestDataProcessingInterface {
                 .collect(Collectors.groupingBy(m -> month(m.date()),
                         Collectors.groupingBy(m -> (int) (m.a() * 4), Collectors.counting())));
 
-        drawTable(PivotRow.class, METHOD_ORDERS::get, () -> pivot.entrySet().stream()
+        drawTable(PivotRow.class, () -> pivot.entrySet().stream()
                 .map(e -> {
                     var map = e.getValue();
                     return new PivotRow(e.getKey(),
@@ -430,24 +417,24 @@ final class TestDataProcessingInterface {
                 .forEachOrdered(this::println);
 
         String expected = """
-                SmallMeasurement[d()=0.7275637, date()=20240101]
-                SmallMeasurement[d()=0.054665208, date()=20240103]
-                SmallMeasurement[d()=0.6832234, date()=20240105]
-                SmallMeasurement[d()=0.0479393, date()=20240107]
-                SmallMeasurement[d()=0.3087194, date()=20240109]
-                SmallMeasurement[d()=0.9420735, date()=20240111]
-                SmallMeasurement[d()=0.27707845, date()=20240113]
-                SmallMeasurement[d()=0.70771056, date()=20240115]
-                SmallMeasurement[d()=0.6655489, date()=20240117]
-                SmallMeasurement[d()=0.09132457, date()=20240119]
+                SmallMeasurement[date()=20240101, d()=0.7275637]
+                SmallMeasurement[date()=20240103, d()=0.054665208]
+                SmallMeasurement[date()=20240105, d()=0.6832234]
+                SmallMeasurement[date()=20240107, d()=0.0479393]
+                SmallMeasurement[date()=20240109, d()=0.3087194]
+                SmallMeasurement[date()=20240111, d()=0.9420735]
+                SmallMeasurement[date()=20240113, d()=0.27707845]
+                SmallMeasurement[date()=20240115, d()=0.70771056]
+                SmallMeasurement[date()=20240117, d()=0.6655489]
+                SmallMeasurement[date()=20240119, d()=0.09132457]
                 """;
-        // The order is unspecified
-        //assertEquals(expected, lines());
+
+        assertEquals(expected, lines());
     }
 
     @Test
     void printSmallHead() {
-        drawTable(SmallMeasurement.class, METHOD_ORDERS::get, () ->
+        drawTable(SmallMeasurement.class, () ->
                 SMALL_MAPPER.stream(SMALL_SEGMENT)  // Stream<SmallMeasurement>
                         .limit(10)          // Stream<SmallMeasurement>
         );
@@ -497,7 +484,7 @@ final class TestDataProcessingInterface {
                 both -> both.measurement.date() == both.smallMeasurement.date()
         );
 
-        drawTable(Both.class, METHOD_ORDERS::get, () -> boths
+        drawTable(Both.class, () -> boths
                 .limit(10)
         );
 
@@ -538,7 +525,7 @@ final class TestDataProcessingInterface {
                 both -> both.measurement.date() == both.smallMeasurement.date()
         );
 
-        drawTable(Selection.class, METHOD_ORDERS::get, () -> boths
+        drawTable(Selection.class, () -> boths
                 .limit(10)
                 .map(both -> new Selection() {
                     @Override public int date() { return both.measurement().date(); }
@@ -634,32 +621,31 @@ final class TestDataProcessingInterface {
     // Utility methods for drawing
 
     <T> void drawTable(Class<T> type,
-                       Function<Class<?>, List<String>> orderLookup,
                        Supplier<Stream<T>> rowSupplier) {
-        drawTable(this::println, type, orderLookup, rowSupplier);
+        drawTable(this::println, type, rowSupplier);
     }
 
     static <T> void drawTable(Consumer<String> consumer,
                               Class<T> type,
-                              Function<Class<?>, List<String>> orderLookup,
+                              /* Function<Class<?>, List<String>> orderLookup,*/
                               Supplier<Stream<T>> rowSupplier) {
-        consumer.accept(delimiter(type, orderLookup));
-        consumer.accept(header(type, orderLookup));
-        consumer.accept(delimiter(type, orderLookup));
+        consumer.accept(delimiter(type));
+        consumer.accept(header(type));
+        consumer.accept(delimiter(type));
         rowSupplier.get()
                 .map(TestDataProcessingInterface::asLine)
                 .forEachOrdered(consumer);
-        consumer.accept(delimiter(type, orderLookup));
+        consumer.accept(delimiter(type));
     }
 
-    static <T> String delimiter(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return delimiters(type, orderLookup)
+    static <T> String delimiter(Class<T> type) {
+        return delimiters(type)
                 .collect(Collectors.joining("+", "+", "+"));
     }
 
-    static <T> String header(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        int[] columWidths = columWidths(type, orderLookup).toArray();
-        List<String> names = headers(type, orderLookup).toList();
+    static <T> String header(Class<T> type) {
+        int[] columWidths = columWidths(type).toArray();
+        List<String> names = headers(type).toList();
         return IntStream.range(0, names.size())
                 .mapToObj(i -> " ".repeat(columWidths[i] - names.get(i).length()) + names.get(i))
                 .collect(Collectors.joining("|", "|", "|"));
@@ -682,13 +668,13 @@ final class TestDataProcessingInterface {
         };
     }
 
-    static <T> Stream<String> delimiters(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return columWidths(type, orderLookup)
+    static <T> Stream<String> delimiters(Class<T> type) {
+        return columWidths(type)
                 .mapToObj("-"::repeat);
     }
 
-    static <T> IntStream columWidths(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return getters(type, orderLookup)
+    static <T> IntStream columWidths(Class<T> type) {
+        return getters(type)
                 .map(Method::getReturnType)
                 .map(Class::getSimpleName)
                 .mapToInt(n -> switch(n) {
@@ -701,16 +687,24 @@ final class TestDataProcessingInterface {
                 });
     }
 
-    static <T> Stream<Method> getters(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return orderLookup.apply(type).stream()
+    private static final Map<Class<?>, List<String>> METHOD_ORDERS =
+            Map.of(Measurement.class, (List.of("date", "a", "b", "c")),
+                    SmallMeasurement.class, List.of("date", "d"),
+                    Both.class, List.of("measurement", "smallMeasurement"),
+                    PivotRow.class, List.of("month", "r0to25", "r25to50", "r50to75", "r75to100"),
+                    Selection.class, List.of("date", "a", "d")
+            );
+
+    static <T> Stream<Method> getters(Class<T> type) {
+        return METHOD_ORDERS.get(type).stream()
                 .flatMap(n -> Arrays.stream(type.getMethods()).filter(m -> m.getName().equals(n)))
                 .filter(m -> Modifier.isAbstract(m.getModifiers()) || type.isRecord())
                 .filter(m -> m.getReturnType() != void.class)
                 .filter(m -> m.getParameterCount() == 0);
     }
 
-    static <T> Stream<String> headers(Class<T> type, Function<Class<?>, List<String>> orderLookup) {
-        return getters(type, orderLookup)
+    static <T> Stream<String> headers(Class<T> type) {
+        return getters(type)
                 .map(Method::getName);
     }
 

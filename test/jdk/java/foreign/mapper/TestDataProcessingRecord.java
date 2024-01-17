@@ -453,74 +453,6 @@ final class TestDataProcessingRecord {
         assertEquals(expected, lines());
     }
 
-    // Sidetrack: Mimic "$ hexdump -C"
-
-    public record SegmentRow(byte[] data) {
-
-        public static final GroupLayout LAYOUT = MemoryLayout.structLayout(
-                MemoryLayout.sequenceLayout(16, JAVA_BYTE).withName("data")
-        );
-
-        private static final HexFormat DATA_FORMATTER = HexFormat.ofDelimiter(" ");
-
-        @Override
-        public String toString() {
-            String ds = data.length < 8
-                    ? DATA_FORMATTER.formatHex(data)
-                    : DATA_FORMATTER.formatHex(data, 0, 8) + "  " +
-                    DATA_FORMATTER.formatHex(data, 8, data.length);
-
-            String cs = IntStream.range(0, data.length)
-                    .mapToObj(i -> (char) data[i])
-                    .map(SegmentRow::toPrintable)
-                    .map(Object::toString)
-                    .collect(Collectors.joining());
-
-            return String.format("%49s  |%s|", ds, cs);
-        }
-
-        static Character toPrintable(Character c) {
-            return c >= 0x20 && c < 0x7f
-                    ? c
-                    : '.';
-        }
-
-        public String toString(long address) {
-            return String.format("%08x %s", address, this);
-        }
-    }
-
-
-    @Test
-    void hexDump() {
-
-        // Unfortunately only works for segments with byteSize() % 16 == 0
-
-        SegmentMapper<SegmentRow> mapper = SegmentMapper.ofRecord(SegmentRow.class, SegmentRow.LAYOUT);
-        // Until we get an index adding Gatherer
-        AtomicLong a = new AtomicLong();
-        mapper.stream(SEGMENT)
-                .limit(10)
-                .map(sr -> sr.toString(a.getAndAdd(16)))
-                .forEach(this::println);
-
-        String expected = """
-                00000000  e5 d6 34 01 9d 41 3a 3f  a0 e8 5f 3d bb e7 2e 3f  |..4..A:?.._=...?|
-                00000010  e6 d6 34 01 00 5c 44 3d  78 10 9e 3e bb 2b 71 3f  |..4..\\D=x..>.+q?|
-                00000020  e7 d6 34 01 3a dd 8d 3e  85 2c 35 3f 6a 61 2a 3f  |..4.:..>.,5?ja*?|
-                00000030  e8 d6 34 01 60 08 bb 3d  67 43 67 3f 2e 0b e7 3e  |..4.`..=gCg?...>|
-                00000040  e9 d6 34 01 1c d1 bc 3e  b8 66 c3 3e d8 2e 8d 3e  |..4....>.f.>...>|
-                00000050  ea d6 34 01 be bf 30 3f  00 64 ed 3e 57 18 43 3f  |..4...0?.d.>W.C?|
-                00000060  eb d6 34 01 40 6c 48 3f  a1 88 7f 3f 10 59 6b 3f  |..4.@lH?...?.Yk?|
-                00000070  ec d6 34 01 f0 9a 1b 3e  be 7b df 3e 70 2d e1 3e  |..4....>.{.>p-.>|
-                00000080  ed d6 34 01 d9 f9 3f 3f  d8 3d 6e 3f 16 ec c5 3e  |..4...??.=n?...>|
-                00000090  ee d6 34 01 83 5c 4c 3f  b4 a2 35 3e 1c 29 1a 3e  |..4..\\L?..5>.).>|
-                """;
-
-        assertEquals(expected, lines());
-    }
-
-
     @Test
     void dumpSmallFirstTen() {
         SMALL_MAPPER.stream(SMALL_SEGMENT)   // Stream<SmallMeasurement>
@@ -674,6 +606,74 @@ final class TestDataProcessingRecord {
                 .flatMap(f -> second.get()
                         .map(s -> mapper.apply(f, s)))
                 .filter(criteria);
+    }
+
+
+    // Sidetrack: Mimic "$ hexdump -C"
+
+    public record SegmentRow(byte[] data) {
+
+        public static final GroupLayout LAYOUT = MemoryLayout.structLayout(
+                MemoryLayout.sequenceLayout(16, JAVA_BYTE).withName("data")
+        );
+
+        private static final HexFormat DATA_FORMATTER = HexFormat.ofDelimiter(" ");
+
+        @Override
+        public String toString() {
+            String ds = data.length < 8
+                    ? DATA_FORMATTER.formatHex(data)
+                    : DATA_FORMATTER.formatHex(data, 0, 8) + "  " +
+                    DATA_FORMATTER.formatHex(data, 8, data.length);
+
+            String cs = IntStream.range(0, data.length)
+                    .mapToObj(i -> (char) data[i])
+                    .map(SegmentRow::toPrintable)
+                    .map(Object::toString)
+                    .collect(Collectors.joining());
+
+            return String.format("%49s  |%s|", ds, cs);
+        }
+
+        static Character toPrintable(Character c) {
+            return c >= 0x20 && c < 0x7f
+                    ? c
+                    : '.';
+        }
+
+        public String toString(long address) {
+            return String.format("%08x %s", address, this);
+        }
+    }
+
+
+    @Test
+    void hexDump() {
+
+        // Unfortunately only works for segments with byteSize() % 16 == 0
+
+        SegmentMapper<SegmentRow> mapper = SegmentMapper.ofRecord(SegmentRow.class, SegmentRow.LAYOUT);
+        // Until we get an index adding Gatherer
+        AtomicLong a = new AtomicLong();
+        mapper.stream(SEGMENT)
+                .limit(10)
+                .map(sr -> sr.toString(a.getAndAdd(16)))
+                .forEach(this::println);
+
+        String expected = """
+                00000000  e5 d6 34 01 9d 41 3a 3f  a0 e8 5f 3d bb e7 2e 3f  |..4..A:?.._=...?|
+                00000010  e6 d6 34 01 00 5c 44 3d  78 10 9e 3e bb 2b 71 3f  |..4..\\D=x..>.+q?|
+                00000020  e7 d6 34 01 3a dd 8d 3e  85 2c 35 3f 6a 61 2a 3f  |..4.:..>.,5?ja*?|
+                00000030  e8 d6 34 01 60 08 bb 3d  67 43 67 3f 2e 0b e7 3e  |..4.`..=gCg?...>|
+                00000040  e9 d6 34 01 1c d1 bc 3e  b8 66 c3 3e d8 2e 8d 3e  |..4....>.f.>...>|
+                00000050  ea d6 34 01 be bf 30 3f  00 64 ed 3e 57 18 43 3f  |..4...0?.d.>W.C?|
+                00000060  eb d6 34 01 40 6c 48 3f  a1 88 7f 3f 10 59 6b 3f  |..4.@lH?...?.Yk?|
+                00000070  ec d6 34 01 f0 9a 1b 3e  be 7b df 3e 70 2d e1 3e  |..4....>.{.>p-.>|
+                00000080  ed d6 34 01 d9 f9 3f 3f  d8 3d 6e 3f 16 ec c5 3e  |..4...??.=n?...>|
+                00000090  ee d6 34 01 83 5c 4c 3f  b4 a2 35 3e 1c 29 1a 3e  |..4..\\L?..5>.).>|
+                """;
+
+        assertEquals(expected, lines());
     }
 
     // Initialization of segments

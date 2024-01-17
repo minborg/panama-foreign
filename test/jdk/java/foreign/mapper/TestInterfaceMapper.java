@@ -24,12 +24,7 @@
 /*
  * @test
  * @enablePreview
- * @modules java.base/jdk.internal.classfile
- *          java.base/jdk.internal.classfile.attribute
- *          java.base/jdk.internal.classfile.constantpool
- *          java.base/jdk.internal.classfile.instruction
- *          java.base/jdk.internal.classfile.impl
- *          java.base/jdk.internal
+ * @modules java.base/jdk.internal
  * @run junit/othervm -Djava.lang.foreign.mapper.debug=true TestInterfaceMapper
  */
 
@@ -80,8 +75,8 @@ final class TestInterfaceMapper {
     void point() {
         SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        // This accessor now "points" to `segment` at offset 8
-        PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+        // Create an accessor that "points" to `segment` at offset 8
+        PointAccessor accessor = mapper.getAtIndex(segment, 1);
 
         assertEquals(6, accessor.x());
         assertEquals(8, accessor.y());
@@ -875,7 +870,6 @@ final class TestInterfaceMapper {
     }
 
     // Creates an accessor with a "hidden" segment with offset zero
-
     @Test
     void create() {
         try (var arena = Arena.ofConfined()) {
@@ -887,6 +881,103 @@ final class TestInterfaceMapper {
             BaseTest.assertContentEquals(BaseTest.segmentOf(3,4), internalSegment);
         }
     }
+
+    // Double-buffering that can be used for transaction-like access
+
+    interface PointWithTrapDoor {
+        int x();
+        void x(int x);
+        int y();
+        void y(int y);
+        default void trapDoor() {
+            throw new UnsupportedOperationException("gotcha");
+        }
+
+    }
+
+    @Test
+    void doubleBuffered() {
+        // Magic values the target segment contains from the beginning
+        int firstInt = 0x01020304;
+        int secondInt = 0x05060708;
+        try (var arena = Arena.ofConfined()) {
+            var targetSegment = arena.allocate(POINT_LAYOUT);
+            targetSegment.setAtIndex(JAVA_INT, 0, firstInt);
+            targetSegment.setAtIndex(JAVA_INT, 1, secondInt);
+
+            SegmentMapper<PointWithTrapDoor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointWithTrapDoor.class, POINT_LAYOUT);
+
+            // Copy the target segment and use it as a scratch area
+            // Todo: Consider a distinct method for this
+            var scratchSegment = arena.allocate(POINT_LAYOUT);
+            scratchSegment.copyFrom(targetSegment);
+            PointWithTrapDoor p = mapper.get(scratchSegment);
+
+            // "Transaction" that fails
+            try {
+                p.y(4);
+                p.trapDoor(); // Oops
+                // Do more stuff here that is within a single transaction
+                mapper.set(targetSegment, 0, p);
+            } catch (RuntimeException e) {
+                // Will always end up here
+                // Rollback: No update to the target segment
+            }
+
+            assertEquals(firstInt, targetSegment.getAtIndex(JAVA_INT, 0));
+            assertEquals(secondInt, targetSegment.getAtIndex(JAVA_INT, 1));
+
+            // "Transaction" that succeeds
+            try {
+                p.y(4);
+                // No trapDoor()
+                // Do more stuff here that is within a single transaction
+                mapper.set(targetSegment, 0, p);
+            } catch (RuntimeException e) {
+                // Will never end up here
+            }
+            // Only y shall be updated
+            assertEquals(firstInt, targetSegment.getAtIndex(JAVA_INT, 0));
+            assertEquals(4, targetSegment.getAtIndex(JAVA_INT, 1));
+        }
+
+    }
+
+
+    interface Generic<T extends PointAccessor> {
+        T pointAccessor();
+    }
+
+    interface FixedGeneric extends Generic<PointAccessor> {}
+
+    @Test
+    void fixedGeneric() {
+        GroupLayout groupLayout = MemoryLayout.structLayout(
+                POINT_LAYOUT.withName("pointAccessor")
+        );
+        SegmentMapper<FixedGeneric> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, FixedGeneric.class, groupLayout);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        Generic<?> accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+
+        assertEquals(6, accessor.pointAccessor().x());
+        assertEquals(8, accessor.pointAccessor().y());
+        assertToString(accessor, mapper, "pointAccessor()=PointAccessor[x()=6, y()=8]");
+    }
+
+    @Test
+    void classProperties() {
+        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
+        Class<?> clazz = accessor.getClass();
+        // The implementation of the interface is a class that is `@ValueBased`
+        assertNotNull(clazz.getAnnotation(ValueBased.class), "not @ValueBased");
+        // The implementation of the interface is a class that `isHidden()`
+        assertTrue(clazz.isHidden(), "Not hidden");
+        // The implementation of the interface is a class that has a reasonable name
+        assertTrue(clazz.getName().contains("PointAccessorInterfaceMapper"));
+    }
+
 
     // Can we map such that a Bean becomes lazily backed by a segment instead?
 
@@ -961,66 +1052,7 @@ final class TestInterfaceMapper {
         }
     }
 
-    // Double-buffering that can be used for transaction-like access
-
-    interface PointWithTrapDoor {
-        int x();
-        void x(int x);
-        int y();
-        void y(int y);
-        default void trapDoor() {
-            throw new UnsupportedOperationException("gotcha");
-        }
-
-    }
-
-    @Test
-    void doubleBuffered() {
-        // Magic values the target segment contains from the beginning
-        int firstInt = 0x01020304;
-        int secondInt = 0x05060708;
-        try (var arena = Arena.ofConfined()) {
-            var targetSegment = arena.allocate(POINT_LAYOUT);
-            targetSegment.setAtIndex(JAVA_INT, 0, firstInt);
-            targetSegment.setAtIndex(JAVA_INT, 1, secondInt);
-
-            SegmentMapper<PointWithTrapDoor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointWithTrapDoor.class, POINT_LAYOUT);
-
-            // Copy the target segment and use it as a scratch area
-            // Todo: Consider a distinct method for this
-            var scratchSegment = arena.allocate(POINT_LAYOUT);
-            scratchSegment.copyFrom(targetSegment);
-            PointWithTrapDoor p = mapper.get(scratchSegment);
-
-            // Transaction that fails
-            try {
-                p.y(4);
-                p.trapDoor(); // Oops
-                // Do more stuff here that is within a single transaction
-                mapper.set(targetSegment, 0, p);
-            } catch (RuntimeException e) {
-                // Will always end up here
-                // Rollback: No update to the target segment
-            }
-
-            assertEquals(firstInt, targetSegment.getAtIndex(JAVA_INT, 0));
-            assertEquals(secondInt, targetSegment.getAtIndex(JAVA_INT, 1));
-
-            // Transaction that succeeds
-            try {
-                p.y(4);
-                // No trapDoor()
-                // Do more stuff here that is within a single transaction
-                mapper.set(targetSegment, 0, p);
-            } catch (RuntimeException e) {
-                // Will never end up here
-            }
-            // Only y shall be updated
-            assertEquals(firstInt, targetSegment.getAtIndex(JAVA_INT, 0));
-            assertEquals(4, targetSegment.getAtIndex(JAVA_INT, 1));
-        }
-
-    }
+    // Limitations of the mapper
 
 
 
@@ -1070,43 +1102,6 @@ final class TestInterfaceMapper {
         mapper.set(dstSegment, accessor);
         BaseTest.assertContentEquals(BaseTest.segmentOf(1, 2), dstSegment);*/
     }
-
-    interface Generic<T extends PointAccessor> {
-        T pointAccessor();
-    }
-
-    interface FixedGeneric extends Generic<PointAccessor> {}
-
-    @Test
-    void fixedGeneric() {
-        GroupLayout groupLayout = MemoryLayout.structLayout(
-                POINT_LAYOUT.withName("pointAccessor")
-        );
-        SegmentMapper<FixedGeneric> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, FixedGeneric.class, groupLayout);
-        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        Generic<?> accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
-
-        assertEquals(6, accessor.pointAccessor().x());
-        assertEquals(8, accessor.pointAccessor().y());
-        assertToString(accessor, mapper, "pointAccessor()=PointAccessor[x()=6, y()=8]");
-    }
-
-    @Test
-    void classProperties() {
-        SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
-        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        PointAccessor accessor = mapper.get(segment, POINT_LAYOUT.byteSize());
-        Class<?> clazz = accessor.getClass();
-        // The implementation of the interface is a class that is `@ValueBased`
-        assertNotNull(clazz.getAnnotation(ValueBased.class), "not @ValueBased");
-        // The implementation of the interface is a class that `isHidden()`
-        assertTrue(clazz.isHidden(), "Not hidden");
-        // The implementation of the interface is a class that has a reasonable name
-        assertTrue(clazz.getName().contains("PointAccessorInterfaceMapper"));
-    }
-
-
-    // Limitations of the mapper
 
     @Test
     void generic() {

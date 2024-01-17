@@ -75,7 +75,7 @@ final class TestRecordMapper {
             JAVA_INT.withName("y")); // Ditto but named "y"
 
 
-    // We can work with "raw" memory without any abstraction
+    // We can work with "raw" memory without any abstraction using the FFM API
     @Test
     void imperativeManipulation() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
@@ -95,8 +95,11 @@ final class TestRecordMapper {
     // A slight improvement can be done using `VarHandle` access.
     // VarHandles are "type-less" and can have any coordinates and return any type.
     // (VarHandles also allows us to work with various memory semantics such as volatile access and CAS operations).
-    private static final VarHandle X_HANDLE = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
-    private static final VarHandle Y_HANDLE = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
+    private static final VarHandle X_HANDLE =
+            POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
+
+    private static final VarHandle Y_HANDLE =
+            POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
 
     @Test
     void varHandles() {
@@ -118,8 +121,11 @@ final class TestRecordMapper {
    // We can improve the situation by manually coding a class that abstracts away access:
     public static final class MyPoint {
 
-        private static final VarHandle X_HANDLE = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
-       private static final VarHandle Y_HANDLE = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
+        private static final VarHandle X_HANDLE =
+                POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
+
+       private static final VarHandle Y_HANDLE =
+               POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
 
        // Holds the memory segment we are projecting members to/from
        private final MemorySegment segment;
@@ -161,10 +167,10 @@ final class TestRecordMapper {
 
        @Override
        public String toString() {
-           return "MyPoint{" +
+           return "MyPoint[" +
                    "x=" + x() +
                    ", y=" + y() +
-                   '}';
+                   ']';
        }
    }
 
@@ -179,12 +185,15 @@ final class TestRecordMapper {
 
        assertEquals(6, point.x());
        assertEquals(0, point.y());
+       assertEquals("MyPoint[x=6, y=0]", point.toString());
 
-       // Access the point at index 1 (Point[x=6, y=0])
-       point.x(6);
-       point.y(0);
-       assertEquals(6, point.x());
-       assertEquals(0, point.y());
+
+       point.x(-1);
+       point.y(-2);
+       assertEquals(-1, point.x());
+       assertEquals(-2, point.y());
+       // Not only has the value changed but also the backing segment
+       MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
    }
 
    // While custom wrappers are nice, they quickly become hard-to-read, prone to errors
@@ -226,6 +235,10 @@ final class TestRecordMapper {
         assertEquals(6, point2.x());
         assertEquals(0, point2.y());
 
+        // Note that the operations on the SegmentMapper corresponds to those of the MemorySegments
+        // SegmentMapper::get (composites) <-> MemorySegment::get (primitives)
+        // The same is true for getAtIndex(), set(), setAtIndex(), elements()/stream(), etc.
+
         // Stream all the points in the backing segment
         List<Point> points = mapper.stream(segment)
                 .toList();
@@ -240,7 +253,7 @@ final class TestRecordMapper {
     }
 
     // The mapper must exactly match the types! Imagine if not ... FFM is a low level library
-    // However, it is very easy to compose mappers.
+    // However, it is very easy to map mappers.
     // Here is a record that is using "narrowed" components
     public record TinyPoint(byte x, byte y) {
     }
@@ -284,7 +297,7 @@ final class TestRecordMapper {
     }
 
     // Arrays are supported where the length of the arrays is taken from the
-    // corresponding sequence layout
+    // corresponding sequence layout. (There is no concept of a type `int[3]` in Java)
 
     record SequenceBox(int before, int[] ints, int after) {
 
@@ -567,15 +580,16 @@ final class TestRecordMapper {
     // Allow mapping of Lists
     record PolygonList(List<Point> points) {}
 
-    // The same is true for interfaces
-    interface PolygonAccessor {
-        List<Point> points(); // This should be a lazy list
-    }
-
     // Allow "escape hatches" in the form of MemorySegments
     // This will map a slice of an underlying MemorySegment.
     // Unfortunately, this means the record is still "attached" to a segment or portions thereof
     record PartialPoint(int x, MemorySegment y){}
+
+
+    // The same is true for interfaces
+    interface PolygonAccessor {
+        List<Point> points(); // This should be a lazy list
+    }
 
     @Test
     void listOfGeneric() throws NoSuchMethodException {

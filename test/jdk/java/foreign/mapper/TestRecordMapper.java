@@ -53,8 +53,8 @@ final class TestRecordMapper {
     // Suppose we want to work with native memory in the form:
     //
     // struct point {
-    //    int x;
-    //    int y;
+    //    int32 x;
+    //    int32 y;
     // };
     //
 
@@ -182,6 +182,7 @@ final class TestRecordMapper {
        int index = 1;
        // This carves out a memory slice for the point at index 1
        MemorySegment slice = segment.asSlice(POINT_LAYOUT.byteSize() * index, POINT_LAYOUT);
+       // Connected to a segment. Not stand-alone! A view
        MyPoint point = new MyPoint(slice);
 
        assertEquals(6, point.x());
@@ -211,7 +212,7 @@ final class TestRecordMapper {
     record Point(int x, int y) {
     }
 
-    // Even nicer if records can compose like this
+    // Even nicer if records can nested like this
     private record Line(Point begin, Point end) {
     }
 
@@ -227,6 +228,7 @@ final class TestRecordMapper {
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
 
         // Gets the point at index 0
+        // The record Point is not backed by a segment. It is not a view!
         Point point = mapper.get(segment);
         assertEquals(3, point.x());
         assertEquals(4, point.y());
@@ -259,6 +261,8 @@ final class TestRecordMapper {
     public record TinyPoint(byte x, byte y) {
     }
 
+    // Todo: Methods for converting here (check toByteExact())
+
     @Test
     void mappedTinyPoint() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
@@ -285,6 +289,7 @@ final class TestRecordMapper {
     @Test
     void line() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
+        // Also stand-alone
         SegmentMapper<Line> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Line.class, LINE_LAYOUT);
 
         Line point = mapper.get(segment);
@@ -306,6 +311,12 @@ final class TestRecordMapper {
         public boolean equals(Object obj) {
             return obj instanceof SequenceBox(var otherBefore, var otherInts, var otherAfter) &&
                     before == otherBefore && Arrays.equals(ints, otherInts) && after == otherAfter;
+        }
+
+        @Override
+        public int hashCode() {
+            // Todo: Fix me!
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -377,6 +388,12 @@ final class TestRecordMapper {
                     before == otherBefore &&
                     Arrays.deepEquals(ints, otherInts) &&
                     after == otherAfter;
+        }
+
+        @Override
+        public int hashCode() {
+            // Todo: Fix me!
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -531,6 +548,23 @@ final class TestRecordMapper {
                     ']';
         }
 
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            PointBean pointBean = (PointBean) o;
+
+            if (x != pointBean.x) return false;
+            return y == pointBean.y;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = x;
+            result = 31 * result + y;
+            return result;
+        }
     }
 
     static Point beanToPoint(PointBean bean) {
@@ -584,6 +618,7 @@ final class TestRecordMapper {
     // Allow "escape hatches" in the form of MemorySegments
     // This will map a slice of an underlying MemorySegment.
     // Unfortunately, this means the record is still "attached" to a segment or portions thereof
+    // With the same life cycle as the original segment
     record PartialPoint(int x, MemorySegment y){}
 
 

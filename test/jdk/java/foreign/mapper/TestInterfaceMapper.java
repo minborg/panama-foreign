@@ -75,6 +75,7 @@ final class TestInterfaceMapper {
         SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         // Create an accessor that "points" to `segment` at offset 8
+        // The accessor is still attached to the underlying segment
         PointAccessor accessor = mapper.getAtIndex(segment, 1);
 
         assertEquals(6, accessor.x());
@@ -214,13 +215,13 @@ final class TestInterfaceMapper {
         int y();
     }
 
-    // Composable interfaces
-
-    interface XYAccessor extends XAccessor, YAccessor {
-    }
-
     @Test
     void xyAccessor() {
+
+        // Composable interfaces
+        interface XYAccessor extends XAccessor, YAccessor {
+        }
+
         SegmentMapper<XYAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, XYAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         XYAccessor accessor = mapper.get(segment, 0);
@@ -444,6 +445,8 @@ final class TestInterfaceMapper {
 
     // It is not possible to have lazy arrays so instead extra index
     // parameters are inserted corresponding to the rank of the array.
+
+    // Todo: Document the order in which indexes are applied
 
     public interface PolygonAccessor {
         PointAccessor points(long index); // PointAccessor[] accessor
@@ -750,6 +753,7 @@ final class TestInterfaceMapper {
         assertEquals(3, accessor.third());
 
         accessor.first(11);
+        // No 12!
         accessor.third(13);
         assertEquals(11, accessor.first());
         assertEquals(13, accessor.third());

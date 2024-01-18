@@ -220,6 +220,8 @@ final class TestDataProcessingInterface {
         assertEquals(expected, lines());
     }
 
+    // Todo: Benchmark between lazy interface and eager record.
+
     @Test
     void sumA() {
         double sumA = MAPPER.stream(SEGMENT)  // Stream<Measurement>

@@ -211,6 +211,8 @@ final class TestDataProcessingRecord {
         assertEquals(expected, lines());
     }
 
+    // Todo: Create a "drawTable" collector.  Table.of(Measurement.class, ..)...
+
     @Test
     void printHead() {
         drawTable(Measurement.class, () ->

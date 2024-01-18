@@ -182,7 +182,7 @@ final class TestRecordMapper {
        int index = 1;
        // This carves out a memory slice for the point at index 1
        MemorySegment slice = segment.asSlice(POINT_LAYOUT.byteSize() * index, POINT_LAYOUT);
-       // Connected to a segment. Not stand-alone! A view
+       // Connected to a segment. Not stand-alone! A view...
        MyPoint point = new MyPoint(slice);
 
        assertEquals(6, point.x());
@@ -261,16 +261,28 @@ final class TestRecordMapper {
     public record TinyPoint(byte x, byte y) {
     }
 
-    // Todo: Methods for converting here (check toByteExact())
+    // Lossless narrowing
+    private static TinyPoint toTiny(Point point) {
+        return new TinyPoint(toByteExact(point.x()), toByteExact(point.y()));
+    }
+
+    private static Point fromTiny(TinyPoint point) {
+        return new Point(point.x(), point.y());
+    }
+
+    private static byte toByteExact(int value) {
+        if ((byte) value != value) {
+            throw new ArithmeticException("byte overflow");
+        }
+        return (byte) value;
+    }
 
     @Test
     void mappedTinyPoint() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
         SegmentMapper<TinyPoint> tinyMapper =
-                mapper.map(TinyPoint.class,
-                        p -> new TinyPoint((byte) p.x(), (byte) p.y()),
-                        t -> new Point(t.x(), t.y()));
+                mapper.map(TinyPoint.class, TestRecordMapper::toTiny, TestRecordMapper::fromTiny);
         assertEquals(TinyPoint.class, tinyMapper.type());
         assertEquals(POINT_LAYOUT, tinyMapper.layout());
 
@@ -304,7 +316,7 @@ final class TestRecordMapper {
 
     // Arrays are supported where the length of the arrays is taken from the
     // corresponding sequence layout. (There is no concept of a type `int[3]` in Java)
-
+    // The SequenceBox can accommodate several memory layouts with different array lengths
     record SequenceBox(int before, int[] ints, int after) {
 
         @Override
@@ -315,8 +327,10 @@ final class TestRecordMapper {
 
         @Override
         public int hashCode() {
-            // Todo: Fix me!
-            throw new UnsupportedOperationException();
+            int result = before;
+            result = 31 * result + Arrays.hashCode(ints);
+            result = 31 * result + after;
+            return result;
         }
 
         @Override
@@ -392,8 +406,10 @@ final class TestRecordMapper {
 
         @Override
         public int hashCode() {
-            // Todo: Fix me!
-            throw new UnsupportedOperationException();
+            int result = before;
+            result = 31 * result + Arrays.deepHashCode(ints);
+            result = 31 * result + after;
+            return result;
         }
 
         @Override
@@ -464,6 +480,11 @@ final class TestRecordMapper {
         public boolean equals(Object obj) {
             return obj instanceof Polygon(var otherPoints) &&
                     Arrays.equals(points, otherPoints);
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(points);
         }
 
         @Override
@@ -581,7 +602,8 @@ final class TestRecordMapper {
     @Test
     void bean() {
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
-        SegmentMapper<PointBean> beanMapper = mapper.map(PointBean.class, TestRecordMapper::pointToBean, TestRecordMapper::beanToPoint);
+        SegmentMapper<PointBean> beanMapper =
+                mapper.map(PointBean.class, TestRecordMapper::pointToBean, TestRecordMapper::beanToPoint);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
         PointBean pointBean = beanMapper.get(segment);
         assertEquals("PointBean[x=3, y=4]", pointBean.toString());
@@ -610,15 +632,24 @@ final class TestRecordMapper {
         });
     }
 
-    // Future work ...
+     // Interfaces and records must not implement (directly and/or via inheritance) more than
+     // one abstract method with the same name and erased parameter types. Hence, covariant
+     // overriding is not supported.
 
-    // Allow mapping of Lists
+    // Todo: Add test for this
+
+
+
+    // Future considerations and work ...
+
+    // Consider allow mapping Lists to components
+    // Unfortunately, this may be ineffective for primitive arrays
     record PolygonList(List<Point> points) {}
 
-    // Allow "escape hatches" in the form of MemorySegments
+    // Consider allowing "escape hatches" in the form of MemorySegments
     // This will map a slice of an underlying MemorySegment.
     // Unfortunately, this means the record is still "attached" to a segment or portions thereof
-    // With the same life cycle as the original segment
+    // and with the same life cycle as the original segment
     record PartialPoint(int x, MemorySegment y){}
 
 

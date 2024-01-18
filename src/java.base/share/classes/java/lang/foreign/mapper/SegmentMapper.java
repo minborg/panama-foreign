@@ -348,40 +348,6 @@ public interface SegmentMapper<T> {
     }
 
     /**
-     * {@return a new instance of type T projected from at provided
-     *          external {@code segment} at the provided {@code offset}}
-     *
-     * @param segment the external segment to be projected at the new instance
-     * @param offset  from where in the segment to project the new instance
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with the provided segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if
-     *         {@code offset > segment.byteSize() - layout().byteSize()}
-     */
-    @SuppressWarnings("unchecked")
-    default T get(MemorySegment segment, long offset) {
-        try {
-            return (T) getHandle()
-                    .invokeExact(segment, offset);
-        } catch (IndexOutOfBoundsException |
-                 WrongThreadException |
-                 IllegalStateException |
-                 IllegalArgumentException rethrow) {
-            throw rethrow;
-        } catch (Throwable e) {
-            throw new RuntimeException("Unable to invoke getHandle() with " +
-                    "segment="  + segment +
-                    ", offset=" + offset, e);
-        }
-    }
-
-    /**
      * {@return a new instance of type T projected at the provided external
      *          {@code segment} at the given {@code index} scaled by the
      *          {@code layout().byteSize()}}
@@ -464,6 +430,40 @@ public interface SegmentMapper<T> {
     }
 
     /**
+     * {@return a new instance of type T projected from at provided
+     *          external {@code segment} at the provided {@code offset}}
+     *
+     * @param segment the external segment to be projected at the new instance
+     * @param offset  from where in the segment to project the new instance
+     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
+     *         associated with the provided segment is not
+     *         {@linkplain MemorySegment.Scope#isAlive() alive}
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     *         such that {@code isAccessibleBy(T) == false}
+     * @throws IllegalArgumentException if the access operation is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
+     *         of the {@link #layout()}
+     * @throws IndexOutOfBoundsException if
+     *         {@code offset > segment.byteSize() - layout().byteSize()}
+     */
+    @SuppressWarnings("unchecked")
+    default T get(MemorySegment segment, long offset) {
+        try {
+            return (T) getHandle()
+                    .invokeExact(segment, offset);
+        } catch (IndexOutOfBoundsException |
+                 WrongThreadException |
+                 IllegalStateException |
+                 IllegalArgumentException rethrow) {
+            throw rethrow;
+        } catch (Throwable e) {
+            throw new RuntimeException("Unable to invoke getHandle() with " +
+                    "segment="  + segment +
+                    ", offset=" + offset, e);
+        }
+    }
+
+    /**
      * Writes the provided instance {@code t} of type T into the provided {@code segment}
      * at offset zero.
      * <p>
@@ -493,6 +493,40 @@ public interface SegmentMapper<T> {
      */
     default void set(MemorySegment segment, T t) {
         set(segment, 0L, t);
+    }
+
+    /**
+     * Writes the provided {@code t} instance of type T into the provided {@code segment}
+     * at the provided {@code index} scaled by the {@code layout().byteSize()}}.
+     * <p>
+     * Calling this method is equivalent to the following code:
+     * {@snippet lang = java:
+     *    set(segment, layout().byteSize() * index, t);
+     * }
+     * @param segment in which to write the provided {@code t}
+     * @param index a logical index, the offset in bytes (relative to the provided
+     *              segment address) at which the access operation will occur can be
+     *              expressed as {@code (index * layout().byteSize())}
+     * @param t instance to write into the provided segment
+     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
+     *         associated with this segment is not
+     *         {@linkplain MemorySegment.Scope#isAlive() alive}
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     *         such that {@code isAccessibleBy(T) == false}
+     * @throws IllegalArgumentException if the access operation is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
+     *         of the {@link #layout()}
+     * @throws IndexOutOfBoundsException if {@code offset > segment.byteSize() - layout.byteSize()}
+     * @throws UnsupportedOperationException if this segment is
+     *         {@linkplain MemorySegment#isReadOnly() read-only}
+     * @throws UnsupportedOperationException if {@code value} is not a
+     *         {@linkplain MemorySegment#isNative() native} segment
+     * @throws IllegalArgumentException if an array length does not correspond to the
+     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
+     * @throws NullPointerException if a required parameter is {@code null}
+     */
+    default void setAtIndex(MemorySegment segment, long index, T t) {
+        set(segment, layout().byteSize() * index, t);
     }
 
     /**
@@ -537,40 +571,6 @@ public interface SegmentMapper<T> {
                     ", offset=" + offset +
                     ", t=" + t, e);
         }
-    }
-
-    /**
-     * Writes the provided {@code t} instance of type T into the provided {@code segment}
-     * at the provided {@code index} scaled by the {@code layout().byteSize()}}.
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang = java:
-     *    set(segment, layout().byteSize() * index, t);
-     * }
-     * @param segment in which to write the provided {@code t}
-     * @param index a logical index, the offset in bytes (relative to the provided
-     *              segment address) at which the access operation will occur can be
-     *              expressed as {@code (index * layout().byteSize())}
-     * @param t instance to write into the provided segment
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with this segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > segment.byteSize() - layout.byteSize()}
-     * @throws UnsupportedOperationException if this segment is
-     *         {@linkplain MemorySegment#isReadOnly() read-only}
-     * @throws UnsupportedOperationException if {@code value} is not a
-     *         {@linkplain MemorySegment#isNative() native} segment
-     * @throws IllegalArgumentException if an array length does not correspond to the
-     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
-     * @throws NullPointerException if a required parameter is {@code null}
-     */
-    default void setAtIndex(MemorySegment segment, long index, T t) {
-        set(segment, layout().byteSize() * index, t);
     }
 
     // Basic methods

@@ -53,8 +53,8 @@ final class TestRecordMapper {
     // Suppose we want to work with native memory in the form:
     //
     // struct point {
-    //    int32 x;
-    //    int32 y;
+    //    int32_t x;
+    //    int32_t y;
     // };
     //
 
@@ -65,8 +65,8 @@ final class TestRecordMapper {
 
     // Here is some memory containing three points as specified in the C `struct point` above
     private static final MemorySegment POINT_SEGMENT = MemorySegment.ofArray(new int[]{
-                    3, 4,   // Point[x=3, y=4]
-                    6, 0,   // Point[x=6, y=0]
+                    3, 4,   // Point[x=3, y=4]  ---+--- Line[begin=Point[x=3, y=4], end=Point[x=6, y=0]]
+                    6, 0,   // Point[x=6, y=0]  ---|
                     9, 4})  // Point[x=9, y=4]
             .asReadOnly();
 
@@ -248,8 +248,8 @@ final class TestRecordMapper {
 
         assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
 
-        assertEquals(mapper.layout(), POINT_LAYOUT);
         assertEquals(mapper.type(), Point.class);
+        assertEquals(mapper.layout(), POINT_LAYOUT);
 
         mapper.setAtIndex(segment, 1L, new Point(-1, -2));
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
@@ -260,6 +260,8 @@ final class TestRecordMapper {
     // Here is a record that is using "narrowed" components
     public record TinyPoint(byte x, byte y) {
     }
+
+    // Pattern matching...
 
     // Lossless narrowing
     private static TinyPoint toTiny(Point point) {
@@ -283,6 +285,7 @@ final class TestRecordMapper {
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
         SegmentMapper<TinyPoint> tinyMapper =
                 mapper.map(TinyPoint.class, TestRecordMapper::toTiny, TestRecordMapper::fromTiny);
+
         assertEquals(TinyPoint.class, tinyMapper.type());
         assertEquals(POINT_LAYOUT, tinyMapper.layout());
 
@@ -295,7 +298,7 @@ final class TestRecordMapper {
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
     }
 
-    // Records of arbitrary depth are supported
+    // Records of arbitrary nesting depth are supported
     // See doc-files/line.png
 
     @Test
@@ -652,6 +655,10 @@ final class TestRecordMapper {
     // and with the same life cycle as the original segment
     record PartialPoint(int x, MemorySegment y){}
 
+    // Consider some method that can render a description of the mapper and
+    // what it is doing. E.g. like .DOT formatted strings that can be used to
+    // generate images like the point.png and line.png images:
+    // Stream<String> description();
 
     // The same is true for interfaces
     interface PolygonAccessor {

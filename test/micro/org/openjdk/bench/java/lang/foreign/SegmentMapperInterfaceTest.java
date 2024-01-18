@@ -36,6 +36,7 @@ import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -75,34 +76,45 @@ public class SegmentMapperInterfaceTest {
     private static final SegmentMapper<PointAccessor> POINT_ACCESSOR_MAPPER =
             SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
 
+    private static final MethodHandle POINT_ACCESSOR_MAPPER_HANDLE = POINT_ACCESSOR_MAPPER.getHandle();
+
+
     public static class MyPointAccessor implements PointAccessor {
 
         private final MemorySegment segment;
+        private final long offset;
 
-        public MyPointAccessor(MemorySegment segment) {
+        public MyPointAccessor(MemorySegment segment, long offset) {
             this.segment = Objects.requireNonNull(segment);
+            this.offset = offset;
         }
 
         @Override
         public int x() {
-            return segment.get(JAVA_INT, 0);
+            return segment.get(JAVA_INT, offset);
         }
 
         @Override
         public int y() {
-            return segment.get(JAVA_INT, 4);
+            return segment.get(JAVA_INT, offset);
         }
     }
 
     @Benchmark
     public int mappedPointAccessor() {
-        return POINT_ACCESSOR_MAPPER.get(SEGMENT)
+        return POINT_ACCESSOR_MAPPER.get(SEGMENT, 0)
+                .x();
+    }
+
+    @Benchmark
+    public int mappedPointAccessorMh() throws Throwable {
+        return ((PointAccessor) (Object) POINT_ACCESSOR_MAPPER_HANDLE.invokeExact(SEGMENT, 0L))
                 .x();
     }
 
     @Benchmark
     public int customPointAccessor() {
-        return new MyPointAccessor(SEGMENT)
+        return new MyPointAccessor(SEGMENT, 0)
                 .x();
     }
 

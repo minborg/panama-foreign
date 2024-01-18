@@ -71,21 +71,20 @@ public class SegmentMapperRecordTest {
     private static final MemorySegment SEGMENT = MemorySegment.ofArray(new int[]{3, 4});
 
     private static final SegmentMapper<Point> POINT_MAPPER = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
-    private static final MethodHandle POINT_MH =
-            MethodHandles.insertArguments(POINT_MAPPER.getHandle(), 1, 0L);
+    private static final MethodHandle POINT_MH = POINT_MAPPER.getHandle();
     private static final SegmentMapper<Line> LINE_MAPPER = SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
 
     // Todo: declare MH directly
 
     @Benchmark
     public int mappedPoint() {
-        return POINT_MAPPER.get(SEGMENT)
+        return POINT_MAPPER.get(SEGMENT, 0)
                 .x();
     }
 
     @Benchmark
     public int mappedPointMh() throws Throwable {
-        return ((Point) (Object) POINT_MH.invokeExact(SEGMENT))
+        return ((Point) (Object) POINT_MH.invokeExact(SEGMENT, 0L))
                 .x();
     }
 

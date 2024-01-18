@@ -206,7 +206,12 @@ public final class SegmentInterfaceMapper<T>
     // Private methods and classes
 
     private Class<T> generateClass() {
-        ClassDesc classDesc = ClassDesc.of(type().getSimpleName() + "InterfaceMapper");
+        String packageName = lookup().lookupClass().getPackageName();
+        String className = packageName.isEmpty()
+                ? ""
+                : packageName + ".";
+        className = className + type().getSimpleName() + "InterfaceMapper";
+        ClassDesc classDesc = ClassDesc.of(className);
         ClassLoader loader = type().getClassLoader();
 
         // We need to materialize these methods so that the order is preserved
@@ -217,7 +222,7 @@ public final class SegmentInterfaceMapper<T>
 
         byte[] bytes = of(ClassHierarchyResolverOption.of(ClassHierarchyResolver.ofClassLoading(loader)))
                 .build(classDesc, cb -> {
-                    ByteCodeGenerator generator = ByteCodeGenerator.of(type(), cb);
+                    ByteCodeGenerator generator = ByteCodeGenerator.of(type(), classDesc, cb);
 
                     // public final XxInterfaceMapper implements Xx {
                     //     private final MemorySegment segment;

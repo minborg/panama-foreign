@@ -31,6 +31,7 @@ import jdk.internal.classfile.ClassBuilder;
 import jdk.internal.classfile.CodeBuilder;
 import jdk.internal.classfile.Label;
 import jdk.internal.classfile.attribute.RuntimeVisibleAnnotationsAttribute;
+import jdk.internal.classfile.constantpool.PackageEntry;
 import jdk.internal.foreign.mapper.accessor.ArrayInfo;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 import jdk.internal.foreign.mapper.accessor.ScalarInfo;
@@ -74,10 +75,10 @@ final class ByteCodeGenerator {
     private final ClassDesc classDesc;
     private final ClassDesc interfaceClassDesc;
 
-    private ByteCodeGenerator(Class<?> type, ClassBuilder cb) {
+    private ByteCodeGenerator(Class<?> type, ClassDesc classDesc, ClassBuilder cb) {
         this.type = type;
         this.cb = cb;
-        this.classDesc = ClassDesc.of(type.getSimpleName() + "InterfaceMapper");
+        this.classDesc = classDesc;
         this.interfaceClassDesc = desc(type);
     }
 
@@ -370,8 +371,8 @@ final class ByteCodeGenerator {
     }
 
     // Factory
-    static ByteCodeGenerator of(Class<?> type, ClassBuilder cb) {
-        return new ByteCodeGenerator(type, cb);
+    static ByteCodeGenerator of(Class<?> type, ClassDesc classDesc, ClassBuilder cb) {
+        return new ByteCodeGenerator(type, classDesc, cb);
     }
 
 }

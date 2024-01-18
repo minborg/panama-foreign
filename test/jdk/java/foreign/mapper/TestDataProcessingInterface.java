@@ -54,7 +54,6 @@ import java.util.stream.Stream;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.fail;
 
 final class TestDataProcessingInterface {
 

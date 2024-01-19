@@ -38,8 +38,10 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Proxy;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 
@@ -116,6 +118,54 @@ public class SegmentMapperInterfaceTest {
     public int customPointAccessor() {
         return new MyPointAccessor(SEGMENT, 0)
                 .x();
+    }
+
+    @Benchmark
+    public int proxyPointAccessor() {
+        return new ProxyMapper(SEGMENT, 0).get()
+                .x();
+    }
+
+    private static final PointAccessor PROXY = new ProxyMapper(SEGMENT, 0).get();
+    private static final PointAccessor MAPPER = POINT_ACCESSOR_MAPPER.get(SEGMENT, 0);
+
+    @Benchmark
+    public int preProxyPointAccessor() {
+        return PROXY
+                .x();
+    }
+
+    @Benchmark
+    public int prePointAccessor() {
+        return MAPPER
+                .x();
+    }
+
+    private static final class ProxyMapper {
+
+        private final MemorySegment segment;
+        private final long offset;
+
+        public ProxyMapper(MemorySegment segment, long offset) {
+            this.segment = segment;
+            this.offset = offset;
+        }
+
+        PointAccessor get() {
+            PointAccessor pointAccessor = (PointAccessor) Proxy.newProxyInstance(
+                    ProxyMapper.class.getClassLoader(),
+                     new Class[]{PointAccessor.class},
+                    (proxy, m, arg) ->
+                        switch (m.getName()) {
+                            case "toString" -> "proxy";
+                            case "hashCode" -> 1;
+                            case "equals" -> proxy == arg[0];
+                            case "x" -> segment.get(JAVA_INT, offset);
+                            case "y" -> segment.get(JAVA_INT, offset + 4);
+                            default -> null;
+                    });
+            return pointAccessor;
+        }
     }
 
 }

@@ -46,7 +46,6 @@ import java.util.List;
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-// Todo: Check the SegmentMapper::map operation
 // Todo: Check unions
 // Todo: Prevent recursive definitions (and check for this explicitly)
 
@@ -1157,12 +1156,11 @@ final class TestInterfaceMapper {
     void invariantChecking() {
         SegmentMapper<PointAccessor> mapper = SegmentMapper.ofInterface(LOCAL_LOOKUP, PointAccessor.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        // Todo: Enable these assertions
-        // assertThrows(NullPointerException.class, () -> mapper.get(null));
-        // assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, -1));
-        // assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, segment.byteSize()));
+        assertThrows(NullPointerException.class, () -> mapper.get(null));
+        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, -1));
+        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, segment.byteSize()));
         MemorySegment smallSegment = MemorySegment.ofArray(new int[]{3});
-        // assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(smallSegment, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(smallSegment, 0));
     }
 
 

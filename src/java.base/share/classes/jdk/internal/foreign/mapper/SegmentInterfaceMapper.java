@@ -233,7 +233,7 @@ public final class SegmentInterfaceMapper<T>
                     //    this.segment = segment;
                     //    this.offset = offset;
                     // }
-                    generator.constructor();
+                    generator.constructor(layout().byteSize());
 
                     // MemorySegment $_$_$sEgMeNt$_$_$() {
                     //     return segment;

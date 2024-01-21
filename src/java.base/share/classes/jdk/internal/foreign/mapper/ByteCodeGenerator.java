@@ -98,18 +98,29 @@ final class ByteCodeGenerator {
         cb.withField(OFFSET_FIELD_NAME, CD_long, ACC_PRIVATE | ACC_FINAL);
     }
 
-    void constructor() {
+    void constructor(long layoutByteSize) {
         cb.withMethodBody(INIT_NAME, MethodTypeDesc.of(CD_void, MEMORY_SEGMENT_CLASS_DESC, CD_long), ACC_PUBLIC, cob -> {
             cob.aload(0)
                     // Call Object's constructor
                     .invokespecial(CD_Object, INIT_NAME, MTD_void, false)
+
                     // Set "segment"
                     .aload(0)
-                    .aload(1)
+                    .aload(1) // segment
+                    // There is an implicit null check bellow so the "requireNonNull" instruction can be removed
+                    // Objects.requireNonNull(segment);
+                    //.invokestatic(desc(Objects.class), "requireNonNull", MethodTypeDesc.of(CD_Object, CD_Object))
+                    .checkcast(MEMORY_SEGMENT_CLASS_DESC)
                     .putfield(classDesc, SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC)
+
                     // Set "offset"
                     .aload(0)
-                    .lload(2)
+                    .lload(2) // offset
+                    .ldc(layoutByteSize)
+                    .aload(1) // segment
+                    .invokeinterface(desc(MemorySegment.class), "byteSize", MethodTypeDesc.of(CD_long))
+                    // Objects.checkFromIndexSize(offset, layoutByteSize, segment.byteSize())
+                    .invokestatic(desc(Objects.class), "checkFromIndexSize", MethodTypeDesc.of(CD_long, CD_long, CD_long, CD_long))
                     .putfield(classDesc, OFFSET_FIELD_NAME, CD_long)
                     .return_();
         });

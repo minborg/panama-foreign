@@ -451,7 +451,8 @@ public interface SegmentMapper<T> {
         try {
             return (T) getHandle()
                     .invokeExact(segment, offset);
-        } catch (IndexOutOfBoundsException |
+        } catch (NullPointerException |
+                 IndexOutOfBoundsException |
                  WrongThreadException |
                  IllegalStateException |
                  IllegalArgumentException rethrow) {

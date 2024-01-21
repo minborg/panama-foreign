@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -710,12 +710,11 @@ final class TestRecordMapper {
     void invariantChecking() {
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        // Todo: Enable these assertions
-        // assertThrows(NullPointerException.class, () -> mapper.get(null));
-        // assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, -1));
-        // assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, segment.byteSize()));
+        assertThrows(NullPointerException.class, () -> mapper.get(null));
+        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, -1));
+        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, segment.byteSize()));
         MemorySegment smallSegment = MemorySegment.ofArray(new int[]{3});
-        // assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(smallSegment, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(smallSegment, 0));
     }
 
     // Support methods

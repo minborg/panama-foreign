@@ -46,6 +46,8 @@ import java.util.stream.IntStream;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static org.junit.jupiter.api.Assertions.*;
 
+// Todo: Check alignment against the layout
+
 final class TestRecordMapper {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
@@ -634,6 +636,26 @@ final class TestRecordMapper {
             SegmentMapper.ofRecord(LOCAL_LOOKUP, GenericPoint.class, POINT_LAYOUT);
         });
     }
+
+
+    @Test
+    void originDistances() {
+        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+
+        double averageDistance = mapper.stream(POINT_SEGMENT)
+                .mapToDouble(this::originDistance)
+                .average()
+                .orElse(0);
+
+        System.out.println("averageDistance = " + averageDistance);
+        fail();
+
+    }
+
+    double originDistance(Point point) {
+        return Math.sqrt(point.x() * point.x() + point.y() * point.y());
+    }
+
 
      // Interfaces and records must not implement (directly and/or via inheritance) more than
      // one abstract method with the same name and erased parameter types. Hence, covariant

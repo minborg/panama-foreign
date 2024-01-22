@@ -48,6 +48,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 // Todo: Check unions
 // Todo: Prevent recursive definitions (and check for this explicitly)
+// Todo: Check alignment against the layout (e.g. segment+offset must correspond to the layout() alignments)
+// Todo: Consider a three-stage rocket where segment/offset is given a priori. This enables column-oriented, json, JDBC etc. mappers
 
 final class TestInterfaceMapper {
 

@@ -266,6 +266,7 @@ import java.util.stream.Stream;
 // Todo: Check all exceptions in JavaDocs: See TestScopedOperations
 // Todo: Consider generating a graphics rendering.
 // Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
+// Todo: Provide safe sharing across threads (e.g. implement a special Interface with piggybacking/volatile access)
 
 // Done: The generated interface classes should be @ValueBased
 // Done: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST

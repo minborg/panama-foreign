@@ -26,6 +26,7 @@
 package jdk.internal.foreign.mapper.accessor;
 
 import jdk.internal.ValueBased;
+import jdk.internal.foreign.mapper.MapperUtil;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
@@ -64,6 +65,10 @@ public final class Accessors {
         this.methodToAccessorMap = keyToAccessorMap.values().stream()
                 .flatMap(Collection::stream)
                 .collect(Collectors.toMap(AccessorInfo::method, Function.identity()));
+    }
+
+    public boolean isEmpty() {
+        return keyToAccessorMap.isEmpty();
     }
 
     public Optional<AccessorInfo> get(Method method) {
@@ -110,6 +115,7 @@ public final class Accessors {
     // appears in the layout
     public static Accessors ofInterface(Class<?> type, GroupLayout layout) {
         Map<String, List<Method>> methods = Arrays.stream(type.getMethods())
+                .filter(m -> !MapperUtil.isSegmentMapperDiscoverable(type, m))
                 .collect(Collectors.groupingBy(Method::getName));
 
         return new Accessors(layout.memberLayouts().stream()

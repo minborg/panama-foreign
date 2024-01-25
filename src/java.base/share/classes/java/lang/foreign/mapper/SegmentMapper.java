@@ -4,6 +4,7 @@ import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentInterfaceMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
+import jdk.internal.foreign.mapper.StandardSharable;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
@@ -784,6 +785,87 @@ public interface SegmentMapper<T> {
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
         return SegmentRecordMapper2.create(lookup, type, layout);
+    }
+
+    /**
+     * Interfaces extending this interface will be provided
+     * with additional methods for discovering the backing
+     * memory segment and offset used as the backing storage.
+     */
+    interface Discoverable {
+
+        /**
+         * {@return the backing segment of this instance}
+         */
+        MemorySegment segment();
+
+        /**
+         * {@return the offset in the backing segment of this instance}
+         */
+        long offset();
+    }
+
+    /**
+     * Interfaces extending this interface will be provided
+     * with additional methods for making updates to the backing
+     * segments known to other threads.
+     * <p>
+     * This allows plain memory semantics for accessors while still providing
+     * visibility across threads.
+     * <p>
+     * The interface does not provide mutual exclusivity.
+     * <p>
+     * Here is an example of mapped interfaces can be used in a multi-threaded environment:
+     * {@snippet lang = java:
+     *
+     *    public interface PointAccessor extends SegmentMapper.Sharable {
+     *            int x();
+     *            void x(int x);
+     *            int y();
+     *            void y(int y);
+     *
+     *    }
+     *
+     *    PointAccessor pointAccessor = mapper.get(segment);
+     *    // Make sure any updates made by other threads are visible
+     *    pointAccessor.acquire()
+     *    try {
+     *        // Update the backing segment
+     *        pointAccessor.x(pointAccessor.x() + 1);
+     *    } finally {
+     *        // Allow other threads to see updates provided
+     *        // they first call acquire()
+     *        pointAccessor.release();
+     *    }
+     * }
+     */
+    interface Sharable {
+
+        /**
+         * Ensures any updates made to the backing segment by another thread up until
+         * {@linkplain #release() release()} was called are visible to this thread.
+         * <p>
+         * More formally, this operation establishes a <a
+         * href="../../../util/concurrent/package-summary.html#MemoryVisibility"><i>happens-before</i></a>
+         * relation between the {@linkplain #release()} method and this method.
+         */
+        default void acquire() {
+            StandardSharable.instance().acquire();
+        }
+
+        /**
+         * Makes any update made to the backing segment up until calling this method
+         * visible to other threads, provided they first call {@linkplain #acquire()}
+         * before access.
+         * <p>
+         * More formally, this operation establishes a <a
+         * href="../../../util/concurrent/package-summary.html#MemoryVisibility"><i>happens-before</i></a>
+         * relation between this method and the {@linkplain #acquire()} method.
+         */
+        default void release() {
+            StandardSharable.instance().acquire();
+        }
+
     }
 
 }

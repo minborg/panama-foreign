@@ -33,15 +33,12 @@ import java.lang.constant.ClassDesc;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.invoke.MethodHandle;
+import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
-import java.lang.reflect.TypeVariable;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -113,6 +110,12 @@ public final class MapperUtil {
                 .orElseThrow();
     }
 
+    public static boolean isSegmentMapperDiscoverable(Class<?> type, Method method) {
+        return SegmentMapper.Discoverable.class.isAssignableFrom(type) &&
+                method.getParameterCount() == 0 &&
+                (method.getReturnType() == MemorySegment.class && method.getName().equals("segment") ||
+                        method.getReturnType() == long.class && method.getName().equals("offset"));
+    }
 
     static void assertMappingsCorrectAndTotal(Class<?> type,
                                               GroupLayout layout,
@@ -145,8 +148,13 @@ public final class MapperUtil {
                 .collect(Collectors.toSet());
 
         var typeMethods = type.isRecord()
-                ? Arrays.stream(type.getRecordComponents()).map(RecordComponent::getAccessor).toList()
-                : Arrays.stream(type.getMethods()).filter(m -> Modifier.isAbstract(m.getModifiers())).toList();
+                ? Arrays.stream(type.getRecordComponents())
+                    .map(RecordComponent::getAccessor)
+                    .toList()
+                : Arrays.stream(type.getMethods())
+                    .filter(m -> !MapperUtil.isSegmentMapperDiscoverable(type, m))
+                    .filter(m -> Modifier.isAbstract(m.getModifiers()))
+                    .toList();
 
         var missing = typeMethods.stream()
                 .filter(Predicate.not(accessorMethods::contains))

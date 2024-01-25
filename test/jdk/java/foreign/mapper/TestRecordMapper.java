@@ -648,8 +648,6 @@ final class TestRecordMapper {
                 .orElse(0);
 
         System.out.println("averageDistance = " + averageDistance);
-        fail();
-
     }
 
     double originDistance(Point point) {

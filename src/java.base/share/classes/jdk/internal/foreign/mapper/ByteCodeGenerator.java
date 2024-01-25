@@ -43,8 +43,10 @@ import java.lang.constant.DynamicConstantDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.StringConcatFactory;
+import java.lang.invoke.VarHandle;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,6 +58,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static java.lang.constant.ConstantDescs.*;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static jdk.internal.classfile.Classfile.*;
 import static jdk.internal.foreign.mapper.MapperUtil.*;
 import static jdk.internal.foreign.mapper.MapperUtil.SECRET_OFFSET_METHOD_NAME;
@@ -90,8 +93,14 @@ final class ByteCodeGenerator {
         cb.withFlags(ACC_PUBLIC | ACC_FINAL | ACC_SUPER);
         // extends Object
         cb.withSuperclass(CD_Object);
+        List<ClassDesc> interfaces = new ArrayList<>();
         // implements "type"
-        cb.withInterfaceSymbols(interfaceClassDesc);
+        interfaces.add(interfaceClassDesc);
+        if (SegmentMapper.Discoverable.class.isAssignableFrom(type)) {
+            // implements SegmentMapper.Discoverable
+            interfaces.add(desc(SegmentMapper.Discoverable.class));
+        }
+        cb.withInterfaceSymbols(interfaces);
         // private final MemorySegment segment;
         cb.withField(SEGMENT_FIELD_NAME, MEMORY_SEGMENT_CLASS_DESC, ACC_PRIVATE | ACC_FINAL);
         // private final long offset;

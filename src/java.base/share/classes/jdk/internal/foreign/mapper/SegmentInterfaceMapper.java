@@ -245,6 +245,10 @@ public final class SegmentInterfaceMapper<T>
                     // }
                     generator.obscuredOffset();
 
+                    if (SegmentMapper.Discoverable.class.isAssignableFrom(type())) {
+                        // Todo: implement methods
+                    }
+
                     // @Override
                     // <t> gX(c1, c2, ..., cN) {
                     //     long indexOffset = f(dimensions, c1, c2, ..., long cN);

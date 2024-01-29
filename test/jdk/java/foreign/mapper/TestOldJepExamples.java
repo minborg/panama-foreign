@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,7 +23,7 @@
 
 /*
  * @test
- * @run junit/othervm --enable-native-access=ALL-UNNAMED TestJepExamples
+ * @run junit/othervm --enable-native-access=ALL-UNNAMED TestOldJepExamples
  */
 
 import org.junit.jupiter.api.AfterEach;
@@ -45,7 +45,7 @@ import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static org.junit.jupiter.api.Assertions.*;
 
-final class TestJepExamples {
+final class TestOldJepExamples {
 
     // Suppose we want to work with native memory in the form:
     //

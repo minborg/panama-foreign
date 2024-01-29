@@ -268,6 +268,9 @@ import java.util.stream.Stream;
 // Todo: Consider generating a graphics rendering.
 // Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
 // Todo: Provide safe sharing across threads (e.g. implement a special Interface with piggybacking/volatile access)
+// Todo: Prevent several variants in a record from being mapped to a union (otherwise, which will "win" when writing?)
+// Todo: There seams to be a problem with the ByteOrder in the mapper. See TestJepExamplesUnions
+// Todo: Let SegmentMapper::getHandle and ::setHandle return the sharp types (e.g. Point) see MethodHandles::exactInvoker
 
 // Done: The generated interface classes should be @ValueBased
 // Done: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST

@@ -111,42 +111,10 @@ public final class Accessors {
                 .flatMap(Collection::stream);
     }
 
-    // The order of methods should conform to the order in which names
-    // appears in the layout
-    public static Accessors ofInterface(Class<?> type, GroupLayout layout) {
-        Map<String, List<Method>> methods = Arrays.stream(type.getMethods())
-                .filter(m -> !MapperUtil.isSegmentMapperDiscoverable(type, m))
-                .collect(Collectors.groupingBy(Method::getName));
-
-        return new Accessors(layout.memberLayouts().stream()
-                .map(MemoryLayout::name)
-                .filter(Optional::isPresent)
-                // Get the name of the element layout
-                .map(Optional::get)
-                // Lookup class methods using the element name
-                .map(methods::get)
-                // Ignore unmapped elements
-                .filter(Objects::nonNull)
-                // Flatten the list of Methods (e.g. getters and setters)
-                .flatMap(Collection::stream)
-                // Only consider abstract methods (e.g. ignore default methods)
-                .filter(m -> Modifier.isAbstract(m.getModifiers()))
-                .map(m -> accessorInfo(type, layout, m))
-                // Retain insertion order
-                .collect(Collectors.groupingBy(AccessorInfo::key, LinkedHashMap::new, Collectors.toList())));
-    }
-
     public static Accessors ofRecord(Class<?> type, GroupLayout layout) {
         return new Accessors(Arrays.stream(type.getRecordComponents())
                 .map(m -> accessorInfo(type, layout, m))
                 .collect(Collectors.groupingBy(AccessorInfo::key)));
-    }
-
-    private static AccessorInfo accessorInfo(Class<?> type, GroupLayout layout, Method method) {
-        AccessorInfo.AccessorType accessorType = isGetter(method)
-                ? AccessorInfo.AccessorType.GETTER
-                : AccessorInfo.AccessorType.SETTER;
-        return accessorInfo(type, layout, method, null, accessorType);
     }
 
     private static AccessorInfo accessorInfo(Class<?> type, GroupLayout layout, RecordComponent component) {

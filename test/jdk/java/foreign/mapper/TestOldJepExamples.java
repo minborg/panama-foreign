@@ -317,30 +317,6 @@ final class TestOldJepExamples {
         assertEquals(-1, arena.allocateFrom(JAVA_INT, 3, 4, 6, 0, -1, -2, -3, -4).mismatch(segment));
     }
 
-    @Test
-    void interfaceClass() {
-        SegmentMapper<PointAccessor> mapper =
-                SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT_LAYOUT);
-
-        PointAccessor pointAccessor = mapper.getAtIndex(segment, 1);
-
-        assertEquals(6, pointAccessor.x());
-        assertEquals(0, pointAccessor.y());
-        assertEquals("PointAccessor[x()=6, y()=0]", pointAccessor.toString());
-
-        // Partial update of a point
-        pointAccessor.y(-2);
-        // segment = 3, 4, 6, -2, 9, 4, 0, 5
-        //                   |--|
-        //                  Updated
-
-        assertEquals(-2, pointAccessor.y());
-
-        // Not only has the value changed but also the backing segment
-        assertEquals(-1, arena.allocateFrom(JAVA_INT, 3, 4, 6, -2, 9, 4, 0, 5).mismatch(segment));
-
-    }
-
     record TinyPoint(byte x, byte y) { }
 
     // Lossless narrowing
@@ -392,45 +368,5 @@ final class TestOldJepExamples {
         assertEquals(6.462214450449026, averageDistance, 1E-8);
 
     }
-
-
-    interface LineAccessor {
-        PointAccessor begin();
-        PointAccessor end();
-    }
-
-    @Test
-    void lineAccessor() {
-        SegmentMapper<LineAccessor> mapper =
-                SegmentMapper.ofInterface(MethodHandles.lookup(), LineAccessor.class, LINE_LAYOUT);
-
-        LineAccessor lineAccessor = mapper.getAtIndex(segment, 1);
-
-        // Partially update the line at index 1
-        lineAccessor.begin().y(-2);
-        //             line 0      line 1
-        //         |-----------|-----------|
-        //          begin  end  begin   end
-        //         |-----|-----|------|----|
-        //           x  y  x  y  x   y  x  y
-        // segment = 3, 4, 6, 0, 9, -2, 0, 5
-        //                         |--|
-        //                       Updated
-
-        assertEquals(-2, lineAccessor.begin().y());
-
-        // Not only has the value changed but also the backing segment
-        assertEquals(-1, arena.allocateFrom(JAVA_INT, 3, 4, 6, 0, 9, -2, 0, 5).mismatch(segment));
-
-    }
-
-    void dump(MemorySegment segment) {
-        System.out.println(Arrays.toString(segment.toArray(JAVA_INT)));
-
-        HexFormat hexFormat = HexFormat.ofDelimiter(" ");
-        String hex = hexFormat.formatHex(segment.toArray(JAVA_BYTE));
-        System.out.println(hex);
-    }
-
 
 }

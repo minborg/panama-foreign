@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,26 +23,22 @@
 
 /*
  * @test
- * @run junit/othervm --enable-preview TestLayoutGenerators
+ * @run junit/othervm --enable-preview TestNaturalLayout
  */
 
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.mapper.LayoutGenerators;
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.NaturalLayout;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-final class TestLayoutGenerators extends BaseTest {
+final class TestNaturalLayout extends BaseTest {
 
     @Test
     void nulls() {
         assertThrows(NullPointerException.class, () ->
-                LayoutGenerators.ofRecord(null)
-        );
-        assertThrows(NullPointerException.class, () ->
-                LayoutGenerators.ofInterface(null)
+                NaturalLayout.ofRecord(null)
         );
     }
 
@@ -50,42 +46,21 @@ final class TestLayoutGenerators extends BaseTest {
 
     @Test
     void fromPoint() {
-        GroupLayout layout = LayoutGenerators.ofRecord(Point.class);
-        assertEquals(POINT_LAYOUT.withName(Point.class.getName()), layout);
+        GroupLayout layout = NaturalLayout.ofRecord(Point.class);
+        assertEquals(POINT_LAYOUT, layout);
     }
 
     @Test
     void fromLine() {
-        GroupLayout layout = LayoutGenerators.ofRecord(Line.class);
-        assertEquals(LINE_LAYOUT.withName(Line.class.getName()), layout);
+        GroupLayout layout = NaturalLayout.ofRecord(Line.class);
+        assertEquals(LINE_LAYOUT, layout);
     }
 
     @Test
     void fromPoints() {
         assertThrows(IllegalArgumentException.class, () ->
-                LayoutGenerators.ofRecord(Points.class)
+                NaturalLayout.ofRecord(Points.class)
         );
-    }
-
-    @Test
-    void fromLineBean() {
-        assertThrows(IllegalArgumentException.class, () ->
-                LayoutGenerators.ofInterface(LineBean.class)
-        );
-    }
-
-    // Interfaces
-
-    @Test
-    void fromPointAccessor() {
-        GroupLayout layout = LayoutGenerators.ofInterface(PointAccessor.class);
-        assertEquals(POINT_LAYOUT.withName(PointAccessor.class.getName()), layout);
-    }
-
-    @Test
-    void fromLineAccessor() {
-        GroupLayout layout = LayoutGenerators.ofInterface(LineAccessor.class);
-        assertEquals(LINE_LAYOUT.withName(LineAccessor.class.getName()), layout);
     }
 
 
@@ -101,20 +76,9 @@ final class TestLayoutGenerators extends BaseTest {
     @Test
     void fromFoo() {
         assertThrows(IllegalArgumentException.class, () ->
-                    LayoutGenerators.ofRecord(Foo.class)
+                    NaturalLayout.ofRecord(Foo.class)
                 );
     }
 
-    public interface Bar {
-        // Array setters do not have any natural layout
-        void ints(long i, int value);
-    }
-
-    @Test
-    void fromBar() {
-        assertThrows(IllegalArgumentException.class, () ->
-                LayoutGenerators.ofInterface(Bar.class)
-        );
-    }
 
 }

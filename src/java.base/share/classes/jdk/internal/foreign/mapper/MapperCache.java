@@ -53,15 +53,6 @@ final class MapperCache {
         this.subMappers = new HashMap<>();
     }
 
-    MethodHandle interfaceGetMethodHandleFor(AccessorInfo accessorInfo,
-                                             Consumer<? super SegmentInterfaceMapper.AffectedMemory> adder) {
-        SegmentInterfaceMapper<?> innerMapper = (SegmentInterfaceMapper<?>) cachedInterfaceMapper(accessorInfo);
-        innerMapper.affectedMemories().stream()
-                .map(am -> am.translate(accessorInfo.offset()))
-                .forEach(adder);
-        return innerMapper.getHandle();
-    }
-
     MethodHandle recordGetMethodHandleFor(AccessorInfo accessorInfo) {
         return cachedRecordMapper(accessorInfo)
                 .getHandle();
@@ -72,10 +63,6 @@ final class MapperCache {
                 .setHandle();
     }
 
-    private SegmentMapper<?> cachedInterfaceMapper(AccessorInfo accessorInfo) {
-        return subMappers.computeIfAbsent(CacheKey.of(accessorInfo), k ->
-                SegmentMapper.ofInterface(lookup, k.type(), k.layout()));
-    }
 
     private SegmentMapper<?> cachedRecordMapper(AccessorInfo accessorInfo) {
         return cachedRecordMapper(accessorInfo.type(), accessorInfo.targetLayout());

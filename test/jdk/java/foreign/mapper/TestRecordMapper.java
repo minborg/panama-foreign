@@ -616,15 +616,6 @@ final class TestRecordMapper {
 
     // SegmentMapper::create is more geared towards interfaces but works for records too
 
-    @Test
-    void create() {
-        try (var arena = Arena.ofConfined()) {
-            SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
-            Point point = mapper.create(arena);
-            assertEquals(new Point(0, 0), point);
-        }
-    }
-
     record GenericPoint<T>(int x, int y) {}
 
     // Generic interfaces and records need to have their generic type parameters (if any)

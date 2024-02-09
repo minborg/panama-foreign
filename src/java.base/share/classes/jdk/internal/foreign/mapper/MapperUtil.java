@@ -54,26 +54,8 @@ public final class MapperUtil {
     private static final String DEBUG =
             GetPropertyAction.privilegedGetProperty("java.lang.foreign.mapper.debug", "");
 
-    public static final String SECRET_SEGMENT_METHOD_NAME = "$_$_$sEgMeNt$_$_$";
-    public static final String SECRET_OFFSET_METHOD_NAME = "$_$_$oFfSeT$_$_$";
-
     public static boolean isDebug() {
         return !DEBUG.isEmpty();
-    }
-
-    public static <T> Class<T> requireImplementableInterfaceType(Class<T> type) {
-        Objects.requireNonNull(type);
-        if (!type.isInterface()) {
-            throw newIae(type, "not an interface");
-        }
-        if (type.isHidden()) {
-            throw newIae(type, "a hidden interface");
-        }
-        if (type.isSealed()) {
-            throw newIae(type, "a sealed interface");
-        }
-        assertNotDeclaringTypeParameters(type);
-        return type;
     }
 
     public static <T extends Record> Class<T> requireRecordType(Class<?> type) {
@@ -110,13 +92,6 @@ public final class MapperUtil {
                 .orElseThrow();
     }
 
-    public static boolean isSegmentMapperDiscoverable(Class<?> type, Method method) {
-        return SegmentMapper.Discoverable.class.isAssignableFrom(type) &&
-                method.getParameterCount() == 0 &&
-                (method.getReturnType() == MemorySegment.class && method.getName().equals("segment") ||
-                        method.getReturnType() == long.class && method.getName().equals("offset"));
-    }
-
     static void assertMappingsCorrectAndTotal(Class<?> type,
                                               GroupLayout layout,
                                               Accessors accessors) {
@@ -147,13 +122,8 @@ public final class MapperUtil {
                 .map(AccessorInfo::method)
                 .collect(Collectors.toSet());
 
-        var typeMethods = type.isRecord()
-                ? Arrays.stream(type.getRecordComponents())
+        var typeMethods = Arrays.stream(type.getRecordComponents())
                     .map(RecordComponent::getAccessor)
-                    .toList()
-                : Arrays.stream(type.getMethods())
-                    .filter(m -> !MapperUtil.isSegmentMapperDiscoverable(type, m))
-                    .filter(m -> Modifier.isAbstract(m.getModifiers()))
                     .toList();
 
         var missing = typeMethods.stream()

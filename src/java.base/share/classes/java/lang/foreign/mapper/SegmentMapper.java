@@ -1,23 +1,15 @@
 package java.lang.foreign.mapper;
 
 import jdk.internal.foreign.mapper.MapperUtil;
-import jdk.internal.foreign.mapper.SegmentInterfaceMapper;
-import jdk.internal.foreign.mapper.SegmentRecordMapper;
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
-import jdk.internal.foreign.mapper.StandardSharable;
 
-import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.util.ArrayList;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.OptionalLong;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -25,62 +17,27 @@ import java.util.stream.Stream;
  * A segment mapper can project memory segment onto and from class instances.
  * <p>
  * More specifically, a segment mapper can project a backing
- * {@linkplain MemorySegment MemorySegment} into new {@link Record} instances or new
- * instances that implements an interface by means of matching the names of the record
- * components or interface methods with the names of member layouts in a group layout.
- * A segment mapper can also be used in the other direction, where records and interface
- * implementing instances can be used to update a target memory segment. By using any of
+ * {@linkplain MemorySegment MemorySegment} into new {@link Record} instances
+ * that implements an interface by means of matching the names of the record
+ * components with the names of member layouts in a group layout.
+ * A segment mapper can also be used in the other direction, where records
+ * can be used to update a target memory segment. By using any of
  * the {@linkplain #map(Class, Function, Function) map} operations, segment mappers can be
- * used to map between memory segments and additional Java types other than record and
- * interfaces (such as JavaBeans).
+ * used to map between memory segments and additional Java types other than records
+ * (such as JavaBeans).
  *
  * <p>
- * In short, a segment mapper finds, for each record component or interface method,
+ * In short, a segment mapper finds, for each record component,
  * a corresponding member layout with the same name in the group layout. There are some
  * restrictions on the record component type and the corresponding member layout type
  * (e.g. a record component of type {@code int} can only be matched with a member layout
  * having a carrier type of {@code int.class} (such as {@link ValueLayout#JAVA_INT})).
  * <p>
- * Using the member layouts (e.g. observing offsets and
+ * Using the member layouts (e.g. observing offsets, alignment constraints, and
  * {@link java.nio.ByteOrder byte ordering}), a number of extraction methods are then
  * identified for all the record components or interface methods and these are stored
  * internally in the segment mapper.
  *
- * <h2 id="mapping-kinds">Mapping kinds</h2>
- *
- * Segment mappers can be of two fundamental kinds;
- * <ul>
- *     <li>Record</li>
- *     <li>Interface</li>
- * </ul>
- * <p>
- * The characteristics of the mapper kinds are summarized in the following table:
- *
- * <blockquote><table class="plain">
- * <caption style="display:none">Mapper characteristics</caption>
- * <thead>
- * <tr>
- *     <th scope="col">Mapper kind</th>
- *     <th scope="col">Temporal mode</th>
- *     <th scope="col">Get operations</th>
- *     <th scope="col">Set operations</th>
- *     <th scope="col">Segment access</th>
- * </tr>
- * </thead>
- * <tbody>
- * <tr><th scope="row" style="font-weight:normal">Record</th>
- *     <td style="text-align:center;">Eager</td>
- *     <td style="text-align:center;">Extract all component values from the source segment, build the record</td>
- *     <td style="text-align:center;">Write all component values to the target segment</td>
- *     <td style="text-align:center;">N/A</td></tr>
- * <tr><th scope="row" style="font-weight:normal">Interface</th>
- *     <td style="text-align:center;">Lazy</td>
- *     <td style="text-align:center;">Wrap the source segment into a new interface instance</td>
- *     <td style="text-align:center;">Copy the relevant values from the initial source segment into the target segment</td>
- *     <td style="text-align:center;">via <code>SegmentMapper::segment</code></td></tr>
- * </tbody>
- * </table></blockquote>
-
  * <h2 id="mapping-records">Mapping Records</h2>
  *
  * The example below shows how to extract an instance of a public
@@ -129,114 +86,6 @@ import java.util.stream.Stream;
  * NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
  * }
  *
- * <h2 id="mapping-interfaces">Mapping Interfaces</h2>
- *
- * Here is another example showing how to extract an instance of a public
- * <em>interface with an external segment</em>:
- * {@snippet lang = java:
- *
- *  static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
- *
- *  public interface Point {
- *       int x();
- *       void x(int x);
- *       int y();
- *       void y(int x);
- *  }
- *
- *  ...
- *
- *  MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
- *
- *  SegmentMapper<Point> mapper = SegmentMapper.ofInterface(MethodHandles.lookup(), Point.class, POINT);
- *
- *  // Creates a new Point interface instance with an external segment
- *  Point point = mapper.get(segment); // Point[x=3, y=4]
- *  point.x(6); // Point[x=6, y=4]
- *  point.y(8); // Point[x=6, y=8]
- *
- *  MemorySegment otherSegment = Arena.ofAuto().allocate(MemoryLayout.sequenceLayout(2, POINT)); // otherSegment: 0, 0, 0, 0
- *  mapper.setAtIndex(otherSegment, 1, point); // segment: 0, 0, 6, 8
- *  }
- *}
- * <p>
- * Boxing, widening, narrowing and general type conversion must be explicitly handled
- * by user code. In the following example, the above {@code PointAccessor} interface
- * (using primitive {@code int x} and {@code int y} coordinates) are explicitly mapped to
- * a narrowed point type (instead using primitive {@code byte x} and
- * {@code byte y} coordinates):
- * <p>
- * {@snippet lang = java:
- * interface NarrowedPointAccessor {
- *    byte x();
- *    void x(byte x);
- *    byte y();
- *    void y(byte y);
- *
- *    static NarrowedPointAccessor fromPointAccessor(PointAccessor pa) {
- *        return new NarrowedPointAccessor() {
- *            @Override public byte x()       { return (byte)pa.x(); }
- *            @Override public void x(byte x) { pa.x(x); }
- *            @Override public byte y()       { return (byte) pa.y();}
- *            @Override public void y(byte y) { pa.y(y); }
- *       };
- *    }
- *
- * }
- *
- * SegmentMapper<NarrowedPointAccessor> narrowedPointMapper =
- *          // SegmentMapper<PointAccessor>
- *           SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT)
- *                   // SegmentMapper<NarrowedPointAccessor>
- *                  .map(NarrowedPointAccessor.class, NarrowedPointAccessor::fromPointAccessor);
- *
- * MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
- *
- * // Creates a new NarrowedPointAccessor from the provided MemorySegment
- * NarrowedPointAccessor narrowedPointAccessor = narrowedPointMapper.get(segment); // NarrowedPointAccessor[x=3, y=4]
- *
- * MemorySegment otherSegment = Arena.ofAuto().allocate(MemoryLayout.sequenceLayout(2, POINT));
- * narrowedPointMapper.setAtIndex(otherSegment, 1, narrowedPointAccessor); // otherSegment = 0, 0, 3, 4
- *}
- *
- * <h2 id="segment-exposure">Backing segment exposure</h2>
- *
- * Implementations of interfaces that are obtained via segment mappers can be made to
- * reveal the underlying memory segment and memory segment offset. This is useful when
- * modelling structs that are passed and/or received by native calls:
- * <p>
- * {@snippet lang = java:
- * static final GroupLayout POINT = MemoryLayout.structLayout(JAVA_INT.withName("x"), JAVA_INT.withName("y"));
- *
- * public interface PointAccessor {
- *     int x();
- *     void x(int x);
- *     int y();
- *     void y(int x);
- * }
- *
- * static double nativeDistance(MemorySegment pointStruct) {
- *     // Calls a native method
- *     // ...
- * }
- *
- * public static void main(String[] args) {
- *
- *     SegmentMapper<PointAccessor> mapper =
- *             SegmentMapper.ofInterface(MethodHandles.lookup(), PointAccessor.class, POINT);
- *
- *     try (Arena arena = Arena.ofConfined()){
- *         // Creates an interface mapper backed by an internal segment
- *         PointAccessor point = mapper.get(arena);
- *         point.x(3);
- *         point.y(4);
- *
- *         // Pass the backing internal segment to a native method
- *         double distance = nativeDistance(mapper.segment(point).orElseThrow()); // 5
- *     }
- *
- * }
- *}
  *
  * <h2 id="formal-mapping">Formal mapping description</h2>
  *
@@ -245,10 +94,10 @@ import java.util.stream.Stream;
  *
  * <h2 id="restrictions">Restrictions</h2>
  *
- * Generic interfaces and records need to have their generic type parameters (if any)
+ * Generic records need to have their generic type parameters (if any)
  * know at compile time. This applies to all extended interfaces recursively.
  * <p>
- * Interfaces and records must not implement (directly and/or via inheritance) more than
+ * Records must not implement (directly and/or via inheritance) more than
  * one abstract method with the same name and erased parameter types. Hence, covariant
  * overriding is not supported.
  *
@@ -260,7 +109,7 @@ import java.util.stream.Stream;
  * @since 23
  */
 
-// Todo: Map components to MemorySegment (escape hatch)
+
 // Todo: How do we handle "extra" setters for interfaces? They should not append
 
 // Cerializer
@@ -282,6 +131,8 @@ import java.util.stream.Stream;
 //       This can be fixed using double-buffering. Maybe provide a scratch segment somehow that tracks where writes
 //       has been made (via a separate class BufferedMapper?)
 //       -> Fixed via TestInterfaceMapper::doubleBuffered
+// No:   Map components to MemorySegment (escape hatch). Records should be immutable and not connected. Maybe we could
+//       create a copy of a segment with the same life cycle?
 public interface SegmentMapper<T> {
 
     /**
@@ -291,7 +142,7 @@ public interface SegmentMapper<T> {
 
     /**
      * {@return the original {@link GroupLayout } that this mapper is using to map
-     *          record components or interface methods}
+     *          record components}
      * <p>
      * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Class, Function)}
      * or the {@link SegmentMapper#map(Class, Function, Function)} will still return the
@@ -300,32 +151,6 @@ public interface SegmentMapper<T> {
     GroupLayout layout();
 
     // Convenience methods
-
-    /**
-     * {@return a new instance of type T projected at an internal {@code segment} at
-     *          offset zero created by means of invoking the provided {@code arena}}
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang = java:
-     *    get(arena.allocate(layout()));
-     * }
-     *
-     * @param  arena from which to {@linkplain Arena#allocate(MemoryLayout) allocate} an
-     *         internal memory segment.
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with the provided segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if
-     *         {@code layout().byteSize() > segment.byteSize()}
-     */
-    default T create(Arena arena) {
-        return get(arena.allocate(layout()));
-    }
 
     /**
      * {@return a new instance of type T projected at the provided
@@ -624,7 +449,7 @@ public interface SegmentMapper<T> {
      *          segment mapper}
      * <p>
      * It should be noted that the type R can represent almost any class and is not
-     * restricted to records and interfaces.
+     * restricted to records.
      *
      * @param  newType the new type the returned mapper shall use
      * @param toMapper to apply after get operations on this segment mapper
@@ -643,10 +468,7 @@ public interface SegmentMapper<T> {
      *          segment mapper is a record mapper}
      * <p>
      * It should be noted that the type R can represent almost any class and is not
-     * restricted to records and interfaces.
-     * <p>
-     * Interface segment mappers returned by this method does not support
-     * {@linkplain #set(MemorySegment, Object) set} operations.
+     * restricted to records.
      *
      * @param  newType the new type the returned mapper shall use
      * @param toMapper to apply after get operations on this segment mapper
@@ -655,75 +477,36 @@ public interface SegmentMapper<T> {
     <R> SegmentMapper<R> map(Class<R> newType,
                              Function<? super T, ? extends R> toMapper);
 
-    /**
-     * {@return the backing segment of the provided {@code source},
-     *          or, if no backing segment exists, {@linkplain Optional#empty()}}
-     * <p>
-     * Interfaces obtained from segment mappers have backing segments. Records obtained
-     * from segment mappers do not.
-     *
-     * @param source from which to extract the backing segment
-     */
-    default Optional<MemorySegment> segment(T source) {
-        Objects.requireNonNull(source);
-        return Optional.empty();
-    }
-
-    /**
-     * {@return the offset in the backing segment of the provided {@code source},
-     *          or, if no backing segment exists, {@linkplain OptionalLong#empty()}}
-     * <p>
-     * Interfaces obtained from segment mappers have backing segments. Records obtained
-     * from segment mappers do not.
-     *
-     * @param source from which to extract the backing segment
-     */
-    default OptionalLong offset(T source) {
-        Objects.requireNonNull(source);
-        return OptionalLong.empty();
-    }
 
     /**
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided interface {@code type} using the provided {@code layout}
-     *          and using the provided {@code lookup}}
+     *          to the provided record {@code type} using the natural layout of {@code type}}
+     * <p>
+     * Reflective analysis on the provided {@code type} will be made using the
+     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
+     * <p>
+     * The natural layout will be computed as {@linkplain NaturalLayout#ofRecord(Class)} was
+     * called with the provided {@code type}.
      *
-     * @implNote The order in which methods appear (e.g. in the {@code toString} method)
-     *           is derived from the provided {@code layout}.
-     *
-     * @implNote The returned class can be a
-     *           <a href="{@docRoot}/java.base/java/lang/doc-files/ValueBased.html">value-based</a>
-     *           class; programmers should treat instances that are
-     *           {@linkplain Object#equals(Object) equal} as interchangeable and should
-     *           not use instances for synchronization, or unpredictable behavior may
-     *           occur. For example, in a future release, synchronization may fail.
-     *
-     * @implNote The returned class can be a {@linkplain Class#isHidden() hidden} class.
-     *
-     * @param lookup to use when performing reflective analysis on the
-     *               provided {@code type}
      * @param type to map memory segment from and to
-     * @param layout to be used when mapping the provided {@code type}
      * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided {@code type} is not an interface
-     * @throws IllegalArgumentException if the provided {@code type} is a hidden interface
-     * @throws IllegalArgumentException if the provided {@code type} is a sealed interface
-     * @throws IllegalArgumentException if the provided interface {@code type} directly
+     * @throws IllegalArgumentException if the provided record {@code type} directly
      *         declares any generic type parameter
-     * @throws IllegalArgumentException if the provided interface {@code type} cannot be
-     *         reflectively analysed using the provided {@code lookup}
+     * @throws IllegalArgumentException if the provided record {@code type} is
+     *         {@linkplain java.lang.Record}
+     * @throws IllegalArgumentException if the provided record {@code type} cannot
+     *         be reflectively analysed using
+     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
      * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         methods for which there are no exact mapping (of names and types) in
+     *         components for which there are no exact mapping (of names and types) in
      *         the provided {@code layout} or if the provided {@code type} is not public or
      *         if the method is otherwise unable to create a segment mapper as specified above
+     * @throws IllegalArgumentException if the provided interface {@code type} contains
+     *         components for which there are no natural layout (e.g. arrays)
+     * @see #ofRecord(MethodHandles.Lookup, Class, GroupLayout)
      */
-    static <T> SegmentMapper<T> ofInterface(MethodHandles.Lookup lookup,
-                                            Class<T> type,
-                                            GroupLayout layout) {
-        Objects.requireNonNull(lookup);
-        MapperUtil.requireImplementableInterfaceType(type);
-        Objects.requireNonNull(layout);
-        return SegmentInterfaceMapper.create(lookup, type, layout);
+    static <T extends Record> SegmentMapper<T> ofRecord(Class<T> type) {
+        return ofRecord(MethodHandles.publicLookup(), type, NaturalLayout.ofRecord(type));
     }
 
     /**
@@ -732,9 +515,6 @@ public interface SegmentMapper<T> {
      * <p>
      * Reflective analysis on the provided {@code type} will be made using the
      * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
-     *
-     * @implNote The order in which components appear (e.g. in the {@code toString} method)
-     *           conforms to the order in which components are declared by the record class.
      *
      * @param type to map memory segment from and to
      * @param layout to be used when mapping the provided {@code type}
@@ -762,9 +542,6 @@ public interface SegmentMapper<T> {
      *          to the provided record {@code type} using the provided {@code layout}
      *          and using the provided {@code lookup}}
      *
-     * @implNote The order in which components appear (e.g. in the {@code toString} method)
-     *           conforms to the order in which components are declared by the record class.
-     *
      * @param lookup to use when performing reflective analysis on the
      *                provided {@code type}
      * @param type to map memory segment from and to
@@ -788,87 +565,6 @@ public interface SegmentMapper<T> {
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
         return SegmentRecordMapper2.create(lookup, type, layout);
-    }
-
-    /**
-     * Interfaces extending this interface will be provided
-     * with additional methods for discovering the backing
-     * memory segment and offset used as the backing storage.
-     */
-    interface Discoverable {
-
-        /**
-         * {@return the backing segment of this instance}
-         */
-        MemorySegment segment();
-
-        /**
-         * {@return the offset in the backing segment of this instance}
-         */
-        long offset();
-    }
-
-    /**
-     * Interfaces extending this interface will be provided
-     * with additional methods for making updates to the backing
-     * segments known to other threads.
-     * <p>
-     * This allows plain memory semantics for accessors while still providing
-     * visibility across threads.
-     * <p>
-     * The interface does not provide mutual exclusivity.
-     * <p>
-     * Here is an example of mapped interfaces can be used in a multi-threaded environment:
-     * {@snippet lang = java:
-     *
-     *    public interface PointAccessor extends SegmentMapper.Sharable {
-     *            int x();
-     *            void x(int x);
-     *            int y();
-     *            void y(int y);
-     *
-     *    }
-     *
-     *    PointAccessor pointAccessor = mapper.get(segment);
-     *    // Make sure any updates made by other threads are visible
-     *    pointAccessor.acquire()
-     *    try {
-     *        // Update the backing segment
-     *        pointAccessor.x(pointAccessor.x() + 1);
-     *    } finally {
-     *        // Allow other threads to see updates provided
-     *        // they first call acquire()
-     *        pointAccessor.release();
-     *    }
-     * }
-     */
-    interface Sharable {
-
-        /**
-         * Ensures any updates made to the backing segment by another thread up until
-         * {@linkplain #release() release()} was called are visible to this thread.
-         * <p>
-         * More formally, this operation establishes a <a
-         * href="../../../util/concurrent/package-summary.html#MemoryVisibility"><i>happens-before</i></a>
-         * relation between the {@linkplain #release()} method and this method.
-         */
-        default void acquire() {
-            StandardSharable.instance().acquire();
-        }
-
-        /**
-         * Makes any update made to the backing segment up until calling this method
-         * visible to other threads, provided they first call {@linkplain #acquire()}
-         * before access.
-         * <p>
-         * More formally, this operation establishes a <a
-         * href="../../../util/concurrent/package-summary.html#MemoryVisibility"><i>happens-before</i></a>
-         * relation between this method and the {@linkplain #acquire()} method.
-         */
-        default void release() {
-            StandardSharable.instance().acquire();
-        }
-
     }
 
 }

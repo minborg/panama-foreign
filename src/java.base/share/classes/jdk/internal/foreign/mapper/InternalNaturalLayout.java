@@ -37,15 +37,15 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public final class InternalLayoutGenerators {
+public final class InternalNaturalLayout {
 
     // Suppresses default constructor, ensuring non-instantiability.
-    private InternalLayoutGenerators() {}
+    private InternalNaturalLayout() {}
 
     // Type to layout methods
 
     public static GroupLayout groupLayoutOf(Class<?> type) {
-        return (GroupLayout) layoutOf(type, type.getName());
+        return (GroupLayout) layoutOf(type, null);
     }
 
     private static MemoryLayout layoutOf(Class<?> type,
@@ -61,12 +61,7 @@ public final class InternalLayoutGenerators {
             source = Arrays.stream(
                             MapperUtil.requireRecordType(type)
                                     .getRecordComponents())
-                    .map(InternalLayoutGenerators::holderFor);
-        } else if (type.isInterface()) {
-            source =
-                    mappableMethods(
-                            MapperUtil.requireImplementableInterfaceType(type))
-                            .map(InternalLayoutGenerators::holderFor);
+                    .map(InternalNaturalLayout::holderFor);
         } else {
             throw noSuchNaturalLayout(type, name);
         }
@@ -125,7 +120,7 @@ public final class InternalLayoutGenerators {
                 .filter(f -> Modifier.isPublic(f.getModifiers()))
                 .filter(m -> !m.isDefault())
                 .filter(f -> f.getReturnType().equals(void.class))
-                .map(InternalLayoutGenerators::requirePureGetter);
+                .map(InternalNaturalLayout::requirePureGetter);
     }
 
     private static Method requirePureGetter(Method method) {
@@ -152,7 +147,7 @@ public final class InternalLayoutGenerators {
                 .filter(f -> Modifier.isPublic(f.getModifiers()))
                 .filter(f -> Modifier.isStatic(f.getModifiers()))
                 .filter(f -> !f.getName().endsWith("UNALIGNED"))
-                .map(InternalLayoutGenerators::staticFieldValueOrThrow)
+                .map(InternalNaturalLayout::staticFieldValueOrThrow)
                 .filter(ValueLayout.class::isInstance)
                 .map(ValueLayout.class::cast);
     }

@@ -82,32 +82,4 @@ final class TestJepExamplesUnions {
         assertEquals(0x7f000001, localHostAddress);
     }
 
-
-    @Test
-    void interfaceConversion() {
-
-        interface IpConverter {
-            int ipAddress();
-            byte ipBytes(long index);
-            void ipAddress(int ipAddress);
-            void ipBytes(long index, byte ipByte);
-        }
-
-        MemorySegment segment = Arena.ofAuto().allocate(IP_CONVERTER);
-
-        SegmentMapper<IpConverter> mapper =
-                SegmentMapper.ofInterface(MethodHandles.lookup(), IpConverter.class, IP_CONVERTER);
-
-        IpConverter ipConverter = mapper.get(segment);
-        // Localhost in network order (big endian)
-        ipConverter.ipBytes(3L, (byte) 0x7f);
-        ipConverter.ipBytes(2L, (byte) 0x00);
-        ipConverter.ipBytes(1L, (byte) 0x00);
-        ipConverter.ipBytes(0L, (byte) 0x01);
-
-        int localHostAddress = ipConverter.ipAddress();
-
-        assertEquals(0x7f000001, localHostAddress);
-    }
-
 }

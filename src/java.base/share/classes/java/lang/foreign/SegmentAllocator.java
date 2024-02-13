@@ -25,9 +25,11 @@
 
 package java.lang.foreign;
 
+import java.lang.foreign.mapper.SegmentMapper;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.SequencedCollection;
 
 import jdk.internal.foreign.AbstractMemorySegmentImpl;
 import jdk.internal.foreign.ArenaImpl;
@@ -409,6 +411,32 @@ public interface SegmentAllocator {
     }
 
     /**
+     * {@return a new memory segment initialized with the provided compound value}
+     * <p>
+     * The size of the allocated memory segment is the
+     * {@linkplain MemoryLayout#byteSize() size} of the given accessor's {@linkplain SegmentMapper#layout()}.
+     * The given value is written into the segment according to the byte order and alignment constraint of
+     * the given accessor's {@linkplain SegmentMapper#layout()}.
+     *
+     * @implSpec The default implementation is equivalent to:
+     * {@snippet lang=java :
+     *  MemorySegment seg = allocate(Objects.requireNonNull(accessor).layout());
+     *  seg.set(accessor, 0, value);
+     *  return seg;
+     * }
+     *
+     * @param accessor the accessor of the block of memory to be allocated
+     * @param value    the compound value to be set in the newly allocated memory segment
+     * @param <T>      the type of the compound value
+     */
+    default <T> MemorySegment allocateFrom(CompoundAccessor<T> accessor, T value) {
+        Objects.requireNonNull(accessor);
+        MemorySegment seg = allocateNoInit(accessor.layout());
+        seg.set(accessor, 0, value);
+        return seg;
+    }
+
+    /**
      * {@return a new memory segment initialized with the elements in the provided
      *          byte array}
      * <p>
@@ -595,6 +623,47 @@ public interface SegmentAllocator {
     default MemorySegment allocateFrom(ValueLayout.OfDouble elementLayout, double... elements) {
         return allocateFrom(elementLayout, MemorySegment.ofArray(elements),
                 ValueLayout.JAVA_DOUBLE, 0, elements.length);
+    }
+
+    /**
+     * {@return a new memory segment initialized with the compound elements in
+     *          the provided collection}
+     * <p>
+     * The size of the allocated memory segment is
+     * {@code accessor.layout().byteSize() * elements.length}. The contents of the
+     * source collection is written into the result segment element by element, according
+     * to the byte order and alignment constraint of the given accessor's
+     * {@linkplain SegmentMapper#layout()}.
+     *
+     * @implSpec The default implementation for this method is equivalent to the
+     *           following code:
+     * {@snippet lang = java:
+     * Objects.requireNonNull(accessor);
+     * Objects.requireNonNull(elements);
+     * MemorySegment seg = allocateNoInit(accessor.layout(), elements.size());
+     * int i = 0;
+     * for (T element : elements) {
+     *     seg.setAtIndex(accessor, i++, element);
+     * }
+     * return seg;
+     *}
+     * @param accessor  the accessor with an element layout of the array to be allocated
+     * @param elements  the compound elements to be copied to the newly allocated
+     *                  memory block
+     * @param <T>       the type of the compound value
+     * @throws IllegalArgumentException if
+     *         {@code accessor.layout().byteAlignment() > accessor.layout().byteSize()}
+     */
+    @ForceInline
+    default <T> MemorySegment allocateFrom(CompoundAccessor<T> accessor, SequencedCollection<? extends T> elements) {
+        Objects.requireNonNull(accessor);
+        Objects.requireNonNull(elements);
+        MemorySegment seg = allocateNoInit(accessor.layout(), elements.size());
+        int i = 0;
+        for (T element : elements) {
+            seg.setAtIndex(accessor, i++, element);
+        }
+        return seg;
     }
 
     /**

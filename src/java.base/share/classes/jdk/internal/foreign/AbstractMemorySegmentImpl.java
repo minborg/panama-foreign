@@ -26,6 +26,7 @@
 package jdk.internal.foreign;
 
 import java.lang.foreign.*;
+import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.reflect.Array;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
@@ -48,6 +49,7 @@ import java.util.stream.StreamSupport;
 import jdk.internal.access.JavaNioAccess;
 import jdk.internal.access.SharedSecrets;
 import jdk.internal.access.foreign.UnmapperProxy;
+import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.misc.ScopedMemoryAccess;
 import jdk.internal.reflect.CallerSensitive;
 import jdk.internal.reflect.Reflection;
@@ -188,6 +190,12 @@ public abstract sealed class AbstractMemorySegmentImpl
     @Override
     public Stream<MemorySegment> elements(MemoryLayout elementLayout) {
         return StreamSupport.stream(spliterator(elementLayout), false);
+    }
+
+    @Override
+    public <T> Stream<T> elements(CompoundAccessor<T> accessor) {
+        return elements(accessor.layout())
+                .map(s -> s.get(accessor, 0L));
     }
 
     @Override
@@ -834,6 +842,18 @@ public abstract sealed class AbstractMemorySegmentImpl
 
     @ForceInline
     @Override
+    public <T> T get(CompoundAccessor<T> accessor, long offset) {
+        return MapperUtil.get(this, accessor, offset);
+    }
+
+    @ForceInline
+    @Override
+    public <T> void set(CompoundAccessor<T> accessor, long offset, T value) {
+        MapperUtil.set(this, accessor, offset, value);
+    }
+
+    @ForceInline
+    @Override
     public byte getAtIndex(ValueLayout.OfByte layout, long index) {
         Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
         return (byte) layout.varHandle().get((MemorySegment)this, index * layout.byteSize());
@@ -956,6 +976,20 @@ public abstract sealed class AbstractMemorySegmentImpl
     public void setAtIndex(AddressLayout layout, long index, MemorySegment value) {
         Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
         layout.varHandle().set((MemorySegment)this, index * layout.byteSize(), value);
+    }
+
+    @ForceInline
+    @Override
+    public <T> T getAtIndex(CompoundAccessor<T> accessor, long index) {
+        Utils.checkElementAlignment(accessor.layout(), "Layout alignment greater than its size");
+        return MapperUtil.getAtIndex(this, accessor, index);
+    }
+
+    @ForceInline
+    @Override
+    public <T> void setAtIndex(CompoundAccessor<T> accessor, long index, T value) {
+        Utils.checkElementAlignment(accessor.layout(), "Layout alignment greater than its size");
+        MapperUtil.setAtIndex(this, accessor, index, value);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
+ *  Copyright (c) 2019, 2024, Oracle and/or its affiliates. All rights reserved.
  *  DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  *  This code is free software; you can redistribute it and/or modify it
@@ -26,22 +26,57 @@
 package jdk.internal.foreign.layout;
 
 import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
-public final class StructLayoutImpl extends AbstractGroupLayout<StructLayoutImpl> implements StructLayout {
+public final class StructLayoutImpl<T> extends AbstractGroupLayout<T, StructLayoutImpl<T>> implements StructLayout<T> {
 
-    private StructLayoutImpl(List<MemoryLayout> elements, long byteSize, long byteAlignment, long minByteAlignment, Optional<String> name) {
-        super(Kind.STRUCT, elements, byteSize, byteAlignment, minByteAlignment, name);
+    private StructLayoutImpl(List<MemoryLayout> elements, long byteSize, long byteAlignment, long minByteAlignment, Optional<String> name,
+                             MethodHandles.Lookup lookup, Class<T> carrier) {
+        super(Kind.STRUCT, elements, byteSize, byteAlignment, minByteAlignment, name, lookup, carrier);
     }
 
     @Override
-    StructLayoutImpl dup(long byteAlignment, Optional<String> name) {
-        return new StructLayoutImpl(memberLayouts(), byteSize(), byteAlignment, minByteAlignment, name);
+    <R> StructLayoutImpl<R> dup(long byteAlignment, Optional<String> name, MethodHandles.Lookup lookup, Class<R> carrier) {
+        return new StructLayoutImpl<>(memberLayouts(), byteSize(), byteAlignment, minByteAlignment, name, lookup, carrier);
     }
 
-    public static StructLayout of(List<MemoryLayout> elements) {
+    @Override
+    public <R extends Record> StructLayout<R> withCarrier(Class<R> carrier) {
+        return withCarrier(MethodHandles.publicLookup(), carrier);
+    }
+
+    @Override
+    public <R extends Record> StructLayout<R> withCarrier(MethodHandles.Lookup lookup, Class<R> carrier) {
+        return dup(byteAlignment(), name(), lookup, carrier);
+    }
+
+    @Override
+    public StructLayout<MemorySegment> withoutCarrier() {
+        return dup(byteAlignment(), name(), MethodHandles.publicLookup(), MemorySegment.class);
+    }
+
+    @Override
+    public <R> StructLayout<R> map(Class<R> newType, Function<? super T, ? extends R> toMapper, Function<? super R, ? extends T> fromMapper) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public <R> StructLayout<R> map(Class<R> newType, Function<? super T, ? extends R> toMapper) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    VarHandle computeVarHandle() {
+        throw new UnsupportedOperationException();
+    }
+
+    public static StructLayout<MemorySegment> of(List<MemoryLayout> elements) {
         long size = 0;
         long align = 1;
         for (MemoryLayout elem : elements) {
@@ -51,7 +86,7 @@ public final class StructLayoutImpl extends AbstractGroupLayout<StructLayoutImpl
             size = Math.addExact(size, elem.byteSize());
             align = Math.max(align, elem.byteAlignment());
         }
-        return new StructLayoutImpl(elements, size, align, align, Optional.empty());
+        return new StructLayoutImpl<>(elements, size, align, align, Optional.empty(), MethodHandles.publicLookup(), MemorySegment.class);
     }
 
 }

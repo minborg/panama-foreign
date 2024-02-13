@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,10 @@
 
 package java.lang.foreign;
 
+import java.lang.invoke.MethodHandles;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * A compound layout that is an aggregation of multiple, heterogeneous
@@ -41,8 +44,134 @@ import java.util.List;
  *
  * @sealedGraph
  * @since 22
+ * @param <T> The carrier type
  */
-public sealed interface GroupLayout extends MemoryLayout permits StructLayout, UnionLayout {
+public sealed interface GroupLayout<T> extends MemoryLayout permits StructLayout, UnionLayout {
+
+    /**
+     * {@return a group layout that has a carrier of the provided {@code carrier} type
+     * and using the provided {@code lookup}}
+     * @param lookup to use when performing reflective analysis on the
+     *                provided {@code type}
+     * @param carrier to associate to this struct layout
+     * @param <R> carrier type
+     * @since 23
+     */
+    <R extends Record> GroupLayout<R> withCarrier(MethodHandles.Lookup lookup, Class<R> carrier);
+
+    /**
+     * {@return a group layout that has a carrier of the provided {@code carrier} type
+     * and using {@linkplain MethodHandles#publicLookup()}}
+     * @param carrier to associate to this group layout
+     * @param <R> carrier type
+     * @since 23
+     */
+    <R extends Record> GroupLayout<R> withCarrier(Class<R> carrier);
+
+    /**
+     * {@return a group layout that does not have a carrier}
+     * @since 23
+     */
+    GroupLayout<MemorySegment> withoutCarrier();
+
+    /**
+     * {@return the carrier associated with this group layout}
+     */
+    Class<T> carrier();
+
+    /**
+     * {@return a new group layout that would apply the provided {@code toMapper} after
+     *          performing get operations on a segment and that would apply the
+     *          provided {@code fromMapper} before performing set operations on a
+     *          segment}
+     * <p>
+     * It should be noted that the type R can represent almost any class and is not
+     * restricted to records.
+     *
+     * @param  newType the new carrier type
+     * @param toMapper to apply after get operations on a segment
+     * @param fromMapper to apply before set operations a segment
+     * @param <R> the type of the new carrier type
+     * @throws UnsupportedOperationException if this GroupLayout does not have a carrier
+     */
+    <R> GroupLayout<R> map(Class<R> newType,
+                           Function<? super T, ? extends R> toMapper,
+                           Function<? super R, ? extends T> fromMapper);
+
+    /**
+     * {@return a new group layout that would apply the provided {@code toMapper} after
+     *          performing get operations on a segment and that would throw an
+     *          {@linkplain UnsupportedOperationException} for set operations on a
+     *          segment}
+     * <p>
+     * It should be noted that the type R can represent almost any class and is not
+     * restricted to records.
+     *
+     * @param  newType the new carrier type
+     * @param toMapper to apply after get operations on a segment
+     * @param <R> the type of the new carrier type
+     * @throws UnsupportedOperationException if this GroupLayout does not have a carrier
+     */
+    <R> GroupLayout<R> map(Class<R> newType,
+                           Function<? super T, ? extends R> toMapper);
+
+
+//  /**
+//   * A compound layout that is an aggregation of multiple, heterogeneous
+//   * <em>member layouts</em> similar to {@linkplain GroupLayout} but has
+//   * an associated carrier type.
+//   *
+//   * @implSpec
+//   * This class is immutable, thread-safe and
+//   * <a href="{@docRoot}/java.base/java/lang/doc-files/ValueBased.html">value-based</a>.
+//   *
+//   * @param <T> the carrier type
+//   *
+//   * @sealedGraph
+//   * @since 23
+//   */
+//  sealed interface OfComposite<T> extends GroupLayout permits StructLayout.OfComposite, UnionLayout.OfComposite {
+
+//      /**
+//       * {@return the carrier associated with this value layout}
+//       */
+//      Class<T> carrier();
+
+//      /**
+//       * {@return a new compound layout that would apply the provided {@code toMapper} after
+//       *          performing get operations on a segment and that would apply the
+//       *          provided {@code fromMapper} before performing set operations on a
+//       *          segment}
+//       * <p>
+//       * It should be noted that the type R can represent almost any class and is not
+//       * restricted to records.
+//       *
+//       * @param  newType the new carrier type
+//       * @param toMapper to apply after get operations on a segment
+//       * @param fromMapper to apply before set operations a segment
+//       * @param <R> the type of the new carrier type
+//       */
+//      <R> GroupLayout.OfComposite<R> map(Class<R> newType,
+//                                         Function<? super T, ? extends R> toMapper,
+//                                         Function<? super R, ? extends T> fromMapper);
+
+//      /**
+//       * {@return a new compound layout that would apply the provided {@code toMapper} after
+//       *          performing get operations on a segment and that would throw an
+//       *          {@linkplain UnsupportedOperationException} for set operations on a
+//       *          segment}
+//       * <p>
+//       * It should be noted that the type R can represent almost any class and is not
+//       * restricted to records.
+//       *
+//       * @param  newType the new carrier type
+//       * @param toMapper to apply after get operations on a segment
+//       * @param <R> the type of the new carrier type
+//       */
+//      <R> GroupLayout.OfComposite<R> map(Class<R> newType,
+//                                         Function<? super T, ? extends R> toMapper);
+
+//  }
 
     /**
      * {@return the member layouts of this group layout}
@@ -58,13 +187,13 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
      * {@inheritDoc}
      */
     @Override
-    GroupLayout withName(String name);
+    GroupLayout<T> withName(String name);
 
     /**
      * {@inheritDoc}
      */
     @Override
-    GroupLayout withoutName();
+    GroupLayout<T> withoutName();
 
     /**
      * {@inheritDoc}
@@ -74,5 +203,5 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
      *         member layouts associated with this group layout
      */
     @Override
-    GroupLayout withByteAlignment(long byteAlignment);
+    GroupLayout<T> withByteAlignment(long byteAlignment);
 }

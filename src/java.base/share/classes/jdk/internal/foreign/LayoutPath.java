@@ -133,7 +133,7 @@ public class LayoutPath {
     }
 
     public LayoutPath groupElement(String name) {
-        GroupLayout g = requireGroupLayout();
+        GroupLayout<?> g = requireGroupLayout();
         long offset = 0;
         MemoryLayout elem = null;
         for (int i = 0; i < g.memberLayouts().size(); i++) {
@@ -154,7 +154,7 @@ public class LayoutPath {
     }
 
     public LayoutPath groupElement(long index) {
-        GroupLayout g = requireGroupLayout();
+        GroupLayout<?> g = requireGroupLayout();
         long elemSize = g.memberLayouts().size();
         long offset = 0;
         MemoryLayout elem = null;
@@ -320,7 +320,7 @@ public class LayoutPath {
         return requireLayoutType(SequenceLayout.class, "sequence");
     }
 
-    private GroupLayout requireGroupLayout() {
+    private GroupLayout<?> requireGroupLayout() {
         return requireLayoutType(GroupLayout.class, "group");
     }
 

@@ -44,8 +44,9 @@ public final class InternalNaturalLayout {
 
     // Type to layout methods
 
-    public static GroupLayout groupLayoutOf(Class<?> type) {
-        return (GroupLayout) layoutOf(type, null);
+    @SuppressWarnings("unchecked")
+    public static <T> GroupLayout<T> groupLayoutOf(Class<T> type) {
+        return (GroupLayout<T>) layoutOf(type, null);
     }
 
     private static MemoryLayout layoutOf(Class<?> type,

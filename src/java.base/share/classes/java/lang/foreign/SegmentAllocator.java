@@ -28,6 +28,7 @@ package java.lang.foreign;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.SequencedCollection;
 
 import jdk.internal.foreign.AbstractMemorySegmentImpl;
 import jdk.internal.foreign.ArenaImpl;
@@ -409,6 +410,34 @@ public interface SegmentAllocator {
     }
 
     /**
+     * {@return a new memory segment initialized with the provided value of type {@code T}}
+     * <p>
+     * The size of the allocated memory segment is the
+     * {@linkplain MemoryLayout#byteSize() size} of the given layout. The given value is
+     * written into the segment according to the byte order and alignment constraint of
+     * the given layout.
+     *
+     * @implSpec The default implementation is equivalent to:
+     * {@snippet lang=java :
+     *  MemorySegment seg = allocate(Objects.requireNonNull(layout));
+     *  seg.set(layout, 0, value);
+     *  return seg;
+     * }
+     *
+     * @param layout the layout of the block of memory to be allocated
+     * @param value  the value to be set in the newly allocated memory segment
+     * @param <T>    The carrier type of the composite group layout
+     */
+    default <T> MemorySegment allocateFrom(GroupLayout<T> layout, T value) {
+        Objects.requireNonNull(layout);
+        Objects.requireNonNull(value);
+        // Todo: Check total mapping
+        MemorySegment seg = allocateNoInit(layout);
+        seg.set(layout, 0, value);
+        return seg;
+    }
+
+    /**
      * {@return a new memory segment initialized with the elements in the provided
      *          byte array}
      * <p>
@@ -595,6 +624,28 @@ public interface SegmentAllocator {
     default MemorySegment allocateFrom(ValueLayout.OfDouble elementLayout, double... elements) {
         return allocateFrom(elementLayout, MemorySegment.ofArray(elements),
                 ValueLayout.JAVA_DOUBLE, 0, elements.length);
+    }
+
+    /**
+     * {@return a new memory segment initialized with the elements in the provided
+     *          sequenced collection}
+     * <p>
+     * The size of the allocated memory segment is
+     * {@code elementLayout.byteSize() * elements.length}. The contents of the
+     * source array is copied into the result segment element by element, according
+     * to the byte order and alignment constraint of the given element layout.
+     *
+     * @param elementLayout the element layout of the array to be allocated
+     * @param elements      the int elements to be copied to the newly allocated
+     *                      memory block
+     * @param <T>           The carrier type of the composite group layout
+     * @throws IllegalArgumentException if
+     *         {@code elementLayout.byteAlignment() > elementLayout.byteSize()}
+     */
+    @ForceInline
+    default <T> MemorySegment allocateFrom(GroupLayout<T> elementLayout,
+                                           SequencedCollection<? extends T> elements) {
+        throw new UnsupportedOperationException("Fix me!");
     }
 
     /**

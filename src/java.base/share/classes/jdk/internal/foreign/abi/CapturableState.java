@@ -27,6 +27,7 @@ package jdk.internal.foreign.abi;
 import jdk.internal.foreign.Utils;
 
 import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.ValueLayout;
 import java.util.stream.Collectors;
@@ -39,7 +40,7 @@ public enum CapturableState {
     WSA_GET_LAST_ERROR("WSAGetLastError", JAVA_INT, 1 << 1, Utils.IS_WINDOWS),
     ERRNO             ("errno",           JAVA_INT, 1 << 2, true);
 
-    public static final StructLayout LAYOUT = MemoryLayout.structLayout(
+    public static final StructLayout<MemorySegment> LAYOUT = MemoryLayout.structLayout(
         supportedStates().map(CapturableState::layout).toArray(MemoryLayout[]::new));
 
     private final String stateName;

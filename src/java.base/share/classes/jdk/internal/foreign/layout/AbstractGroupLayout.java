@@ -25,7 +25,10 @@
  */
 package jdk.internal.foreign.layout;
 
+import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -40,19 +43,32 @@ import java.util.stream.Collectors;
  * @implSpec
  * This class is immutable, thread-safe and <a href="{@docRoot}/java.base/java/lang/doc-files/ValueBased.html">value-based</a>.
  */
-abstract sealed class AbstractGroupLayout<L extends AbstractGroupLayout<L> & MemoryLayout>
+abstract sealed class AbstractGroupLayout<T, L extends AbstractGroupLayout<T, L> & MemoryLayout>
         extends AbstractLayout<L>
         permits StructLayoutImpl, UnionLayoutImpl {
 
     private final Kind kind;
     private final List<MemoryLayout> elements;
     final long minByteAlignment;
+    private final MethodHandles.Lookup lookup;
+    private final Class<T> carrier;
+    private final VarHandle varHandle;
 
-    AbstractGroupLayout(Kind kind, List<MemoryLayout> elements, long byteSize, long byteAlignment, long minByteAlignment, Optional<String> name) {
+    AbstractGroupLayout(Kind kind,
+                        List<MemoryLayout> elements,
+                        long byteSize,
+                        long byteAlignment,
+                        long minByteAlignment,
+                        Optional<String> name,
+                        MethodHandles.Lookup lookup,
+                        Class<T> carrier) {
         super(byteSize, byteAlignment, name); // Subclassing creates toctou problems here
         this.kind = kind;
         this.elements = List.copyOf(elements);
         this.minByteAlignment = minByteAlignment;
+        this.lookup = lookup;
+        this.carrier = carrier;
+        this.varHandle = computeVarHandle();
     }
 
     /**
@@ -66,6 +82,32 @@ abstract sealed class AbstractGroupLayout<L extends AbstractGroupLayout<L> & Mem
      */
     public final List<MemoryLayout> memberLayouts() {
         return elements; // "elements" are already unmodifiable.
+    }
+
+    public final MethodHandles.Lookup lookup() {
+        return lookup;
+    }
+
+    public final Class<T> carrier() {
+        return carrier;
+    }
+
+    @Override
+    public VarHandle varHandle(MemoryLayout.PathElement... elements) {
+        if (elements.length == 0) {
+            return varHandle;
+        }
+        return super.varHandle(elements);
+    }
+
+    abstract <R> GroupLayout<?> dup(long byteAlignment, Optional<String> name, MethodHandles.Lookup lookup, Class<R> carrier);
+
+    abstract VarHandle computeVarHandle();
+
+    @SuppressWarnings("unchecked")
+    @Override
+    L dup(long byteAlignment, Optional<String> name) {
+        return (L) dup(byteAlignment, name, lookup(), carrier());
     }
 
     /**
@@ -92,7 +134,7 @@ abstract sealed class AbstractGroupLayout<L extends AbstractGroupLayout<L> & Mem
     @Override
     public final boolean equals(Object other) {
         return this == other ||
-                other instanceof AbstractGroupLayout<?> otherGroup &&
+                other instanceof AbstractGroupLayout<?, ?> otherGroup &&
                         super.equals(other) &&
                         kind == otherGroup.kind &&
                         elements.equals(otherGroup.elements);

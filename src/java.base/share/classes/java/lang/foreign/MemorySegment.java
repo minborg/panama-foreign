@@ -586,6 +586,26 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
     Stream<MemorySegment> elements(MemoryLayout elementLayout);
 
     /**
+     * Returns a sequential {@code Stream} over disjoint slices (whose size matches that
+     * of the specified layout) in this segment. Calling this method is equivalent to
+     * the following code:
+     * {@snippet lang=java :
+     * StreamSupport.stream(segment.spliterator(elementLayout), false);
+     * }
+     *
+     * @param elementLayout the layout to be used for splitting
+     * @param <T>           the carrier type
+     * @return a sequential {@code Stream} over disjoint slices in this segment
+     * @throws IllegalArgumentException if {@code elementLayout.byteSize() == 0}
+     * @throws IllegalArgumentException if {@code byteSize() % elementLayout.byteSize() != 0}
+     * @throws IllegalArgumentException if {@code elementLayout.byteSize() % elementLayout.byteAlignment() != 0}
+     * @throws IllegalArgumentException if this segment is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
+     *         in the provided layout
+     */
+    <T> Stream<T> elements(GroupLayout<T> elementLayout);
+
+    /**
      * {@return the scope associated with this memory segment}
      */
     Scope scope();
@@ -1927,6 +1947,48 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
     void set(AddressLayout layout, long offset, MemorySegment value);
 
     /**
+     * Reads a composite value of type {@code T} from this segment at the given offset,
+     * with the given layout.
+     *
+     * @param layout the layout of the region of memory to be read
+     * @param offset the offset in bytes (relative to this segment address) at which
+     *               this access operation will occur.
+     * @param <T>    the composite value type
+     * @return a value of type {@code T} read from this segment
+     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
+     *         this segment is not {@linkplain Scope#isAlive() alive}
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     *         such that {@code isAccessibleBy(T) == false}
+     * @throws IllegalArgumentException if the access operation is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
+     *         in the provided layout
+     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - layout.byteSize()}
+     */
+    <T> T get(GroupLayout<T> layout, long offset);
+
+    /**
+     * Writes a composite value of type {@code T} into this segment at the given offset,
+     * with the given layout.
+     *
+     * @param layout the layout of the region of memory to be written
+     * @param offset the offset in bytes (relative to this segment address) at which this
+     *               access operation will occur
+     * @param value  the value to be written
+     * @param <T>    the composite value type
+     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
+     *         this segment is not {@linkplain Scope#isAlive() alive}
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     *         such that {@code isAccessibleBy(T) == false}
+     * @throws IllegalArgumentException if the access operation is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
+     *         in the provided layout
+     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - layout.byteSize()}
+     * @throws UnsupportedOperationException if this segment is
+     *         {@linkplain #isReadOnly() read-only}
+     */
+    <T> void set(GroupLayout<T> layout, long offset, T value);
+
+    /**
      * Reads a byte from this segment at the given index, scaled by the given
      * layout size.
      *
@@ -2339,6 +2401,53 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
      * @throws UnsupportedOperationException if {@code value} is not a {@linkplain #isNative() native} segment
      */
     void setAtIndex(AddressLayout layout, long index, MemorySegment value);
+
+    /**
+     * Reads a composite value of type {@code T}  from this segment at the given index,
+     * scaled by the given layout size.
+     *
+     * @param layout the layout of the region of memory to be read.
+     * @param index  a logical index. The offset in bytes (relative to this
+     *               segment address) at which the access operation will occur can be
+     *               expressed as {@code (index * layout.byteSize())}.
+     * @param <T>    the composite value type
+     * @return a value of type {@code T} read from this segment
+     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
+     *         this segment is not {@linkplain Scope#isAlive() alive}
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     *         such that {@code isAccessibleBy(T) == false}
+     * @throws IllegalArgumentException if the access operation is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
+     *         in the provided layout
+     * @throws IllegalArgumentException if {@code layout.byteAlignment() > layout.byteSize()}
+     * @throws IndexOutOfBoundsException if {@code index * layout.byteSize()} overflows
+     * @throws IndexOutOfBoundsException if {@code index * layout.byteSize() > byteSize() - layout.byteSize()}
+     */
+    <T> T getAtIndex(GroupLayout<T> layout, long index);
+
+    /**
+     * Writes a composite value of type {@code T}  at the given index, scaled by the given
+     * layout size.
+     *
+     * @param layout the layout of the region of memory to be written
+     * @param index  a logical index. The offset in bytes (relative to this
+     *               segment address) at which the access operation
+     *               will occur can be expressed as {@code (index * layout.byteSize())}.
+     * @param value  the int value to be written
+     * @param <T>    the composite value type
+     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
+     *         this segment is not {@linkplain Scope#isAlive() alive}
+     * @throws WrongThreadException if this method is called from a thread {@code T},
+     *         such that {@code isAccessibleBy(T) == false}
+     * @throws IllegalArgumentException if the access operation is
+     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
+     *         in the provided layout
+     * @throws IllegalArgumentException if {@code layout.byteAlignment() > layout.byteSize()}
+     * @throws IndexOutOfBoundsException if {@code index * layout.byteSize()} overflows
+     * @throws IndexOutOfBoundsException if {@code index * layout.byteSize() > byteSize() - layout.byteSize()}
+     * @throws UnsupportedOperationException if this segment is {@linkplain #isReadOnly() read-only}
+     */
+    <T> void setAtIndex(GroupLayout<T> layout, long index, T value);
 
     /**
      * Compares the specified object with this memory segment for equality. Returns

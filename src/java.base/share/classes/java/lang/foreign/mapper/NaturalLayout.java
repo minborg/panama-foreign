@@ -36,7 +36,7 @@ public final class NaturalLayout {
      *         components for which there are no natural layout (e.g. arrays)
      *         or if the provided {@code type} is not public
      */
-    public static <T extends Record> GroupLayout ofRecord(Class<T> type) {
+    public static <T extends Record> GroupLayout<T> ofRecord(Class<T> type) {
         MapperUtil.requireRecordType(type);
         return InternalNaturalLayout.groupLayoutOf(type);
     }

@@ -903,7 +903,7 @@ public sealed interface Linker permits AbstractLinker {
          *
          * @see #captureCallState(String...)
          */
-        static StructLayout captureStateLayout() {
+        static StructLayout<MemorySegment> captureStateLayout() {
             return CapturableState.LAYOUT;
         }
 

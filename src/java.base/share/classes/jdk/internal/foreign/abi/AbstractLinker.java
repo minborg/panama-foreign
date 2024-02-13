@@ -188,7 +188,7 @@ public abstract sealed class AbstractLinker implements Linker permits LinuxAArch
     private void checkLayoutRecursive(MemoryLayout layout) {
         if (layout instanceof ValueLayout vl) {
             checkSupported(vl);
-        } else if (layout instanceof StructLayout sl) {
+        } else if (layout instanceof StructLayout<?> sl) {
             checkHasNaturalAlignment(layout);
             long offset = 0;
             long lastUnpaddedOffset = 0;
@@ -204,7 +204,7 @@ public abstract sealed class AbstractLinker implements Linker permits LinuxAArch
                 }
             }
             checkGroupSize(sl, lastUnpaddedOffset);
-        } else if (layout instanceof UnionLayout ul) {
+        } else if (layout instanceof UnionLayout<?> ul) {
             checkHasNaturalAlignment(layout);
             long maxUnpaddedLayout = 0;
             for (MemoryLayout member : ul.memberLayouts()) {
@@ -221,7 +221,7 @@ public abstract sealed class AbstractLinker implements Linker permits LinuxAArch
     }
 
     // check for trailing padding
-    private void checkGroupSize(GroupLayout gl, long maxUnpaddedOffset) {
+    private void checkGroupSize(GroupLayout<?> gl, long maxUnpaddedOffset) {
         long expectedSize = Utils.alignUp(maxUnpaddedOffset, gl.byteAlignment());
         if (gl.byteSize() != expectedSize) {
             throw new IllegalArgumentException("Layout '" + gl + "' has unexpected size: "
@@ -231,7 +231,7 @@ public abstract sealed class AbstractLinker implements Linker permits LinuxAArch
 
     // checks both that there is no excess padding between 'memberLayout' and
     // the previous layout
-    private void checkMemberOffset(StructLayout parent, MemoryLayout memberLayout,
+    private void checkMemberOffset(StructLayout<?> parent, MemoryLayout memberLayout,
                                           long lastUnpaddedOffset, long offset) {
         long expectedOffset = Utils.alignUp(lastUnpaddedOffset, memberLayout.byteAlignment());
         if (expectedOffset != offset) {
@@ -260,8 +260,8 @@ public abstract sealed class AbstractLinker implements Linker permits LinuxAArch
         // we don't care about transferring alignment and byte order here
         // since the linker already restricts those such that they will always be the same
         return switch (ml) {
-            case StructLayout sl -> MemoryLayout.structLayout(stripNames(sl.memberLayouts()));
-            case UnionLayout ul -> MemoryLayout.unionLayout(stripNames(ul.memberLayouts()));
+            case StructLayout<?> sl -> MemoryLayout.structLayout(stripNames(sl.memberLayouts()));
+            case UnionLayout<?> ul -> MemoryLayout.unionLayout(stripNames(ul.memberLayouts()));
             case SequenceLayout sl -> MemoryLayout.sequenceLayout(sl.elementCount(), stripNames(sl.elementLayout()));
             case AddressLayout al -> al.targetLayout()
                     .map(tl -> al.withoutName().withTargetLayout(stripNames(tl)))

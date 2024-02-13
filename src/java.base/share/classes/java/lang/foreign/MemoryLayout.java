@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1054,7 +1054,7 @@ public sealed interface MemoryLayout
      * structLayout(JAVA_SHORT, JAVA_INT.withByteAlignment(2));
      * }
      */
-    static StructLayout structLayout(MemoryLayout... elements) {
+    static StructLayout<MemorySegment> structLayout(MemoryLayout... elements) {
         Objects.requireNonNull(elements);
         return Utils.wrapOverflow(() ->
                 StructLayoutImpl.of(Stream.of(elements)
@@ -1068,7 +1068,7 @@ public sealed interface MemoryLayout
      * @param elements The member layouts of the union layout
      * @return a union layout with the given member layouts
      */
-    static UnionLayout unionLayout(MemoryLayout... elements) {
+    static UnionLayout<MemorySegment> unionLayout(MemoryLayout... elements) {
         Objects.requireNonNull(elements);
         return UnionLayoutImpl.of(Stream.of(elements)
                 .map(Objects::requireNonNull)

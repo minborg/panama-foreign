@@ -191,6 +191,12 @@ public abstract sealed class AbstractMemorySegmentImpl
     }
 
     @Override
+    public <T> Stream<T> elements(GroupLayout<T> elementLayout) {
+        return elements((MemoryLayout) elementLayout)
+                .map(s -> s.get(elementLayout, 0L));
+    }
+
+    @Override
     public final MemorySegment fill(byte value){
         checkAccess(0, length, false);
         SCOPED_MEMORY_ACCESS.setMemory(sessionImpl(), unsafeGetBase(), unsafeGetOffset(), length, value);
@@ -832,6 +838,19 @@ public abstract sealed class AbstractMemorySegmentImpl
         layout.varHandle().set((MemorySegment)this, offset, value);
     }
 
+    @SuppressWarnings("unchecked")
+    @ForceInline
+    @Override
+    public <T> T get(GroupLayout<T> layout, long offset) {
+        return (T) layout.varHandle().get((MemorySegment)this, offset);
+    }
+
+    @ForceInline
+    @Override
+    public <T> void set(GroupLayout<T> layout, long offset, T value) {
+        layout.varHandle().set((MemorySegment)this, offset, value);
+    }
+
     @ForceInline
     @Override
     public byte getAtIndex(ValueLayout.OfByte layout, long index) {
@@ -954,6 +973,21 @@ public abstract sealed class AbstractMemorySegmentImpl
     @ForceInline
     @Override
     public void setAtIndex(AddressLayout layout, long index, MemorySegment value) {
+        Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
+        layout.varHandle().set((MemorySegment)this, index * layout.byteSize(), value);
+    }
+
+    @SuppressWarnings("unchecked")
+    @ForceInline
+    @Override
+    public <T> T getAtIndex(GroupLayout<T> layout, long index) {
+        Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
+        return (T) layout.varHandle().get((MemorySegment)this, index * layout.byteSize());
+    }
+
+    @ForceInline
+    @Override
+    public <T> void setAtIndex(GroupLayout<T> layout, long index, T value) {
         Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
         layout.varHandle().set((MemorySegment)this, index * layout.byteSize(), value);
     }

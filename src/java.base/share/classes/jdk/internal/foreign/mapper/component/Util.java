@@ -161,7 +161,7 @@ public final class Util {
 
     @SuppressWarnings("unchecked")
     static <R> R[] toArray(MemorySegment segment,
-                           GroupLayout elementLayout,
+                           GroupLayout<?> elementLayout,
                            Class<R> type,
                            MethodHandle getMapper) {
 
@@ -178,7 +178,7 @@ public final class Util {
     }
 
     static <R> void fromArray(MemorySegment segment,
-                              GroupLayout elementLayout,
+                              GroupLayout<?> elementLayout,
                               long offset,
                               MethodHandle setMapper,
                               R[] records) {
@@ -194,7 +194,7 @@ public final class Util {
     }
 
     static <R> void fromList(MemorySegment segment,
-                              GroupLayout elementLayout,
+                              GroupLayout<?> elementLayout,
                               long offset,
                               MethodHandle setMapper,
                               List<R> records) {

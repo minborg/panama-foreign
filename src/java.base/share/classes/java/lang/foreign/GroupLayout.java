@@ -25,8 +25,12 @@
 
 package java.lang.foreign;
 
+import jdk.internal.foreign.layout.MappedLayoutImpl;
+
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A compound layout that is an aggregation of multiple, heterogeneous
@@ -77,32 +81,60 @@ public sealed interface GroupLayout extends MemoryLayout permits StructLayout, U
     @Override
     GroupLayout withByteAlignment(long byteAlignment);
 
-
     /**
      * {@return a mapped layout that can be used to map {@linkplain MemorySegment memory segments}
      *          to and from the provided {@code carrier} using this layout as a target layout}
      * <p>
-     * Reflective analysis on the provided {@code type} will be made using the
+     * This method is a convenience method that automatically will determine MethodHandle instances
+     * for a getter and a setter my matching record components with elements in this group layout
+     * and will then invoke {@linkplain MemoryLayout#mappedLayout(Class, MemoryLayout, MethodHandle, MethodHandle)}
+     * <p>
+     * Reflective analysis on the provided {@code carrier} type will be made using the
      * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
      *
      * @param carrier      class for which to map memory segment from and to
      * @param <T>          the carrier type the returned accessor converts MemorySegments
      *                     from and to
-     * @throws IllegalArgumentException if the provided record {@code type} directly
+     * @throws IllegalArgumentException if the provided record {@code carrier} directly
      *         declares any generic type parameter
-     * @throws IllegalArgumentException if a provided record {@code type} is
+     * @throws IllegalArgumentException if a provided record {@code carrier} is
      *         {@linkplain java.lang.Record}
-     * @throws IllegalArgumentException if the {@code type} cannot
+     * @throws IllegalArgumentException if the {@code carrier} cannot
      *         be reflectively analysed using
      *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
-     * @throws IllegalArgumentException if the provided interface {@code type} contains
+     * @throws IllegalArgumentException if the provided record {@code carrier} type contains
      *         components for which there are no exact mapping (of names and types) in
-     *         the provided {@code layout} or if the provided {@code type} is not public or
-     *         if the method is otherwise unable to create a segment mapper as specified above
-     * @see #mappedLayout(MethodHandles.Lookup, Class, MemoryLayout)
+     *         this group layout or if the provided {@code carrier} is not public or
+     *         if the method is otherwise unable to create a mapped layout as specified above
+     * @see #mapToRecord(MethodHandles.Lookup, Class)
      */
-    default <T extends Record> MappedLayout<T> withCarrier(Class<T> carrier) {
-        return MemoryLayout.mappedLayout(carrier, this);
-    }
+    <T extends Record> MappedLayout<T> mapToRecord(Class<T> carrier);
+
+    /**
+     * {@return a mapped layout that can be used to map {@linkplain MemorySegment memory segments}
+     *          to and from the provided record {@code carrier} using the provided {@code targetLayout}
+     *          and the provided {@code lookup}}
+     * <p>
+     * This method is a convenience method that automatically will determine MethodHandle instances
+     * for a getter and a setter my matching record components with elements in this group layout
+     * and will then invoke {@linkplain MemoryLayout#mappedLayout(Class, MemoryLayout, MethodHandle, MethodHandle)}
+     *
+     * @param lookup       to use for reflective analysis
+     * @param carrier      class for which to map memory segment from and to
+     * @param <T>          the carrier type the returned accessor converts MemorySegments
+     *                     from and to
+     * @throws IllegalArgumentException if the provided record {@code carrier} directly
+     *         declares any generic type parameter
+     * @throws IllegalArgumentException if the provided record {@code carrier} is
+     *         {@linkplain java.lang.Record}
+     * @throws IllegalArgumentException if the provided record {@code carrier} cannot
+     *         be reflectively analysed using
+     *         the provided {@linkplain MethodHandles.Lookup lookup}
+     * @throws IllegalArgumentException if the provided record {@code carrier} contains
+     *         components for which there are no exact mapping (of names and types) in
+     *         this layout or if the method is otherwise unable to create a mapped layout
+     *         as specified above
+     */
+    <T extends Record> MappedLayout<T> mapToRecord(MethodHandles.Lookup lookup, Class<T> carrier);
 
 }

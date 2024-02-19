@@ -4,6 +4,7 @@ import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
 import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
@@ -485,7 +486,7 @@ public interface SegmentMapper<T> {
      * Reflective analysis on the provided {@code type} will be made using the
      * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
      * <p>
-     * The natural layout will be computed as {@linkplain NaturalLayout#ofRecord(Class)} was
+     * The natural layout will be computed as {@linkplain MemoryLayout#naturalLayout(Class)} was
      * called with the provided {@code type}.
      *
      * @param type to map memory segment from and to
@@ -506,7 +507,7 @@ public interface SegmentMapper<T> {
      * @see #ofRecord(MethodHandles.Lookup, Class, GroupLayout)
      */
     static <T extends Record> SegmentMapper<T> ofRecord(Class<T> type) {
-        return ofRecord(MethodHandles.publicLookup(), type, NaturalLayout.ofRecord(type));
+        return ofRecord(MethodHandles.publicLookup(), type, MemoryLayout.naturalLayout(type));
     }
 
     /**

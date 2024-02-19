@@ -29,7 +29,7 @@
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.mapper.NaturalLayout;
+import java.lang.foreign.MemoryLayout;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,7 +38,7 @@ final class TestNaturalLayout extends BaseTest {
     @Test
     void nulls() {
         assertThrows(NullPointerException.class, () ->
-                NaturalLayout.ofRecord(null)
+                MemoryLayout.naturalLayout(null)
         );
     }
 
@@ -46,20 +46,20 @@ final class TestNaturalLayout extends BaseTest {
 
     @Test
     void fromPoint() {
-        GroupLayout layout = NaturalLayout.ofRecord(Point.class);
+        GroupLayout layout = MemoryLayout.naturalLayout(Point.class);
         assertEquals(POINT_LAYOUT, layout);
     }
 
     @Test
     void fromLine() {
-        GroupLayout layout = NaturalLayout.ofRecord(Line.class);
+        GroupLayout layout = MemoryLayout.naturalLayout(Line.class);
         assertEquals(LINE_LAYOUT, layout);
     }
 
     @Test
     void fromPoints() {
         assertThrows(IllegalArgumentException.class, () ->
-                NaturalLayout.ofRecord(Points.class)
+                MemoryLayout.naturalLayout((Points.class)
         );
     }
 
@@ -76,8 +76,8 @@ final class TestNaturalLayout extends BaseTest {
     @Test
     void fromFoo() {
         assertThrows(IllegalArgumentException.class, () ->
-                    NaturalLayout.ofRecord(Foo.class)
-                );
+                MemoryLayout.naturalLayout(Foo.class)
+        );
     }
 
 

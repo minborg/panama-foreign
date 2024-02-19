@@ -228,41 +228,7 @@ final class TestMappedLayout {
     void point() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
         // Automatically creates a mapped layout that can be used to extract/write records to native memory.
-        MappedLayout<Point> layout = MemoryLayout.mappedLayout(Point.class, POINT_LAYOUT);
-
-        // Gets the point at index 0
-        // The record Point is not backed by a segment. It is not a view!
-        Point point = segment.get(layout, 0);
-        assertEquals(3, point.x());
-        assertEquals(4, point.y());
-
-        // Gets the point at index 1
-        Point point2 = segment.getAtIndex(layout, 1);
-        assertEquals(6, point2.x());
-        assertEquals(0, point2.y());
-
-        // Note that the operations on the SegmentMapper corresponds to those of the MemorySegments
-        // SegmentMapper::get (composites) <-> MemorySegment::get (primitives)
-        // The same is true for getAtIndex(), set(), setAtIndex(), elements()/stream(), etc.
-
-        // Stream all the points in the backing segment
-        List<Point> points = segment.elements(layout)
-                .toList();
-
-        assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
-
-        assertEquals(Point.class, layout.carrier());
-        assertEquals(POINT_LAYOUT, layout.targetLayout());
-
-        segment.setAtIndex(layout, 1L, new Point(-1, -2));
-        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
-    }
-
-    @Test
-    void pointVar2() {
-        MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        // Automatically creates a mapped layout that can be used to extract/write records to native memory.
-        MappedLayout<Point> layout = POINT_LAYOUT.withCarrier(Point.class);
+        MappedLayout<Point> layout = POINT_LAYOUT.mapToRecord(Point.class);
 
         // Gets the point at index 0
         // The record Point is not backed by a segment. It is not a view!
@@ -296,7 +262,7 @@ final class TestMappedLayout {
     void pointVarHandle() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
         // Automatically creates a mapped layout that can be used to extract/write records to native memory.
-        MappedLayout<Point> layout = POINT_LAYOUT.withCarrier(Point.class);
+        MappedLayout<Point> layout = POINT_LAYOUT.mapToRecord(Point.class);
         VarHandle handle = layout.varHandle();
         // Gets the point at index 0
         // The record Point is not backed by a segment. It is not a view!
@@ -305,6 +271,40 @@ final class TestMappedLayout {
         assertEquals(4, point.y());
 
         handle.set(segment, POINT_LAYOUT.byteSize(), new Point(-1, -2));
+        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    }
+
+    @Test
+    void pointNaturalLayout() {
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
+        // Automatically creates a mapped layout that can be used to extract/write records to native memory.
+        MappedLayout<Point> layout = MemoryLayout.mappedLayout(Point.class);
+
+        // Gets the point at index 0
+        // The record Point is not backed by a segment. It is not a view!
+        Point point = segment.get(layout, 0);
+        assertEquals(3, point.x());
+        assertEquals(4, point.y());
+
+        // Gets the point at index 1
+        Point point2 = segment.getAtIndex(layout, 1);
+        assertEquals(6, point2.x());
+        assertEquals(0, point2.y());
+
+        // Note that the operations on the SegmentMapper corresponds to those of the MemorySegments
+        // SegmentMapper::get (composites) <-> MemorySegment::get (primitives)
+        // The same is true for getAtIndex(), set(), setAtIndex(), elements()/stream(), etc.
+
+        // Stream all the points in the backing segment
+        List<Point> points = segment.elements(layout)
+                .toList();
+
+        assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
+
+        assertEquals(Point.class, layout.carrier());
+        assertEquals(POINT_LAYOUT, layout.targetLayout());
+
+        segment.setAtIndex(layout, 1L, new Point(-1, -2));
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
     }
 
@@ -336,7 +336,7 @@ final class TestMappedLayout {
     @Test
     void mappedTinyPoint() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        MappedLayout<Point> layout = MemoryLayout.mappedLayout(Point.class, POINT_LAYOUT);
+        MappedLayout<Point> layout = POINT_LAYOUT.mapToRecord(Point.class);
         MappedLayout<TinyPoint> tinyAccessor = layout
                 .map(TinyPoint.class, TestMappedLayout::toTiny, TestMappedLayout::fromTiny);
 
@@ -393,7 +393,7 @@ final class TestMappedLayout {
     void line() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
         // Also stand-alone
-        MappedLayout<Line> layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Line.class, LINE_LAYOUT);
+        MappedLayout<Line> layout = LINE_LAYOUT.mapToRecord(LOCAL_LOOKUP, Line.class);
 
         Line point = segment.get(layout, 0);
         assertEquals(new Line(new Point(3, 4), new Point(6, 0)), point);
@@ -457,7 +457,7 @@ final class TestMappedLayout {
                 JAVA_INT.withName("after")
         );
 
-        var layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, SequenceBox.class, targetLayout);
+        var layout = targetLayout.mapToRecord(LOCAL_LOOKUP, SequenceBox.class);
 
         SequenceBox sequenceBox = segment.get(layout, 0L);
 
@@ -537,7 +537,7 @@ final class TestMappedLayout {
                 JAVA_INT.withName("after")
         );
 
-        var layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, SequenceBox2D.class, targetLayout);
+        var layout = targetLayout.mapToRecord(LOCAL_LOOKUP, SequenceBox2D.class);
 
 
         SequenceBox2D sequenceBox = segment.get(layout, 0L);
@@ -604,7 +604,7 @@ final class TestMappedLayout {
                 MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
         );
 
-        var layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Polygon.class, targetLayout);
+        var layout = targetLayout.mapToRecord(LOCAL_LOOKUP, Polygon.class);
 
         Polygon triangle = segment.get(layout, 0L);
 
@@ -693,7 +693,7 @@ final class TestMappedLayout {
 
     @Test
     void bean() {
-        var layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        var layout = POINT_LAYOUT.mapToRecord(LOCAL_LOOKUP, Point.class);
 
         MappedLayout<PointBean> beanLayout = layout.map(PointBean.class, TestMappedLayout::pointToBean, TestMappedLayout::beanToPoint);
 
@@ -712,14 +712,14 @@ final class TestMappedLayout {
     @Test
     void genericRecord() {
         assertThrows(IllegalArgumentException.class, () -> {
-            MemoryLayout.mappedLayout(LOCAL_LOOKUP, GenericPoint.class, POINT_LAYOUT);
+            POINT_LAYOUT.mapToRecord(LOCAL_LOOKUP, GenericPoint.class);
         });
     }
 
 
     @Test
     void originDistances() {
-        MappedLayout<Point> layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        MappedLayout<Point> layout = POINT_LAYOUT.mapToRecord(Point.class);
 
         double averageDistance = POINT_SEGMENT.elements(layout)
                 .mapToDouble(this::originDistance)
@@ -787,7 +787,7 @@ final class TestMappedLayout {
 
         MemorySegment segment = MemorySegment.ofArray(IntStream.range(0, noInts).toArray());
 
-        MappedLayout<BunchOfPoints> accessor = MemoryLayout.mappedLayout(LOCAL_LOOKUP, BunchOfPoints.class, targetLayout);
+        MappedLayout<BunchOfPoints> accessor = targetLayout.mapToRecord(LOCAL_LOOKUP, BunchOfPoints.class);
 
         BunchOfPoints bunchOfPoints = segment.get(accessor, 0L);
 
@@ -808,8 +808,53 @@ final class TestMappedLayout {
     }
 
     @Test
+    void lazy() {
+
+        class LazyPoint {
+
+            private static final VarHandle X = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
+            private static final VarHandle Y = POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
+
+            private final MemorySegment segment;
+            private final long offset;
+
+            public LazyPoint(MemorySegment segment, long offset) {
+                this.segment = segment;
+                this.offset = offset;
+            }
+
+            public int x() {
+                return (int) X.get(segment, offset);
+            }
+
+            public void x(int x) {
+                X.set(segment, offset, x);
+            }
+
+            public int y() {
+                return (int) Y.get(segment, offset);
+            }
+
+            public void y(int y) {
+                Y.set(segment, offset, y);
+            }
+
+            @Override
+            public String toString() {
+                return "LazyPoint[x=" + x() + ", y=" + y() + "]";
+            }
+        }
+
+        MappedLayout<LazyPoint> layout = MemoryLayout.mappedLayout(LazyPoint.class, POINT_LAYOUT, s -> new LazyPoint(s, 0L), (s, v) -> {});
+
+        LazyPoint point = POINT_SEGMENT.get(layout, 0);
+
+        assertEquals("LazyPoint[x=3, y=4]", point.toString());
+    }
+
+    @Test
     void invariantChecking() {
-        MappedLayout<Point> layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        MappedLayout<Point> layout = POINT_LAYOUT.mapToRecord(Point.class);
 
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         assertThrows(NullPointerException.class, () -> segment.get((MappedLayout<?>) null, 0L));

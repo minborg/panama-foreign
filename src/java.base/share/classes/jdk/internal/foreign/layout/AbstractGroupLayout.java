@@ -27,10 +27,9 @@ package jdk.internal.foreign.layout;
 
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
-import java.lang.foreign.CompoundAccessor;
 import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MappedLayout;
 import java.lang.foreign.MemoryLayout;
-import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandles;
 import java.util.List;
 import java.util.Objects;
@@ -92,19 +91,14 @@ abstract sealed class AbstractGroupLayout<L extends AbstractGroupLayout<L> & Mem
         return super.withByteAlignment(byteAlignment);
     }
 
-    public <T extends Record> CompoundAccessor<T> accessor(Class<T> carrier) {
-        return accessor(MethodHandles.publicLookup(), carrier);
+    public <T extends Record> MappedLayout<T> mapToRecord(Class<T> carrier) {
+        return mapToRecord(MethodHandles.publicLookup(), carrier);
     }
 
-    public <T extends Record> CompoundAccessor<T> accessor(MethodHandles.Lookup lookup,
-                                                           Class<T> carrier) {
-        SegmentRecordMapper2<T> mapper2 = SegmentRecordMapper2.create(lookup, carrier, (GroupLayout) this);
-        return new CompoundAccessor<>(
-                (GroupLayout) this,
-                carrier,
-                mapper2.getHandle(),
-                mapper2.setHandle()
-        );
+    public <T extends Record> MappedLayout<T> mapToRecord(MethodHandles.Lookup lookup, Class<T> carrier) {
+        Objects.requireNonNull(lookup);
+        Objects.requireNonNull(carrier);
+        return MappedLayoutImpl.of(lookup, carrier, (GroupLayout) this);
     }
 
     /**

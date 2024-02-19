@@ -65,9 +65,20 @@ public final class MappedLayoutImpl<T>
     }
 
     @Override
+    public MappedLayoutImpl<T> withByteAlignment(long byteAlignment) {
+        throw new UnsupportedOperationException("The byte alignment is fixed for mapped layouts and obtained from the target layout");
+    }
+
+    @Override
+    public MethodHandle scaleHandle() {
+        return super.scaleHandle();
+    }
+
+    @Override
     public VarHandle varHandle() {
         if (handle == null) {
             VarHandle newVarHandle = varHandle0();
+            // Only propagate a single witness value
             handle = (VarHandle) CARRIER_VH.compareAndExchange(this, null, newVarHandle);
             if (handle == null) {
                 handle = newVarHandle;
@@ -181,6 +192,7 @@ public final class MappedLayoutImpl<T>
     @Override
     public boolean equals(Object other) {
         return other instanceof MappedLayoutImpl<?> ml &&
+                name().equals(ml.name()) &&
                 targetLayout.equals(ml.targetLayout) &&
                 carrier.equals(ml.carrier) &&
                 super.equals(other);
@@ -188,7 +200,7 @@ public final class MappedLayoutImpl<T>
 
     @Override
     public int hashCode() {
-        return Objects.hash(targetLayout, carrier, super.hashCode());
+        return Objects.hash(name(), targetLayout, carrier, super.hashCode());
     }
 
     @Override
@@ -212,13 +224,9 @@ public final class MappedLayoutImpl<T>
 
     public static <T extends Record> MappedLayout<T> of(MethodHandles.Lookup lookup,
                                                         Class<T> carrier,
-                                                        MemoryLayout targetLayout) {
+                                                        GroupLayout targetLayout) {
 
-        if (!(targetLayout instanceof GroupLayout gl)) {
-            throw new UnsupportedOperationException();
-        }
-
-        var mapper = SegmentRecordMapper2.create(lookup, carrier, gl);
+        var mapper = SegmentRecordMapper2.create(lookup, carrier, targetLayout);
 
         return new MappedLayoutImpl<>(lookup,
                 carrier,

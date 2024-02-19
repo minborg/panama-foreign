@@ -298,9 +298,6 @@ final class TestMappedLayout {
         // Automatically creates a mapped layout that can be used to extract/write records to native memory.
         MappedLayout<Point> layout = POINT_LAYOUT.withCarrier(Point.class);
         VarHandle handle = layout.varHandle();
-
-        Objects.requireNonNull(handle);
-
         // Gets the point at index 0
         // The record Point is not backed by a segment. It is not a view!
         Point point = (Point) handle.get(segment, 0);
@@ -353,6 +350,40 @@ final class TestMappedLayout {
 
         segment.setAtIndex(tinyAccessor, 1, new TinyPoint((byte) -1, (byte) -2));
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    }
+
+    @Test
+    void function() {
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
+        MappedLayout<Point> layout = MemoryLayout.mappedLayout(Point.class, POINT_LAYOUT, this::customReader, this::customWriter);
+
+        Point point = segment.get(layout, 0);
+        assertEquals(3, point.x());
+        assertEquals(4, point.y());
+
+        Point point2 = segment.getAtIndex(layout, 1);
+        assertEquals(6, point2.x());
+        assertEquals(0, point2.y());
+
+        List<Point> points = segment.elements(layout)
+                .toList();
+
+        assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
+
+        assertEquals(Point.class, layout.carrier());
+        assertEquals(POINT_LAYOUT, layout.targetLayout());
+
+        segment.setAtIndex(layout, 1L, new Point(-1, -2));
+        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    }
+
+    Point customReader(MemorySegment segment) {
+        return new Point(segment.get(JAVA_INT, 0), segment.get(JAVA_INT, 4));
+    }
+
+    void customWriter(MemorySegment segment, Point value) {
+        segment.set(JAVA_INT, 0, value.x());
+        segment.set(JAVA_INT, 4, value.y());
     }
 
     // Records of arbitrary nesting depth are supported

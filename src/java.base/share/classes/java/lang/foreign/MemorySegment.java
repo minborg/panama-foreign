@@ -587,25 +587,25 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
     Stream<MemorySegment> elements(MemoryLayout elementLayout);
 
     /**
-     * Returns a sequential {@code Stream} of a compound type {@code T} (whose type matches that
-     * of the provided accessor) in this segment. Calling this method is equivalent to
+     * Returns a sequential {@code Stream} of a mapped type {@code T} (whose type matches that
+     * of the provided mapped layout) in this segment. Calling this method is equivalent to
      * the following code:
      * {@snippet lang=java :
-     * elements(accessor.layout())
-     *     .map(s -> s.get(accessor, 0L));
+     * elements((MemoryLayout)elementLayout)
+     *     .map(s -> s.get(elementLayout, 0L));
      * }
      *
-     * @param accessor the accessor to be used for splitting
-     * @param <T>    the type of the compound elements in the stream
+     * @param elementLayout the mapped layout to be used for splitting
+     * @param <T>    the type of the mapped elements in the stream
      * @return a sequential {@code Stream} of type {@code T}
-     * @throws IllegalArgumentException if {@code accessor.layout().byteSize() == 0}
-     * @throws IllegalArgumentException if {@code byteSize() % accessor.layout().byteSize() != 0}
-     * @throws IllegalArgumentException if {@code accessor.layout().byteSize() % accessor.layout().byteAlignment() != 0}
+     * @throws IllegalArgumentException if {@code elementLayout.byteSize() == 0}
+     * @throws IllegalArgumentException if {@code byteSize() % elementLayout.byteSize() != 0}
+     * @throws IllegalArgumentException if {@code elementLayout.byteSize() % elementLayout.byteAlignment() != 0}
      * @throws IllegalArgumentException if this segment is
      *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided accessor's {@linkplain SegmentMapper#layout()}
+     *         in the provided elementLayout
      */
-    <T> Stream<T> elements(CompoundAccessor<T> accessor);
+    <T> Stream<T> elements(MappedLayout<T> elementLayout);
 
     /**
      * {@return the scope associated with this memory segment}
@@ -1949,34 +1949,34 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
     void set(AddressLayout layout, long offset, MemorySegment value);
 
     /**
-     * Reads a compound value from this segment at the given offset, using the
-     * provided accessor.
+     * Reads a mapped value from this segment at the given offset, using the
+     * provided mapped layout.
      *
-     * @param accessor the accessor to use when reading composite values
+     * @param layout the mapped layout to use when reading mapped values
      * @param offset the offset in bytes (relative to this segment address) at which
      *               this access operation will occur.
-     * @param <T>    the type of the compound value
-     * @return a compound value read from this segment
+     * @param <T>    the type of the mapped value
+     * @return a mapped value read from this segment
      * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
      *         this segment is not {@linkplain Scope#isAlive() alive}
      * @throws WrongThreadException if this method is called from a thread {@code T},
      *         such that {@code isAccessibleBy(T) == false}
      * @throws IllegalArgumentException if the access operation is
      *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided accessor's {@linkplain SegmentMapper#layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - accessor.layout().byteSize()}
+     *         in the provided layout
+     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - layout.byteSize()}
      */
-    <T> T get(CompoundAccessor<T> accessor, long offset);
+    <T> T get(MappedLayout<T> layout, long offset);
 
     /**
-     * Writes a compound value into this segment at the given offset, using the
-     * provided accessor.
+     * Writes a mapped value into this segment at the given offset, using the
+     * provided mapped layout.
      *
-     * @param accessor the accessor to use when writing composite values
+     * @param layout the mapped layout to use when writing mapped values
      * @param offset the offset in bytes (relative to this segment address) at which this
      *               access operation will occur
-     * @param value  the composite value to be written
-     * @param <T>    the type of the compound value
+     * @param value  the mapped value to be written
+     * @param <T>    the type of the mapped value
      * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
      *         this segment is not {@linkplain Scope#isAlive() alive}
      * @throws WrongThreadException if this method is called from a thread {@code T},
@@ -1984,11 +1984,11 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
      * @throws IllegalArgumentException if the access operation is
      *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
      *         in the provided accessor's {@linkplain SegmentMapper#layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - accessor.layout().byteSize()}
+     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - layout.byteSize()}
      * @throws UnsupportedOperationException if this segment is
      *         {@linkplain #isReadOnly() read-only}
      */
-    <T> void set(CompoundAccessor<T> accessor, long offset, T value);
+    <T> void set(MappedLayout<T> layout, long offset, T value);
 
     /**
      * Reads a byte from this segment at the given index, scaled by the given
@@ -2405,51 +2405,51 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
     void setAtIndex(AddressLayout layout, long index, MemorySegment value);
 
     /**
-     * Reads a compound value from this segment at the given index, scaled by the given
-     * accessor's {@linkplain SegmentMapper#layout()} size.
+     * Reads a mapped value from this segment at the given index, scaled by the given
+     * layout size.
      *
-     * @param accessor the accessor of the region of memory to be read.
+     * @param layout the mapped layout of the region of memory to be read.
      * @param index a logical index. The offset in bytes (relative to this
      *              segment address) at which the access operation will occur can be
-     *              expressed as {@code (index * accessor.layout().byteSize())}.
-     * @param <T>   the type of the compound value
-     * @return an int value read from this segment
+     *              expressed as {@code (index * layout.byteSize())}.
+     * @param <T>   the type of the mapped value
+     * @return a mapped value read from this segment
      * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
      *         this segment is not {@linkplain Scope#isAlive() alive}
      * @throws WrongThreadException if this method is called from a thread {@code T},
      *         such that {@code isAccessibleBy(T) == false}
      * @throws IllegalArgumentException if the access operation is
      *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided accessor
-     * @throws IllegalArgumentException if {@code accessor.layout().byteAlignment() > accessor.layout().byteSize()}
-     * @throws IndexOutOfBoundsException if {@code index * accessor.layout().byteSize()} overflows
-     * @throws IndexOutOfBoundsException if {@code index * accessor.layout().byteSize() > byteSize() - accessor.layout().byteSize()}
+     *         in the provided layout
+     * @throws IllegalArgumentException if {@code layout.byteAlignment() > layout.byteSize()}
+     * @throws IndexOutOfBoundsException if {@code index * layout.byteSize()} overflows
+     * @throws IndexOutOfBoundsException if {@code index * layout.byteSize() > byteSize() - layout.byteSize()}
      */
-    <T> T getAtIndex(CompoundAccessor<T> accessor, long index);
+    <T> T getAtIndex(MappedLayout<T> layout, long index);
 
     /**
-     * Writes a compound value into this segment at the given index, scaled by the given
-     * accessor's {@linkplain SegmentMapper#layout()} size.
+     * Writes a mapped value into this segment at the given index, scaled by the given
+     * layout size.
      *
-     * @param accessor the accessor of the region of memory to be written
+     * @param layout the mapped layout of the region of memory to be written
      * @param index a logical index. The offset in bytes (relative to this
      *              segment address) at which the access operation
-     *              will occur can be expressed as {@code (index * accessor.layout().byteSize())}.
-     * @param value the compound value to be written
-     * @param <T>   the type of the compound value
+     *              will occur can be expressed as {@code (index * layout.byteSize())}.
+     * @param value the mapped value to be written
+     * @param <T>   the type of the mapped value
      * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
      *         this segment is not {@linkplain Scope#isAlive() alive}
      * @throws WrongThreadException if this method is called from a thread {@code T},
      *         such that {@code isAccessibleBy(T) == false}
      * @throws IllegalArgumentException if the access operation is
      *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided accessor's {@linkplain SegmentMapper#layout()}
-     * @throws IllegalArgumentException if {@code accessor.layout().byteAlignment() > accessor.layout().byteSize()}
-     * @throws IndexOutOfBoundsException if {@code index * accessor.layout().byteSize()} overflows
-     * @throws IndexOutOfBoundsException if {@code index * accessor.layout().byteSize() > byteSize() - accessor.layout().byteSize()}
+     *         in the provided layout's {@linkplain SegmentMapper#layout()}
+     * @throws IllegalArgumentException if {@code layout.byteAlignment() > layout.byteSize()}
+     * @throws IndexOutOfBoundsException if {@code index * layout.byteSize()} overflows
+     * @throws IndexOutOfBoundsException if {@code index * layout.byteSize() > byteSize() - layout.byteSize()}
      * @throws UnsupportedOperationException if this segment is {@linkplain #isReadOnly() read-only}
      */
-    <T> void setAtIndex(CompoundAccessor<T> accessor, long index, T value);
+    <T> void setAtIndex(MappedLayout<T> layout, long index, T value);
 
     /**
      * Compares the specified object with this memory segment for equality. Returns

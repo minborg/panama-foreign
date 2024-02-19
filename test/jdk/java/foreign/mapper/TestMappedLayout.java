@@ -23,18 +23,17 @@
 
 /*
  * @test
- * @run junit/othervm --enable-native-access=ALL-UNNAMED TestCompoundAccessor
+ * @run junit/othervm --enable-native-access=ALL-UNNAMED TestMappedLayout
  */
 
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.CompoundAccessor;
 import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MappedLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
-import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.reflect.Method;
@@ -50,7 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 // Todo: Check alignment against the layout
 
-final class TestCompoundAccessor {
+final class TestMappedLayout {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
@@ -228,17 +227,17 @@ final class TestCompoundAccessor {
     @Test
     void point() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        // Automatically creates an accessor that can extract/write records to native memory.
-        CompoundAccessor<Point> accessor = POINT_LAYOUT.accessor(Point.class);
+        // Automatically creates a mapped layout that can be used to extract/write records to native memory.
+        MappedLayout<Point> layout = MemoryLayout.mappedLayout(Point.class, POINT_LAYOUT);
 
         // Gets the point at index 0
         // The record Point is not backed by a segment. It is not a view!
-        Point point = segment.get(accessor, 0);
+        Point point = segment.get(layout, 0);
         assertEquals(3, point.x());
         assertEquals(4, point.y());
 
         // Gets the point at index 1
-        Point point2 = segment.getAtIndex(accessor, 1);
+        Point point2 = segment.getAtIndex(layout, 1);
         assertEquals(6, point2.x());
         assertEquals(0, point2.y());
 
@@ -247,22 +246,71 @@ final class TestCompoundAccessor {
         // The same is true for getAtIndex(), set(), setAtIndex(), elements()/stream(), etc.
 
         // Stream all the points in the backing segment
-        List<Point> points = segment.elements(accessor)
+        List<Point> points = segment.elements(layout)
                 .toList();
 
         assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
 
-        assertEquals(accessor.carrier(), Point.class);
-        assertEquals(accessor.layout(), POINT_LAYOUT);
+        assertEquals(Point.class, layout.carrier());
+        assertEquals(POINT_LAYOUT, layout.targetLayout());
 
-        segment.setAtIndex(accessor, 1L, new Point(-1, -2));
+        segment.setAtIndex(layout, 1L, new Point(-1, -2));
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
-
-        if (accessor instanceof CompoundAccessor<?>(var layout, var carrier, _, _)) {
-            System.out.println("layout=" + layout + ", carrier=" + carrier);
-        }
-
     }
+
+    @Test
+    void pointVar2() {
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
+        // Automatically creates a mapped layout that can be used to extract/write records to native memory.
+        MappedLayout<Point> layout = POINT_LAYOUT.withCarrier(Point.class);
+
+        // Gets the point at index 0
+        // The record Point is not backed by a segment. It is not a view!
+        Point point = segment.get(layout, 0);
+        assertEquals(3, point.x());
+        assertEquals(4, point.y());
+
+        // Gets the point at index 1
+        Point point2 = segment.getAtIndex(layout, 1);
+        assertEquals(6, point2.x());
+        assertEquals(0, point2.y());
+
+        // Note that the operations on the SegmentMapper corresponds to those of the MemorySegments
+        // SegmentMapper::get (composites) <-> MemorySegment::get (primitives)
+        // The same is true for getAtIndex(), set(), setAtIndex(), elements()/stream(), etc.
+
+        // Stream all the points in the backing segment
+        List<Point> points = segment.elements(layout)
+                .toList();
+
+        assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
+
+        assertEquals(Point.class, layout.carrier());
+        assertEquals(POINT_LAYOUT, layout.targetLayout());
+
+        segment.setAtIndex(layout, 1L, new Point(-1, -2));
+        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    }
+
+    @Test
+    void pointVarHandle() {
+        MemorySegment segment = newCopyOf(POINT_SEGMENT);
+        // Automatically creates a mapped layout that can be used to extract/write records to native memory.
+        MappedLayout<Point> layout = POINT_LAYOUT.withCarrier(Point.class);
+        VarHandle handle = layout.varHandle();
+
+        Objects.requireNonNull(handle);
+
+        // Gets the point at index 0
+        // The record Point is not backed by a segment. It is not a view!
+        Point point = (Point) handle.get(segment, 0);
+        assertEquals(3, point.x());
+        assertEquals(4, point.y());
+
+        handle.set(segment, POINT_LAYOUT.byteSize(), new Point(-1, -2));
+        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    }
+
 
     // The mapper must exactly match the types! Imagine if not ... FFM is a low level library
     // However, it is very easy to map mappers.
@@ -291,12 +339,12 @@ final class TestCompoundAccessor {
     @Test
     void mappedTinyPoint() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        CompoundAccessor<Point> accessor = POINT_LAYOUT.accessor(Point.class);
-        CompoundAccessor<TinyPoint> tinyAccessor = CompoundAccessor
-                .map(accessor, TinyPoint.class, TestCompoundAccessor::toTiny, TestCompoundAccessor::fromTiny);
+        MappedLayout<Point> layout = MemoryLayout.mappedLayout(Point.class, POINT_LAYOUT);
+        MappedLayout<TinyPoint> tinyAccessor = layout
+                .map(TinyPoint.class, TestMappedLayout::toTiny, TestMappedLayout::fromTiny);
 
         assertEquals(TinyPoint.class, tinyAccessor.carrier());
-        assertEquals(POINT_LAYOUT, tinyAccessor.layout());
+        assertEquals(POINT_LAYOUT, layout.targetLayout());
 
         TinyPoint tp = segment.get(tinyAccessor, 0L);
         assertEquals(new TinyPoint((byte) 3, (byte) 4), tp);
@@ -314,12 +362,12 @@ final class TestCompoundAccessor {
     void line() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
         // Also stand-alone
-        CompoundAccessor<Line> accessor = LINE_LAYOUT.accessor(LOCAL_LOOKUP, Line.class);
+        MappedLayout<Line> layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Line.class, LINE_LAYOUT);
 
-        Line point = segment.get(accessor, 0);
+        Line point = segment.get(layout, 0);
         assertEquals(new Line(new Point(3, 4), new Point(6, 0)), point);
 
-        segment.set(accessor, POINT_LAYOUT.byteSize(), new Line(
+        segment.set(layout, POINT_LAYOUT.byteSize(), new Line(
                 new Point(-3, -4),
                 new Point(-6, 0)
         ));
@@ -372,35 +420,35 @@ final class TestCompoundAccessor {
         // int[]{0, 1, 2, 3}
         var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 3).toArray());
 
-        var layout = MemoryLayout.structLayout(
+        var targetLayout = MemoryLayout.structLayout(
                 JAVA_INT.withName("before"),
                 MemoryLayout.sequenceLayout(2, JAVA_INT).withName("ints"),
                 JAVA_INT.withName("after")
         );
 
-        var accessor = layout.accessor(LOCAL_LOOKUP, SequenceBox.class);
+        var layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, SequenceBox.class, targetLayout);
 
-        SequenceBox sequenceBox = segment.get(accessor, 0L);
+        SequenceBox sequenceBox = segment.get(layout, 0L);
 
         assertEquals(new SequenceBox(0, new int[]{1, 2}, 3), sequenceBox);
 
         var dstSegment = newCopyOf(segment);
-        dstSegment.set(accessor, 0L, new SequenceBox(10, new int[]{11, 12}, 13));
+        dstSegment.set(layout, 0L, new SequenceBox(10, new int[]{11, 12}, 13));
 
         MapperTestUtil.assertContentEquals(IntStream.rangeClosed(10, 13).toArray(), dstSegment);
 
         assertThrows(NullPointerException.class, () -> {
             // The array is null
-            dstSegment.set(accessor, 0, new SequenceBox(10, null, 13));
+            dstSegment.set(layout, 0, new SequenceBox(10, null, 13));
         });
 
         assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
-            dstSegment.set(accessor, 0L, new SequenceBox(10, new int[]{11}, 13));
+            dstSegment.set(layout, 0L, new SequenceBox(10, new int[]{11}, 13));
         });
         assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
-            dstSegment.set(accessor, 0L, new SequenceBox(10, new int[]{11, 12, 13}, 13));
+            dstSegment.set(layout, 0L, new SequenceBox(10, new int[]{11, 12, 13}, 13));
         });
     }
 
@@ -450,7 +498,7 @@ final class TestCompoundAccessor {
     public void testSequenceBox2D() {
         var segment = MemorySegment.ofArray(IntStream.range(0, 1 + 2 * 3 + 1).toArray());
 
-        var layout = MemoryLayout.structLayout(
+        var targetLayout = MemoryLayout.structLayout(
                 JAVA_INT.withName("before"),
                 MemoryLayout.sequenceLayout(2,
                         MemoryLayout.sequenceLayout(3, JAVA_INT)
@@ -458,30 +506,30 @@ final class TestCompoundAccessor {
                 JAVA_INT.withName("after")
         );
 
-        var accessor = layout.accessor(LOCAL_LOOKUP, SequenceBox2D.class);
+        var layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, SequenceBox2D.class, targetLayout);
 
 
-        SequenceBox2D sequenceBox = segment.get(accessor, 0L);
+        SequenceBox2D sequenceBox = segment.get(layout, 0L);
 
         assertEquals(new SequenceBox2D(0, new int[][]{{1, 2, 3}, {4, 5, 6}}, 7), sequenceBox);
 
         var dstSegment = newCopyOf(segment);
-        dstSegment.set(accessor, 0L, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15, 16}}, 17));
+        dstSegment.set(layout, 0L, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15, 16}}, 17));
 
         MapperTestUtil.assertContentEquals(IntStream.range(0, 1 + 2 * 3 + 1).map(i -> i + 10).toArray(), dstSegment);
 
         assertThrows(NullPointerException.class, () -> {
             // The array is null
-            dstSegment.set(accessor, 0L, new SequenceBox2D(10, null, 13));
+            dstSegment.set(layout, 0L, new SequenceBox2D(10, null, 13));
         });
 
         assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
-            dstSegment.set(accessor, 0L, new SequenceBox2D(10, new int[][]{{11, 12, 13}}, 13));
+            dstSegment.set(layout, 0L, new SequenceBox2D(10, new int[][]{{11, 12, 13}}, 13));
         });
         assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
-            dstSegment.set(accessor, 0L, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15}}, 13));
+            dstSegment.set(layout, 0L, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15}}, 13));
         });
     }
 
@@ -521,34 +569,34 @@ final class TestCompoundAccessor {
 
         var segment = MemorySegment.ofArray(new int[]{1, 1, 2, 2, 3, 1});
 
-        GroupLayout layout = MemoryLayout.structLayout(
+        GroupLayout targetLayout = MemoryLayout.structLayout(
                 MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
         );
 
-        var accessor = layout.accessor(LOCAL_LOOKUP, Polygon.class);
+        var layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Polygon.class, targetLayout);
 
-        Polygon triangle = segment.get(accessor, 0L);
+        Polygon triangle = segment.get(layout, 0L);
 
         assertEquals(new Polygon(new Point[]{new Point(1,1), new Point(2,2), new Point(3, 1)}), triangle);
 
         var dstSegment = newCopyOf(segment);
-        dstSegment.set(accessor, 0L, new Polygon(new Point[]{new Point(11,11), new Point(12,12), new Point(13, 11)}));
+        dstSegment.set(layout, 0L, new Polygon(new Point[]{new Point(11,11), new Point(12,12), new Point(13, 11)}));
 
         MapperTestUtil.assertContentEquals(new int[]{11, 11, 12, 12, 13, 11}, dstSegment);
 
         assertThrows(NullPointerException.class, () -> {
             // The array is null
-            dstSegment.set(accessor, 0L, new Polygon(null));
+            dstSegment.set(layout, 0L, new Polygon(null));
         });
 
         assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
-            dstSegment.set(accessor, 0L, new Polygon(new Point[]{new Point(1, 1), new Point(2, 2)}));
+            dstSegment.set(layout, 0L, new Polygon(new Point[]{new Point(1, 1), new Point(2, 2)}));
         });
         assertThrows(IllegalArgumentException.class, () -> {
             // The array is not of correct size
             Point[] points = IntStream.range(0, 4).mapToObj(_ -> new Point(1, 1)).toArray(Point[]::new);
-            dstSegment.set(accessor, 0L,  new Polygon(points));
+            dstSegment.set(layout, 0L,  new Polygon(points));
         });
 
     }
@@ -614,11 +662,12 @@ final class TestCompoundAccessor {
 
     @Test
     void bean() {
-        CompoundAccessor<Point> accessor = POINT_LAYOUT.accessor(LOCAL_LOOKUP, Point.class);
-        CompoundAccessor<PointBean> beanAccessor = CompoundAccessor.map(accessor, PointBean.class, TestCompoundAccessor::pointToBean, TestCompoundAccessor::beanToPoint);
+        var layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+
+        MappedLayout<PointBean> beanLayout = layout.map(PointBean.class, TestMappedLayout::pointToBean, TestMappedLayout::beanToPoint);
 
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
-        PointBean pointBean = segment.get(beanAccessor, 0L);
+        PointBean pointBean = segment.get(beanLayout, 0L);
         assertEquals("PointBean[x=3, y=4]", pointBean.toString());
     }
 
@@ -632,16 +681,16 @@ final class TestCompoundAccessor {
     @Test
     void genericRecord() {
         assertThrows(IllegalArgumentException.class, () -> {
-            POINT_LAYOUT.accessor(LOCAL_LOOKUP, GenericPoint.class);
+            MemoryLayout.mappedLayout(LOCAL_LOOKUP, GenericPoint.class, POINT_LAYOUT);
         });
     }
 
 
     @Test
     void originDistances() {
-        CompoundAccessor<Point> accessor = POINT_LAYOUT.accessor(LOCAL_LOOKUP, Point.class);
+        MappedLayout<Point> layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
 
-        double averageDistance = POINT_SEGMENT.elements(accessor)
+        double averageDistance = POINT_SEGMENT.elements(layout)
                 .mapToDouble(this::originDistance)
                 .average()
                 .orElse(0);
@@ -699,15 +748,15 @@ final class TestCompoundAccessor {
     // This test is to make sure the iterative setter works (as opposed to the composed one).
     @Test
     void bunch() {
-        StructLayout layout = MemoryLayout.structLayout(IntStream.range(0, 8)
-                .mapToObj(i -> POINT_LAYOUT.withName("p"+i))
+        StructLayout targetLayout = MemoryLayout.structLayout(IntStream.range(0, 8)
+                .mapToObj(i -> POINT_LAYOUT.withName("p" + i))
                 .toArray(MemoryLayout[]::new));
 
-        int noInts = (int) (layout.byteSize() / JAVA_INT.byteSize());
+        int noInts = (int) (targetLayout.byteSize() / JAVA_INT.byteSize());
 
         MemorySegment segment = MemorySegment.ofArray(IntStream.range(0, noInts).toArray());
 
-        CompoundAccessor<BunchOfPoints> accessor = layout.accessor(LOCAL_LOOKUP, BunchOfPoints.class);
+        MappedLayout<BunchOfPoints> accessor = MemoryLayout.mappedLayout(LOCAL_LOOKUP, BunchOfPoints.class, targetLayout);
 
         BunchOfPoints bunchOfPoints = segment.get(accessor, 0L);
 
@@ -717,7 +766,7 @@ final class TestCompoundAccessor {
         ) ;
         assertEquals(expected, bunchOfPoints);
 
-        MemorySegment dstSegment = Arena.ofAuto().allocate(layout);
+        MemorySegment dstSegment = Arena.ofAuto().allocate(targetLayout);
 
         dstSegment.set(accessor, 0, new BunchOfPoints(
                 new Point(10 ,11), new Point(12, 13), new Point(14, 15), new Point(16, 17),
@@ -729,13 +778,14 @@ final class TestCompoundAccessor {
 
     @Test
     void invariantChecking() {
-                CompoundAccessor<Point> accessor = POINT_LAYOUT.accessor(LOCAL_LOOKUP, Point.class);
+        MappedLayout<Point> layout = MemoryLayout.mappedLayout(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        assertThrows(NullPointerException.class, () -> segment.get((CompoundAccessor<?>) null, 0L));
-        assertThrows(IndexOutOfBoundsException.class, () -> segment.get(accessor, -1));
-        assertThrows(IndexOutOfBoundsException.class, () -> segment.get(accessor, segment.byteSize()));
+        assertThrows(NullPointerException.class, () -> segment.get((MappedLayout<?>) null, 0L));
+        assertThrows(IndexOutOfBoundsException.class, () -> segment.get(layout, -1));
+        assertThrows(IndexOutOfBoundsException.class, () -> segment.get(layout, segment.byteSize()));
         MemorySegment smallSegment = MemorySegment.ofArray(new int[]{3});
-        assertThrows(IndexOutOfBoundsException.class, () -> smallSegment.get(accessor, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> smallSegment.get(layout, 0));
     }
 
     // Support methods

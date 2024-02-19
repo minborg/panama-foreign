@@ -1574,6 +1574,11 @@ abstract class MethodHandleImpl {
             }
 
             @Override
+            public VarHandle memorySegmentMappedHandle(long length, long alignmentMask, MethodHandle getter, MethodHandle setter) {
+                return VarHandles.memorySegmentMappedHandle(length, alignmentMask, getter, setter);
+            }
+
+            @Override
             public MethodHandle nativeMethodHandle(NativeEntryPoint nep) {
                 return NativeMethodHandle.make(nep);
             }

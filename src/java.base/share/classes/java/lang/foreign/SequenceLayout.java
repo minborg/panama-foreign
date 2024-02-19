@@ -165,4 +165,7 @@ public sealed interface SequenceLayout extends MemoryLayout permits SequenceLayo
      *         {@code byteAlignment < elementLayout().byteAlignment()}
      */
     SequenceLayout withByteAlignment(long byteAlignment);
+
+
+
 }

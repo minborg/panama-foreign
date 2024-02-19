@@ -47,7 +47,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 public abstract sealed class AbstractLayout<L extends AbstractLayout<L> & MemoryLayout>
-        permits AbstractGroupLayout, PaddingLayoutImpl, SequenceLayoutImpl, ValueLayouts.AbstractValueLayout {
+        permits AbstractGroupLayout, MappedLayoutImpl, PaddingLayoutImpl, SequenceLayoutImpl, ValueLayouts.AbstractValueLayout {
 
     private final long byteSize;
     private final long byteAlignment;

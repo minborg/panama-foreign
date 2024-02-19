@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,6 @@
 
 package java.lang.foreign;
 
-import java.lang.foreign.mapper.SegmentMapper;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
@@ -411,28 +410,28 @@ public interface SegmentAllocator {
     }
 
     /**
-     * {@return a new memory segment initialized with the provided compound value}
+     * {@return a new memory segment initialized with the provided mapped value}
      * <p>
      * The size of the allocated memory segment is the
-     * {@linkplain MemoryLayout#byteSize() size} of the given accessor's {@linkplain SegmentMapper#layout()}.
+     * {@linkplain MemoryLayout#byteSize() size} of the given layout.
      * The given value is written into the segment according to the byte order and alignment constraint of
-     * the given accessor's {@linkplain SegmentMapper#layout()}.
+     * the given layout.
      *
      * @implSpec The default implementation is equivalent to:
      * {@snippet lang=java :
-     *  MemorySegment seg = allocate(Objects.requireNonNull(accessor).layout());
-     *  seg.set(accessor, 0, value);
+     *  MemorySegment seg = allocate(Objects.requireNonNull(layout));
+     *  seg.set(layout, 0, value);
      *  return seg;
      * }
      *
-     * @param accessor the accessor of the block of memory to be allocated
-     * @param value    the compound value to be set in the newly allocated memory segment
-     * @param <T>      the type of the compound value
+     * @param layout   the mapped layout of the block of memory to be allocated
+     * @param value    the mapped value to be set in the newly allocated memory segment
+     * @param <T>      the type of the mapped value
      */
-    default <T> MemorySegment allocateFrom(CompoundAccessor<T> accessor, T value) {
-        Objects.requireNonNull(accessor);
-        MemorySegment seg = allocateNoInit(accessor.layout());
-        seg.set(accessor, 0, value);
+    default <T> MemorySegment allocateFrom(MappedLayout<T> layout, T value) {
+        Objects.requireNonNull(layout);
+        MemorySegment seg = allocateNoInit(layout);
+        seg.set(layout, 0, value);
         return seg;
     }
 
@@ -626,42 +625,41 @@ public interface SegmentAllocator {
     }
 
     /**
-     * {@return a new memory segment initialized with the compound elements in
-     *          the provided collection}
+     * {@return a new memory segment initialized with the mapped elements in
+     *          the provided sequenced collection}
      * <p>
      * The size of the allocated memory segment is
-     * {@code accessor.layout().byteSize() * elements.length}. The contents of the
+     * {@code layout.byteSize() * elements.size()}. The contents of the
      * source collection is written into the result segment element by element, according
-     * to the byte order and alignment constraint of the given accessor's
-     * {@linkplain SegmentMapper#layout()}.
+     * to the byte order and alignment constraint of the given layout.
      *
      * @implSpec The default implementation for this method is equivalent to the
      *           following code:
      * {@snippet lang = java:
-     * Objects.requireNonNull(accessor);
+     * Objects.requireNonNull(layout);
      * Objects.requireNonNull(elements);
-     * MemorySegment seg = allocateNoInit(accessor.layout(), elements.size());
+     * MemorySegment seg = allocateNoInit(layout, elements.size());
      * int i = 0;
      * for (T element : elements) {
-     *     seg.setAtIndex(accessor, i++, element);
+     *     seg.setAtIndex(layout, i++, element);
      * }
      * return seg;
      *}
-     * @param accessor  the accessor with an element layout of the array to be allocated
-     * @param elements  the compound elements to be copied to the newly allocated
+     * @param layout  the layout with an element layout of the array to be allocated
+     * @param elements  the mapped elements to be copied to the newly allocated
      *                  memory block
-     * @param <T>       the type of the compound value
+     * @param <T>       the type of the mapped value
      * @throws IllegalArgumentException if
-     *         {@code accessor.layout().byteAlignment() > accessor.layout().byteSize()}
+     *         {@code layout.byteAlignment() > layout.byteSize()}
      */
     @ForceInline
-    default <T> MemorySegment allocateFrom(CompoundAccessor<T> accessor, SequencedCollection<? extends T> elements) {
-        Objects.requireNonNull(accessor);
+    default <T> MemorySegment allocateFrom(MappedLayout<T> layout, SequencedCollection<? extends T> elements) {
+        Objects.requireNonNull(layout);
         Objects.requireNonNull(elements);
-        MemorySegment seg = allocateNoInit(accessor.layout(), elements.size());
+        MemorySegment seg = allocateNoInit(layout, elements.size());
         int i = 0;
         for (T element : elements) {
-            seg.setAtIndex(accessor, i++, element);
+            seg.setAtIndex(layout, i++, element);
         }
         return seg;
     }

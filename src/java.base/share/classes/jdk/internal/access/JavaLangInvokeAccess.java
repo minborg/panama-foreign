@@ -78,6 +78,12 @@ public interface JavaLangInvokeAccess {
     VarHandle memorySegmentViewHandle(Class<?> carrier, long alignmentMask, ByteOrder order);
 
     /**
+     * Returns a var handle view of a given memory segment.
+     * Used by {@code MappedLayout}.
+     */
+    VarHandle memorySegmentMappedHandle(long length, long alignmentMask,  MethodHandle getter, MethodHandle setter);
+
+    /**
      * Var handle carrier combinator.
      * Used by {@code java.lang.invoke.MethodHandles}.
      */

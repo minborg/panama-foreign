@@ -26,14 +26,19 @@
 package java.lang.foreign;
 
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
+import java.util.function.LongFunction;
 import java.util.stream.Stream;
 
 import jdk.internal.foreign.LayoutPath;
 import jdk.internal.foreign.LayoutPath.PathElementImpl.PathKind;
 import jdk.internal.foreign.Utils;
+import jdk.internal.foreign.layout.MappedLayoutImpl;
 import jdk.internal.foreign.layout.MemoryLayoutUtil;
 import jdk.internal.foreign.layout.PaddingLayoutImpl;
 import jdk.internal.foreign.layout.SequenceLayoutImpl;
@@ -450,7 +455,7 @@ import jdk.internal.foreign.layout.UnionLayoutImpl;
  * @since 22
  */
 public sealed interface MemoryLayout
-        permits SequenceLayout, GroupLayout, PaddingLayout, ValueLayout {
+        permits GroupLayout, MappedLayout, PaddingLayout, SequenceLayout, ValueLayout {
 
     /**
      * {@return the layout size, in bytes}
@@ -1074,4 +1079,136 @@ public sealed interface MemoryLayout
                 .map(Objects::requireNonNull)
                 .toList());
     }
+
+    /**
+     * {@return a mapped layout that can be used to map {@linkplain MemorySegment memory segments}
+     *          to and from the provided {@code type} using this {@code targetLayout}}
+     * <p>
+     * Reflective analysis on the provided {@code type} will be made using the
+     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
+     *
+     * @param carrier      class for which to map memory segment from and to
+     * @param targetLayout to match components in the provided carrier against
+     * @param <T>          the carrier type the returned accessor converts MemorySegments
+     *                     from and to
+     * @throws IllegalArgumentException if the provided record {@code type} directly
+     *         declares any generic type parameter
+     * @throws IllegalArgumentException if a provided record {@code type} is
+     *         {@linkplain java.lang.Record}
+     * @throws IllegalArgumentException if the {@code type} cannot
+     *         be reflectively analysed using
+     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
+     * @throws IllegalArgumentException if the provided interface {@code type} contains
+     *         components for which there are no exact mapping (of names and types) in
+     *         the provided {@code layout} or if the provided {@code type} is not public or
+     *         if the method is otherwise unable to create a segment mapper as specified above
+     * @see #mappedLayout(MethodHandles.Lookup, Class, MemoryLayout)
+     */
+    static <T extends Record> MappedLayout<T> mappedLayout(Class<T> carrier,
+                                                           MemoryLayout targetLayout) {
+        Objects.requireNonNull(targetLayout);
+        Objects.requireNonNull(carrier);
+        return mappedLayout(MethodHandles.publicLookup(), carrier, targetLayout);
+    }
+
+    /**
+     * {@return a mapped layout that can be used to map {@linkplain MemorySegment memory segments}
+     *          to and from the provided record {@code type} using the provided {@code targetLayout}
+     *          and the provided {@code lookup}}
+     *
+     * @param lookup       to use for reflective analysis
+     * @param carrier      class for which to map memory segment from and to
+     * @param targetLayout to match components in the provided carrier against
+     * @param <T>          the carrier type the returned accessor converts MemorySegments
+     *                     from and to
+     * @throws IllegalArgumentException if the provided record {@code type} directly
+     *         declares any generic type parameter
+     * @throws IllegalArgumentException if the provided record {@code type} is
+     *         {@linkplain java.lang.Record}
+     * @throws IllegalArgumentException if the provided record {@code type} cannot
+     *         be reflectively analysed using
+     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
+     * @throws IllegalArgumentException if the provided interface {@code type} contains
+     *         components for which there are no exact mapping (of names and types) in
+     *         the provided {@code layout} or if the provided {@code type} is not public or
+     *         if the method is otherwise unable to create a segment mapper as specified above
+     */
+    static <T extends Record> MappedLayout<T> mappedLayout(MethodHandles.Lookup lookup,
+                                                           Class<T> carrier,
+                                                           MemoryLayout targetLayout) {
+        Objects.requireNonNull(lookup);
+        Objects.requireNonNull(carrier);
+        Objects.requireNonNull(targetLayout);
+        return MappedLayoutImpl.of(lookup, carrier, targetLayout);
+    }
+
+    /**
+     * {@return a mapped layout that can be used to map {@linkplain MemorySegment memory segments}
+     *          to and from the provided {@code type} using the provided {@code getter} and
+     *          {@code setter} handles}
+     *
+     * @param carrier      class for which to map memory segment from and to
+     * @param targetLayout to use when determining size and alignment
+     * @param getter       to invoke when reading from a memory segment to create a new carrier instance
+     * @param setter       to invoke when writing a carrier instance into a memory segment
+     * @param <T>          the carrier type the returned accessor converts MemorySegments from and to
+     * @throws IllegalArgumentException if the provided record {@code type} directly
+     *         declares any generic type parameter
+     * @throws IllegalArgumentException if a provided record {@code type} is
+     *         {@linkplain java.lang.Record}
+     * @throws IllegalArgumentException if the {@code type} cannot
+     *         be reflectively analysed using
+     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
+     * @throws IllegalArgumentException if the provided interface {@code type} contains
+     *         components for which there are no exact mapping (of names and types) in
+     *         the provided {@code layout} or if the provided {@code type} is not public or
+     *         if the method is otherwise unable to create a segment mapper as specified above
+     */
+    static <T> MappedLayout<T> mappedLayout(Class<T> carrier,
+                                            MemoryLayout targetLayout,
+                                            MethodHandle getter,
+                                            MethodHandle setter) {
+        Objects.requireNonNull(carrier);
+        Objects.requireNonNull(targetLayout);
+        Objects.requireNonNull(getter);
+        Objects.requireNonNull(setter);
+        return MappedLayoutImpl.of(carrier, targetLayout, getter, setter);
+    }
+
+    /**
+     * {@return a mapped layout that can be used to map {@linkplain MemorySegment memory segments}
+     *          to and from the provided {@code type} using the provided {@code getter} and
+     *          {@code setter} functions}
+     *
+     * @param carrier      class for which to map memory segment from and to
+     * @param targetLayout to use when determining size and alignment
+     * @param getter       to invoke when reading from a memory segment to create
+     *                     a new carrier instance
+     * @param setter       to invoke when writing a carrier instance into a memory segment
+     * @param <T>          the carrier type the returned accessor converts MemorySegments
+     *                     from and to
+     * @throws IllegalArgumentException if the provided record {@code type} directly
+     *         declares any generic type parameter
+     * @throws IllegalArgumentException if a provided record {@code type} is
+     *         {@linkplain java.lang.Record}
+     * @throws IllegalArgumentException if the {@code type} cannot
+     *         be reflectively analysed using
+     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
+     * @throws IllegalArgumentException if the provided interface {@code type} contains
+     *         components for which there are no exact mapping (of names and types) in
+     *         the provided {@code layout} or if the provided {@code type} is not public or
+     *         if the method is otherwise unable to create a segment mapper as specified above
+     */
+    // Todo: Consider ObjLongFunction and "ObjLongObjConsumer"
+    static <T> MappedLayout<T> mappedLayout(Class<T> carrier,
+                                            MemoryLayout targetLayout,
+                                            Function<? super MemorySegment, ? extends T> getter,
+                                            BiConsumer<? super MemorySegment, ? super T> setter) {
+        Objects.requireNonNull(carrier);
+        Objects.requireNonNull(targetLayout);
+        Objects.requireNonNull(getter);
+        Objects.requireNonNull(setter);
+        return MappedLayoutImpl.of(carrier, targetLayout, getter, setter);
+    }
+
 }

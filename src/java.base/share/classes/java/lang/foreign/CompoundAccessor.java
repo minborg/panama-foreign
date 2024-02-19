@@ -28,6 +28,7 @@ package java.lang.foreign;
 import jdk.internal.foreign.mapper.MapperUtil;
 
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -105,8 +106,46 @@ public record CompoundAccessor<T>(GroupLayout layout,
                                                  Class<R> newCarrier,
                                                  Function<? super T, ? extends R> toMapper,
                                                  Function<? super R, ? extends T> fromMapper) {
-        return MapperUtil.map(original, newCarrier, toMapper, fromMapper);
+        throw new UnsupportedOperationException();
+        //return MapperUtil.map(original, newCarrier, toMapper, fromMapper);
     }
 
+    /**
+     * {@return a new method handle that converts the MemorySegment returned by the provided
+     *          {@code target} to a compound value of the provided {@code accessor}}
+     *
+     * @param accessor to use when converting
+     * @param target for which to change the return type
+     * @param <T> the type of the compound accessor
+     * @throws IllegalArgumentException if the target method handle does not return a MemorySegment
+     */
+    public static <T> MethodHandle filterReturnValue(CompoundAccessor<T> accessor, MethodHandle target) {
+        if (target.type().returnType() != MemorySegment.class) {
+            throw new IllegalArgumentException("The target method handle does not return a MemorySegment: " + target);
+        }
+        MethodHandle adaptor = MethodHandles.insertArguments(accessor.getter(), 1, 0L);
+        return MethodHandles.filterReturnValue(target, adaptor);
+    }
+
+    /**
+     * {@return a new method handle that converts a MemorySegment argument at the provided
+     *          {@code pos} for the provided {@code target} from a compound value of
+     *          the provided {@code accessor}}
+     *
+     * @param accessor to use when converting
+     * @param target for which to change a parameter
+     * @param pos    the position for the parameter to change
+     * @param <T> the type of the compound accessor
+     * @throws IllegalArgumentException if the target method handle does not have
+     *         a parameter of type MemorySegment at the provided {@code pos}
+     */
+    public static <T> MethodHandle filterArgument(CompoundAccessor<T> accessor, MethodHandle target, int pos) {
+        if (target.type().parameterType(pos) != MemorySegment.class) {
+            throw new IllegalArgumentException(
+                    "The target method handle does not have a parameter of type MemorySegment at " + pos + ": " + target);
+        }
+        // (x, y, MemorySegment, z)R -> (SegmentAllocator, x, y, T, z)R similar to how CaptureCallState adds an initial MS
+        throw new UnsupportedOperationException("Fix me");
+    }
 
 }

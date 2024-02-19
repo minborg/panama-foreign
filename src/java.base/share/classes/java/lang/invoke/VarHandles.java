@@ -339,6 +339,10 @@ final class VarHandles {
         }
     }
 
+    static VarHandle memorySegmentMappedHandle(long length, long alignmentMask, MethodHandle getter, MethodHandle setter) {
+        return new VarHandleMethodHandleDelegator(length, alignmentMask, VAR_HANDLE_SEGMENT_FORCE_EXACT, getter, setter);
+    }
+
     private static VarHandle maybeAdapt(VarHandle target) {
         if (!VAR_HANDLE_IDENTITY_ADAPT) return target;
         target = filterValue(target,

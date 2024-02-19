@@ -256,6 +256,8 @@ final class TestMappedLayout {
 
         segment.setAtIndex(layout, 1L, new Point(-1, -2));
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+
+        assertEquals("4%LTestMappedLayout$Point;8", layout.toString());
     }
 
     @Test

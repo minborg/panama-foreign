@@ -2,6 +2,7 @@ package java.lang.foreign;
 
 import jdk.internal.foreign.layout.MappedLayoutImpl;
 
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.VarHandle;
 import java.util.function.Function;
 
@@ -31,10 +32,9 @@ public sealed interface MappedLayout<T> extends MemoryLayout permits MappedLayou
 
     /**
      * {@inheritDoc}
-     * @throws IllegalArgumentException {@inheritDoc}
-     * @throws IllegalArgumentException if {@code byteAlignment} is less than {@code M},
-     *         where {@code M} is the maximum alignment constraint in any of the
-     *         member layouts associated with this group layout
+     * @throws UnsupportedOperationException will always be thrown because this is
+     *         an inherently unsupported operation on mapped layouts. Byte alignment
+     *         can instead be defined using the target layout.
      */
     @Override
     MappedLayout<T> withByteAlignment(long byteAlignment);
@@ -64,7 +64,8 @@ public sealed interface MappedLayout<T> extends MemoryLayout permits MappedLayou
      *
      * @apiNote The returned var handle features certain
      *          <a href="MemoryLayout.html#access-mode-restrictions">access mode restrictions</a>
-     *          common to all memory access var handles derived from memory layouts.
+     *          common to all memory access var handles derived from memory layouts. Only
+     *          plain memory access is supported by the returned VarHandle.
      *
      * @see MemoryLayout#varHandle(PathElement...)
      */
@@ -76,6 +77,24 @@ public sealed interface MappedLayout<T> extends MemoryLayout permits MappedLayou
     MemoryLayout targetLayout();
 
     /**
+     * {@return a new mapped layout that would apply the provided {@code getterFilter} after
+     *          performing get operations on a memory segment and that would apply the
+     *          provided {@code setterFilter} before performing set operations on a
+     *          memory segment}
+     * <p>
+     * It should be noted that the type R can represent almost any class and is not
+     * restricted to records.
+     *
+     * @param newCarrier   the new type the returned mapper shall use
+     * @param getterFilter to apply after get operations using this mapped layout
+     * @param setterFilter to apply before set operations using this mapped layout
+     * @param <R>          the carrier type of the new mapped layout
+     */
+    <R> MappedLayout<R> map(Class<R> newCarrier,
+                            MethodHandle getterFilter,
+                            MethodHandle setterFilter);
+
+    /**
      * {@return a new mapped layout that would apply the provided {@code toMapper} after
      *          performing get operations on a memory segment and that would apply the
      *          provided {@code fromMapper} before performing set operations on a
@@ -83,15 +102,19 @@ public sealed interface MappedLayout<T> extends MemoryLayout permits MappedLayou
      * <p>
      * It should be noted that the type R can represent almost any class and is not
      * restricted to records.
+     * <p>
+     * This is a convenience method for the more low level
+     * {@linkplain #map(Class, MethodHandle, MethodHandle)} method.
      *
-     * @param  newCarrier the new type the returned mapper shall use
-     * @param toMapper    to apply after get operations on this segment mapper
-     * @param fromMapper  to apply before set operations on this segment mapper
-     * @param <R>         the type of the new segment mapper
-     * @throws UnsupportedOperationException if this is an interface mapper.
+     * @param newCarrier  the new type the returned mapper shall use
+     * @param toMapper    to apply after get operations using this mapped layout
+     * @param fromMapper  to apply before set operations using this mapped layout
+     * @param <R>         the carrier type of the new mapped layout
+     * @see #map(Class, MethodHandle, MethodHandle)
      */
     <R> MappedLayout<R> map(Class<R> newCarrier,
                             Function<? super T, ? extends R> toMapper,
                             Function<? super R, ? extends T> fromMapper);
+
 
 }

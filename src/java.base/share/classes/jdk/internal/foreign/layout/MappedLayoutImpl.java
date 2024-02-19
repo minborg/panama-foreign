@@ -70,8 +70,11 @@ public final class MappedLayoutImpl<T>
     }
 
     @Override
-    public MethodHandle scaleHandle() {
-        return super.scaleHandle();
+    public VarHandle varHandle(PathElement... elements) {
+        if (elements.length == 0) {
+            return varHandle();
+        }
+        return targetLayout.varHandle(elements);
     }
 
     @Override
@@ -89,12 +92,37 @@ public final class MappedLayoutImpl<T>
     }
 
     @Override
+    public long byteOffset(PathElement... elements) {
+        return targetLayout.byteOffset(elements);
+    }
+
+    @Override
+    public MethodHandle byteOffsetHandle(PathElement... elements) {
+        return targetLayout.byteOffsetHandle(elements);
+    }
+
+    @Override
+    public VarHandle arrayElementVarHandle(PathElement... elements) {
+        return targetLayout.arrayElementVarHandle(elements);
+    }
+
+    @Override
+    public MethodHandle sliceHandle(PathElement... elements) {
+        return targetLayout.sliceHandle(elements);
+    }
+
+    @Override
+    public MemoryLayout select(PathElement... elements) {
+        return targetLayout.select(elements);
+    }
+
+    @Override
     public MemoryLayout targetLayout() {
         return targetLayout;
     }
 
     @Override
-    public <R> MappedLayout<R> map(Class<R> newType,
+    public <R> MappedLayout<R> map(Class<R> newCarrier,
                                    Function<? super T, ? extends R> toMapper,
                                    Function<? super R, ? extends T> fromMapper) {
 
@@ -102,13 +130,20 @@ public final class MappedLayoutImpl<T>
 
         MethodHandle getterFilter = findStatic("mapTo", methodType);
         getterFilter = MethodHandles.insertArguments(getterFilter, 0, toMapper);
-        MethodHandle mappedGetter = MethodHandles.filterReturnValue(getter, getterFilter);
 
         MethodHandle setterFilter = findStatic("mapFrom", methodType);
         setterFilter = MethodHandles.insertArguments(setterFilter, 0, fromMapper);
-        MethodHandle mappedSetter = MethodHandles.filterArguments(setter, 2, setterFilter);
 
-        return new MappedLayoutImpl<>(lookup, newType, targetLayout, mappedGetter, mappedSetter, byteAlignment(), name());
+        return map(newCarrier, getterFilter, setterFilter);
+    }
+
+    @Override
+    public <R> MappedLayout<R> map(Class<R> newCarrier,
+                                   MethodHandle getterFilter,
+                                   MethodHandle setterFilter) {
+        MethodHandle mappedGetter = MethodHandles.filterReturnValue(getter, getterFilter);
+        MethodHandle mappedSetter = MethodHandles.filterArguments(setter, 2, setterFilter);
+        return new MappedLayoutImpl<>(lookup, newCarrier, targetLayout, mappedGetter, mappedSetter, byteAlignment(), name());
     }
 
     /**

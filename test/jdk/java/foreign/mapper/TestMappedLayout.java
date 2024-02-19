@@ -277,25 +277,18 @@ final class TestMappedLayout {
     @Test
     void pointNaturalLayout() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        // Automatically creates a mapped layout that can be used to extract/write records to native memory.
+
+        // Use the natural layout and create a mapped layout directly from a record class (without a layout).
         MappedLayout<Point> layout = MemoryLayout.mappedLayout(Point.class);
 
-        // Gets the point at index 0
-        // The record Point is not backed by a segment. It is not a view!
         Point point = segment.get(layout, 0);
         assertEquals(3, point.x());
         assertEquals(4, point.y());
 
-        // Gets the point at index 1
         Point point2 = segment.getAtIndex(layout, 1);
         assertEquals(6, point2.x());
         assertEquals(0, point2.y());
 
-        // Note that the operations on the SegmentMapper corresponds to those of the MemorySegments
-        // SegmentMapper::get (composites) <-> MemorySegment::get (primitives)
-        // The same is true for getAtIndex(), set(), setAtIndex(), elements()/stream(), etc.
-
-        // Stream all the points in the backing segment
         List<Point> points = segment.elements(layout)
                 .toList();
 
@@ -307,7 +300,6 @@ final class TestMappedLayout {
         segment.setAtIndex(layout, 1L, new Point(-1, -2));
         MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
     }
-
 
     // The mapper must exactly match the types! Imagine if not ... FFM is a low level library
     // However, it is very easy to map mappers.

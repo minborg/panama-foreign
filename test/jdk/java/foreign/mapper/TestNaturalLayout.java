@@ -59,7 +59,7 @@ final class TestNaturalLayout extends BaseTest {
     @Test
     void fromPoints() {
         assertThrows(IllegalArgumentException.class, () ->
-                MemoryLayout.naturalLayout((Points.class)
+                MemoryLayout.naturalLayout(Points.class)
         );
     }
 

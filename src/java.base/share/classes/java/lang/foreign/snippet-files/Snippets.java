@@ -30,6 +30,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.Linker;
+import java.lang.foreign.MappedLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
@@ -790,14 +791,14 @@ class Snippets {
             public static void main(String[] args) {
                 MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
 
-                SegmentMapper<Point> recordMapper = SegmentMapper.ofRecord(Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+                MappedLayout<Point> pointLayout = MemoryLayout.mappedLayout(Point.class);
 
                 // Extracts a new Point record from the provided MemorySegment
-                Point point = recordMapper.get(segment); // Point[x=3, y=4]
+                Point point = segment.get(pointLayout, 0L); // Point[x=3, y=4]
 
                 // Writes the Point record to another MemorySegment
                 MemorySegment otherSegment = Arena.ofAuto().allocate(MemoryLayout.sequenceLayout(2, POINT));
-                recordMapper.setAtIndex(otherSegment, 1, point); // segment: 0, 0, 3, 4
+                otherSegment.setAtIndex(pointLayout, 1, point); // segment: 0, 0, 3, 4
 
             }
         }
@@ -824,12 +825,12 @@ class Snippets {
             public static void main(String[] args) {
                 MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
 
-                SegmentMapper<NarrowedPoint> narrowedPointMapper =
-                        SegmentMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
+                MappedLayout<NarrowedPoint> narrowedPointMapper =
+                        MemoryLayout.mappedLayout(Point.class)
                         .map(NarrowedPoint.class, NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
 
                 // Extracts a new NarrowedPoint from the provided MemorySegment
-                NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
+                NarrowedPoint narrowedPoint = segment.get(narrowedPointMapper, 0L); // NarrowedPoint[x=3, y=4]
             }
         }
 

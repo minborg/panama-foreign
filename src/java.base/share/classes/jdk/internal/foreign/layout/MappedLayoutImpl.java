@@ -9,6 +9,7 @@ import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MappedLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SegmentAllocator;
 import java.lang.foreign.SequenceLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -142,7 +143,7 @@ public final class MappedLayoutImpl<T>
                                    MethodHandle getterFilter,
                                    MethodHandle setterFilter) {
         MethodHandle mappedGetter = MethodHandles.filterReturnValue(getter, getterFilter);
-        MethodHandle mappedSetter = MethodHandles.filterArguments(setter, 2, setterFilter);
+        MethodHandle mappedSetter = MethodHandles.filterArguments(setter, 2, setterFilter); // pos 2 is T
         return new MappedLayoutImpl<>(lookup, newCarrier, targetLayout, mappedGetter, mappedSetter, byteAlignment(), name());
     }
 
@@ -291,6 +292,25 @@ public final class MappedLayoutImpl<T>
                                          BiConsumer<? super MemorySegment, ? super T> setter) {
         return of(carrier, targetLayout, getterHandle(getter), setterHandle(setter));
     }
+
+    // Methods for adapting method handles
+
+    public MethodHandle filterReturnValue(MethodHandle target) {
+        MethodHandle filter = MethodHandles.insertArguments(getter, 1, 0L);
+        return MethodHandles.filterReturnValue(target, filter);
+    }
+
+    public MethodHandle filterArgument(MethodHandle target,
+                                       SegmentAllocator allocator,
+                                       int pos) {
+        return null;
+    }
+
+    private MethodHandle filterArgument0(SegmentAllocator allocator) {
+        // Allocate segment
+        return null;
+    }
+
 
     // Methods for the map() operation
 

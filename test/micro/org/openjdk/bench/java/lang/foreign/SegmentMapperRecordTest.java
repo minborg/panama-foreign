@@ -77,6 +77,19 @@ public class SegmentMapperRecordTest {
     // Todo: declare MH directly
 
     @Benchmark
+    public MemorySegment set() {
+        POINT_MAPPER.set(SEGMENT, new Point(3, 4));
+        return SEGMENT;
+    }
+
+    @Benchmark
+    public MemorySegment copyAndSet() {
+        MemorySegment segment = MemorySegment.ofArray(new int[2]);
+        POINT_MAPPER.set(segment, new Point(3, 4));
+        return segment;
+    }
+
+    @Benchmark
     public int mappedPoint() {
         return POINT_MAPPER.get(SEGMENT, 0)
                 .x();

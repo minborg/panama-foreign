@@ -29,10 +29,12 @@ import jdk.internal.foreign.abi.AbstractLinker;
 import jdk.internal.foreign.abi.LinkerOptions;
 import jdk.internal.foreign.abi.CapturableState;
 import jdk.internal.foreign.abi.SharedUtils;
+import jdk.internal.foreign.layout.MappedLayoutImpl;
 import jdk.internal.javac.Restricted;
 import jdk.internal.reflect.CallerSensitive;
 
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -690,6 +692,38 @@ public sealed interface Linker permits AbstractLinker {
     @CallerSensitive
     @Restricted
     MethodHandle downcallHandle(FunctionDescriptor function, Option... options);
+
+    /**
+     * {@return a}
+     * @param target t
+     * @param layout l
+     */
+    default MethodHandle filterReturnValue(MethodHandle target,
+                                           MappedLayout<?> layout) {
+        Objects.requireNonNull(target);
+        Objects.requireNonNull(layout);
+        return ((MappedLayoutImpl<?>) layout).filterReturnValue(target);
+    }
+
+    /**
+     * {@return a}
+     * @param target t
+     * @param allocator a
+     * @param pos p
+     * @param layout l
+     */
+    default MethodHandle filterArgument(MethodHandle target,
+                                        SegmentAllocator allocator,
+                                        int pos,
+                                        MappedLayout<?> layout) {
+        Objects.requireNonNull(target);
+        Objects.requireNonNull(allocator);
+        if (pos < 0) {
+            throw new IllegalArgumentException();
+        }
+        Objects.requireNonNull(layout);
+        return ((MappedLayoutImpl<?>) layout).filterArgument(target, allocator, pos);
+    }
 
     /**
      * Creates an upcall stub which can be passed to other foreign functions as a

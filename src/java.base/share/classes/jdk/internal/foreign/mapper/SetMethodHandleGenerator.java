@@ -103,7 +103,7 @@ final class SetMethodHandleGenerator {
         Class<?> baseComponentType = Util.baseComponentType(accessorInfo.type());
         int[] dimensions = arrayInfo.dimensions().stream().mapToInt(Long::intValue).toArray();
         MethodHandle setter = mapperCache.cachedRecordMapper(baseComponentType, (GroupLayout) arrayInfo.elementLayout())
-                .setHandle();
+                .setter();
         setter = setter.asType(setter.type().changeParameterType(2, Object.class));
         if (dimensions.length == 1) {
             MethodHandle mh = MethodHandles.insertArguments(FROM_RECORD_ARRAY, 3, baseComponentType, dimensions[0], elementLayout.byteSize(), setter);

@@ -193,9 +193,9 @@ public abstract sealed class AbstractMemorySegmentImpl
     }
 
     @Override
-    public <T> Stream<T> elements(CompoundAccessor<T> accessor) {
-        return elements(accessor.layout())
-                .map(s -> s.get(accessor, 0L));
+    public <T> Stream<T> elements(SegmentMapper<T> mapper) {
+        return elements(mapper.layout())
+                .map(s -> s.get(mapper, 0L));
     }
 
     @Override
@@ -842,14 +842,14 @@ public abstract sealed class AbstractMemorySegmentImpl
 
     @ForceInline
     @Override
-    public <T> T get(CompoundAccessor<T> accessor, long offset) {
-        return MapperUtil.get(this, accessor, offset);
+    public <T> T get(SegmentMapper<T> mapper, long offset) {
+        return mapper.get(this, offset);
     }
 
     @ForceInline
     @Override
-    public <T> void set(CompoundAccessor<T> accessor, long offset, T value) {
-        MapperUtil.set(this, accessor, offset, value);
+    public <T> void set(SegmentMapper<T> mapper, long offset, T value) {
+        mapper.set(this, offset, value);
     }
 
     @ForceInline
@@ -980,16 +980,16 @@ public abstract sealed class AbstractMemorySegmentImpl
 
     @ForceInline
     @Override
-    public <T> T getAtIndex(CompoundAccessor<T> accessor, long index) {
-        Utils.checkElementAlignment(accessor.layout(), "Layout alignment greater than its size");
-        return MapperUtil.getAtIndex(this, accessor, index);
+    public <T> T getAtIndex(SegmentMapper<T> mapper, long index) {
+        Utils.checkElementAlignment(mapper.layout(), "Layout alignment greater than its size");
+        return mapper.getAtIndex(this, index);
     }
 
     @ForceInline
     @Override
-    public <T> void setAtIndex(CompoundAccessor<T> accessor, long index, T value) {
-        Utils.checkElementAlignment(accessor.layout(), "Layout alignment greater than its size");
-        MapperUtil.setAtIndex(this, accessor, index, value);
+    public <T> void setAtIndex(SegmentMapper<T> mapper, long index, T value) {
+        Utils.checkElementAlignment(mapper.layout(), "Layout alignment greater than its size");
+        mapper.setAtIndex(this, index, value);
     }
 
     @Override

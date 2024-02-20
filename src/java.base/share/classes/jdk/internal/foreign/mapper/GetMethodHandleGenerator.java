@@ -107,7 +107,7 @@ final class GetMethodHandleGenerator {
         Class<?> baseComponentType = Util.baseComponentType(accessorInfo.type());
         int[] dimensions = arrayInfo.dimensions().stream().mapToInt(Long::intValue).toArray();
         MethodHandle getter = mapperCache.cachedRecordMapper(baseComponentType, (GroupLayout) arrayInfo.elementLayout())
-                .getHandle();
+                .getter();
         getter = getter.asType(getter.type().changeReturnType(Object.class));
         if (dimensions.length == 1) {
             MethodHandle mh = MethodHandles.insertArguments(TO_RECORD_ARRAY, 2, baseComponentType, dimensions[0], elementLayout, getter);

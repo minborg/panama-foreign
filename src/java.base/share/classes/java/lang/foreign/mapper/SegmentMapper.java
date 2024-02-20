@@ -1,15 +1,18 @@
 package java.lang.foreign.mapper;
 
 import jdk.internal.foreign.mapper.MapperUtil;
+import jdk.internal.foreign.mapper.SegmentMapperImpl;
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
 import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -18,7 +21,7 @@ import java.util.stream.Stream;
  * <p>
  * More specifically, a segment mapper can project a backing
  * {@linkplain MemorySegment MemorySegment} into new {@link Record} instances
- * that implements an interface by means of matching the names of the record
+ * means of matching the names of the record
  * components with the names of member layouts in a group layout.
  * A segment mapper can also be used in the other direction, where records
  * can be used to update a target memory segment. By using any of
@@ -86,7 +89,6 @@ import java.util.stream.Stream;
  * NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
  * }
  *
- *
  * <h2 id="formal-mapping">Formal mapping description</h2>
  *
  * Components and layouts are matched with respect to their name and the exact return type and/or
@@ -100,6 +102,11 @@ import java.util.stream.Stream;
  * Records must not implement (directly and/or via inheritance) more than
  * one abstract method with the same name and erased parameter types. Hence, covariant
  * overriding is not supported.
+ *
+ * <h2 id="general-mapping">General mapping</h2>
+ *
+ * In addition to mapping records, general mapping capabilities can be made
+ * using a factory method that takes custom getter and setter method handles.
  *
  * @param <T> the type this mapper converts MemorySegments from and to.
  *
@@ -133,7 +140,7 @@ import java.util.stream.Stream;
 //       -> Fixed via TestInterfaceMapper::doubleBuffered
 // No:   Map components to MemorySegment (escape hatch). Records should be immutable and not connected. Maybe we could
 //       create a copy of a segment with the same life cycle?
-public interface SegmentMapper<T> {
+public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
 
     /**
      * {@return the type that this mapper is mapping to and from}
@@ -141,14 +148,14 @@ public interface SegmentMapper<T> {
     Class<T> type();
 
     /**
-     * {@return the original {@link GroupLayout } that this mapper is using to map
-     *          record components}
+     * {@return the original {@link GroupLayout } that this mapper is using to map record
+     * components}
      * <p>
      * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Class, Function)}
-     * or the {@link SegmentMapper#map(Class, Function, Function)} will still return the
-     * group layout from the <em>original</em> SegmentMapper.
+     * or the {@link SegmentMapper#map(Class, Function, Function)} will still return the memory
+     * layout from the <em>original</em> SegmentMapper.
      */
-    GroupLayout layout();
+    MemoryLayout layout();
 
     // Convenience methods
 
@@ -279,7 +286,7 @@ public interface SegmentMapper<T> {
     @SuppressWarnings("unchecked")
     default T get(MemorySegment segment, long offset) {
         try {
-            return (T) getHandle()
+            return (T) getter()
                     .invokeExact(segment, offset);
         } catch (NullPointerException |
                  IndexOutOfBoundsException |
@@ -387,7 +394,7 @@ public interface SegmentMapper<T> {
      */
     default void set(MemorySegment segment, long offset, T t) {
         try {
-            setHandle()
+            setter()
                     .invokeExact(segment, offset, (Object) t);
         } catch (IndexOutOfBoundsException |
                  WrongThreadException |
@@ -407,7 +414,7 @@ public interface SegmentMapper<T> {
     // Basic methods
 
     /**
-     * {@return a method handle that returns new instances of type T projected at
+     * {@return a "getter" method handle that returns new instances of type T projected at
      *          a provided external {@code MemorySegment} at a provided {@code long} offset}
      * <p>
      * The returned method handle has the following characteristics:
@@ -421,10 +428,10 @@ public interface SegmentMapper<T> {
      *
      * @see #get(MemorySegment, long)
      */
-    MethodHandle getHandle();
+    MethodHandle getter();
 
     /**
-     * {@return a method handle that writes a provided instance of type T into
+     * {@return a "setter" method handle that writes a provided instance of type T into
      *          a provided {@code MemorySegment} at a provided {@code long} offset}
      * <p>
      * The returned method handle has the following characteristics:
@@ -440,7 +447,7 @@ public interface SegmentMapper<T> {
      *
      * @see #set(MemorySegment, long, Object)
      */
-    MethodHandle setHandle();
+    MethodHandle setter();
 
     /**
      * {@return a new segment mapper that would apply the provided {@code toMapper} after
@@ -457,9 +464,11 @@ public interface SegmentMapper<T> {
      * @param <R> the type of the new segment mapper
      * @throws UnsupportedOperationException if this is an interface mapper.
      */
-    <R> SegmentMapper<R> map(Class<R> newType,
-                             Function<? super T, ? extends R> toMapper,
-                             Function<? super R, ? extends T> fromMapper);
+    default <R> SegmentMapper<R> map(Class<R> newType,
+                                     Function<? super T, ? extends R> toMapper,
+                                     Function<? super R, ? extends T> fromMapper) {
+        return MapperUtil.map(this, newType, toMapper, fromMapper);
+    }
 
     /**
      * {@return a new segment mapper that would apply the provided {@code toMapper} after
@@ -474,9 +483,10 @@ public interface SegmentMapper<T> {
      * @param toMapper to apply after get operations on this segment mapper
      * @param <R> the type of the new segment mapper
      */
-    <R> SegmentMapper<R> map(Class<R> newType,
-                             Function<? super T, ? extends R> toMapper);
-
+    default <R> SegmentMapper<R> map(Class<R> newType,
+                                     Function<? super T, ? extends R> toMapper) {
+        return MapperUtil.map(this, newType, toMapper);
+    }
 
     /**
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
@@ -564,7 +574,116 @@ public interface SegmentMapper<T> {
         Objects.requireNonNull(lookup);
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
-        return SegmentRecordMapper2.create(lookup, type, layout);
+        SegmentRecordMapper2<T> recordMapper = SegmentRecordMapper2.create(lookup, type, layout);
+        return new SegmentMapperImpl<>(type, layout, recordMapper.getter(), recordMapper.setter());
+    }
+
+    /**
+     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
+     *          to the provided record {@code type} using the provided {@code layout}
+     *          and using the provided custom {@code getter} and {@code setter}
+     *          method handles}
+     *
+     * @param type to map memory segment from and to
+     * @param layout to be used when mapping the provided {@code type}
+     * @param getter to be applied when reading instances of the provided {@code type} from
+     *               memory segments
+     * @param setter to be applied when writing instances of the provided {@code type} to
+     *               memory segments
+     * @param <T> the type the returned mapper converts MemorySegments from and to
+     * @throws IllegalArgumentException if the provided {@code getter} does not
+     *         return objects of type T
+     * @throws IllegalArgumentException if the provided {@code setter} does not
+     *         accept objects of type T for its argument at index 2.
+     */
+    static <T extends Record> SegmentMapper<T> of(Class<T> type,
+                                                  MemoryLayout layout,
+                                                  MethodHandle getter,
+                                                  MethodHandle setter) {
+        Objects.requireNonNull(type);
+        Objects.requireNonNull(layout);
+        Objects.requireNonNull(getter);
+        Objects.requireNonNull(setter);
+        return new SegmentMapperImpl<>(type, layout, getter, setter);
+    }
+
+    /**
+     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
+     *          to the provided record {@code type} using the provided {@code layout}
+     *          and using the provided custom {@code getter} and {@code setter}
+     *          functions}
+     * <p>
+     * This is a convenience method for {@linkplain #of(Class, MemoryLayout, MethodHandle, MethodHandle)}
+     *
+     * @param type to map memory segment from and to
+     * @param layout to be used when mapping the provided {@code type}
+     * @param getter to be applied when reading instances of the provided {@code type} from
+     *               memory segments
+     * @param setter to be applied when writing instances of the provided {@code type} to
+     *               memory segments
+     * @param <T> the type the returned mapper converts MemorySegments from and to
+     * @throws IllegalArgumentException if the provided {@code getter} does not
+     *         return objects of type T
+     * @throws IllegalArgumentException if the provided {@code setter} does not
+     *         accept objects of type T for its argument at index 2.
+     *
+     * @see #of(Class, MemoryLayout, MethodHandle, MethodHandle)
+     */
+    static <T extends Record> SegmentMapper<T> of(Class<T> type,
+                                                  MemoryLayout layout,
+                                                  Getter<T> getter,
+                                                  Setter<T> setter) {
+        Objects.requireNonNull(type);
+        Objects.requireNonNull(layout);
+        Objects.requireNonNull(getter);
+        Objects.requireNonNull(setter);
+        return of(type, layout, MapperUtil.GETTER.bindTo(getter), MapperUtil.SETTER.bindTo(setter));
+    }
+
+    /**
+     * Represents a function that accepts two arguments in the form of a MemorySegment and
+     * a long offset and produces a result of type T. This is a two-arity specialization of
+     * {@link Function}.
+     *
+     * @param <T> the type of the result of the function
+     *
+     * @see Function
+     * @since 23
+     */
+    @FunctionalInterface
+    interface Getter<T> {
+
+        /**
+         * {@return a value of type T given the provided {@code segment} and {@code offset}}
+         * @param segment from which to read the value
+         * @param offset  at which offset to begin reading the value from
+         */
+        T get(MemorySegment segment, long offset);
+    }
+
+    /**
+     * Represents an operation that accepts three input arguments in the form
+     * of a MemorySegment, a long offset, and a value of type T and that returns
+     * no result. This is a three-arity specialization of {@link Consumer}.
+     * Unlike most other functional interfaces, {@code Setter} is expected
+     * to operate via side-effects.
+     *
+     * @param <T> the type of the third argument to the operation
+     *
+     * @see Consumer
+     * @since 23
+     */
+    @FunctionalInterface
+    interface Setter<T> {
+
+        /**
+         * Performs a write operation with the given arguments.
+         *
+         * @param segment to write a representation of the value into
+         * @param offset  at which offset to begin writing the value to
+         * @param value   the value to write
+         */
+        void set(MemorySegment segment, long offset, T value);
     }
 
 }

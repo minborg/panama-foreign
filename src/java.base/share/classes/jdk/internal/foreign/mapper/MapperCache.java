@@ -29,14 +29,11 @@ import jdk.internal.ValueBased;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Consumer;
 
 /**
  * This class maintains a cache of seen sub-mappers, so they do not have to be created more
@@ -46,7 +43,7 @@ import java.util.function.Consumer;
 final class MapperCache {
 
     private final MethodHandles.Lookup lookup;
-    private final Map<CacheKey, SegmentMapper<?>> subMappers;
+    private final Map<CacheKey, AbstractSegmentMapper<?>> subMappers;
 
     private MapperCache(MethodHandles.Lookup lookup) {
         this.lookup = lookup;
@@ -55,20 +52,20 @@ final class MapperCache {
 
     MethodHandle recordGetMethodHandleFor(AccessorInfo accessorInfo) {
         return cachedRecordMapper(accessorInfo)
-                .getHandle();
+                .getter();
     }
 
     MethodHandle recordSetMethodHandleFor(AccessorInfo accessorInfo) {
         return cachedRecordMapper(accessorInfo)
-                .setHandle();
+                .setter();
     }
 
 
-    private SegmentMapper<?> cachedRecordMapper(AccessorInfo accessorInfo) {
+    private AbstractSegmentMapper<?> cachedRecordMapper(AccessorInfo accessorInfo) {
         return cachedRecordMapper(accessorInfo.type(), accessorInfo.targetLayout());
     }
 
-    SegmentMapper<?> cachedRecordMapper(Class<?> type, GroupLayout layout) {
+    AbstractSegmentMapper<?> cachedRecordMapper(Class<?> type, GroupLayout layout) {
         return subMappers.computeIfAbsent(CacheKey.of(type, layout), k ->
                 new SegmentRecordMapper2<>(lookup, MapperUtil.requireRecordType(k.type()), k.layout(), true)
         );

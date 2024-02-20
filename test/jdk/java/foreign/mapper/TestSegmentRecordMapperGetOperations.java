@@ -116,54 +116,15 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
     // Manually declared function
 
-    static final class PointMapper implements SegmentMapper<Point> {
-
-        @Override
-        public Point get(MemorySegment segment, long offset) {
-            return new Point(segment.get(JAVA_INT, offset), segment.get(JAVA_INT, offset + 4L));
-        }
-
-        @Override
-        public Point get(MemorySegment segment) {
-            return get(segment, 0);
-        }
-
-        @Override
-        public Class<Point> type() {
-            return Point.class;
-        }
-
-        @Override
-        public GroupLayout layout() {
-            return POINT_LAYOUT;
-        }
-
-        @Override
-        public MethodHandle getHandle() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public MethodHandle setHandle() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <R> SegmentMapper<R> map(Class<R> newType,
-                                        Function<? super Point, ? extends R> toMapper,
-                                        Function<? super R, ? extends Point> fromMapper) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public <R> SegmentMapper<R> map(Class<R> newType, Function<? super Point, ? extends R> toMapper) {
-            throw new UnsupportedOperationException();
-        }
-    }
-
     @Test
     public void testCustomPoint() {
-        test(POINT_SEGMENT, new PointMapper(), new Point(3, 4));
+        SegmentMapper.Getter<Point> getter = (s, o) -> new Point(s.get(JAVA_INT, o), s.get(JAVA_INT, o + 4));
+        SegmentMapper.Setter<Point> setter = (segment, offset, value) -> {
+            segment.set(JAVA_INT, offset, value.x());
+            segment.set(JAVA_INT, offset + 4, value.y());
+        };
+        var mapper = SegmentMapper.of(Point.class, POINT_LAYOUT, getter, setter);
+        test(POINT_SEGMENT, mapper, new Point(3, 4));
     }
 
     @Test
@@ -334,7 +295,6 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     @Test
     public void testToString() {
         var toString = POINT_MAPPER.toString();
-        assertTrue(toString.contains("lookup=" + MethodHandles.publicLookup()));
         assertTrue(toString.contains("type=" + Point.class));
         assertTrue(toString.contains("layout=" + POINT_LAYOUT));
     }

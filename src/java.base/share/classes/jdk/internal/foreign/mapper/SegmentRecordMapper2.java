@@ -33,6 +33,7 @@ import jdk.internal.foreign.mapper.accessor.ValueType;
 import jdk.internal.vm.annotation.Stable;
 
 import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
@@ -50,15 +51,14 @@ import java.util.stream.IntStream;
  * A record mapper that is matching components of a record with elements in a GroupLayout.
  */
 public final class SegmentRecordMapper2<T extends Record>
-        extends AbstractSegmentMapper<T>
-        implements SegmentMapper<T> {
+        extends AbstractSegmentMapper<T> {
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
     @Stable
-    private final MethodHandle getHandle;
+    private final MethodHandle getter;
     @Stable
-    private final MethodHandle setHandle;
+    private final MethodHandle setter;
 
     SegmentRecordMapper2(MethodHandles.Lookup lookup,
                          Class<T> type,
@@ -66,39 +66,31 @@ public final class SegmentRecordMapper2<T extends Record>
                          boolean leaf) {
         super(lookup, type, layout, leaf,
                 ValueType.RECORD, MapperUtil::requireRecordType, Accessors::ofRecord);
-        this.getHandle = computeGetHandle();
-        this.setHandle = computeSetHandle();
+        this.getter = computeGetHandle();
+        this.setter = computeSetHandle();
         // No need for this now
         this.accessors = null;
     }
 
-    @Override
-    public MethodHandle getHandle() {
-        return getHandle;
+    SegmentRecordMapper2(MethodHandles.Lookup lookup,
+                         Class<T> type,
+                         MemoryLayout layout,
+                         MethodHandle getter,
+                         MethodHandle setter) {
+        super(lookup, type, layout);
+        this.getter = getter;
+        this.setter = setter;
     }
 
-    @Override
-    public MethodHandle setHandle() {
-        return setHandle;
+    public MethodHandle getter() {
+        return getter;
+    }
+
+    public MethodHandle setter() {
+        return setter;
     }
 
 
-    @Override
-    public <R> SegmentMapper<R> map(Class<R> newType,
-                                    Function<? super T, ? extends R> toMapper,
-                                    Function<? super R, ? extends T> fromMapper) {
-        return new Mapped<>(lookup(), newType, layout(), getHandle(), setHandle(), toMapper, fromMapper);
-    }
-
-    @Override
-    public <R> SegmentMapper<R> map(Class<R> newType,
-                                    Function<? super T, ? extends R> toMapper) {
-        return map(newType, toMapper,
-                _ -> {
-                    throw new UnsupportedOperationException(
-                            "This one-way mapper cannot map from " + newType + " to " + type());
-                });
-    }
 
     @Override
     protected MethodHandle computeGetHandle() {
@@ -260,90 +252,18 @@ public final class SegmentRecordMapper2<T extends Record>
         }
     }
 
-    /**
-     * This class models composed record mappers.
-     *
-     * @param lookup     to use for reflective operations
-     * @param type       new type to map to/from
-     * @param layout     original layout
-     * @param getHandle  for get operations
-     * @param setHandle  for set operations
-     * @param toMapper   a function that goes from T to R
-     * @param fromMapper a function that goes from R to T
-     * @param <T>        original mapper type
-     * @param <R>        composed mapper type
-     */
-    record Mapped<T, R>(
-            MethodHandles.Lookup lookup,
-            @Override Class<R> type,
-            @Override GroupLayout layout,
-            @Override MethodHandle getHandle,
-            @Override MethodHandle setHandle,
-            Function<? super T, ? extends R> toMapper,
-            Function<? super R, ? extends T> fromMapper
-    ) implements SegmentMapper<R> {
-
-        Mapped(MethodHandles.Lookup lookup,
-               Class<R> type,
-               GroupLayout layout,
-               MethodHandle getHandle,
-               MethodHandle setHandle,
-               Function<? super T, ? extends R> toMapper,
-               Function<? super R, ? extends T> fromMapper
-        ) {
-            this.lookup = lookup;
-            this.type = type;
-            this.layout = layout;
-            this.toMapper = toMapper;
-            this.fromMapper = fromMapper;
-            MethodHandle toMh = findVirtual("mapTo").bindTo(this);
-            this.getHandle = MethodHandles.filterReturnValue(getHandle, toMh);
-            MethodHandle fromMh = findVirtual("mapFrom").bindTo(this);
-            this.setHandle = MethodHandles.filterArguments(setHandle, 2, fromMh);
-        }
-
-        @Override
-        public <R1> SegmentMapper<R1> map(Class<R1> newType,
-                                          Function<? super R, ? extends R1> toMapper,
-                                          Function<? super R1, ? extends R> fromMapper) {
-            return new Mapped<>(lookup, newType, layout(), getHandle(), setHandle(), toMapper, fromMapper);
-        }
-
-        @Override
-        public <R1> SegmentMapper<R1> map(Class<R1> newType, Function<? super R, ? extends R1> toMapper) {
-            return new Mapped<>(lookup, newType, layout(), getHandle(), setHandle(), toMapper,
-                    _ -> {
-                        throw new UnsupportedOperationException(
-                                "This one-way mapper cannot map from " + newType + " to " + type());
-                    });
-        }
-
-        // Used reflective when obtaining a MethodHandle
-        R mapTo(T t) {
-            return toMapper.apply(t);
-        }
-
-        // Used reflective when obtaining a MethodHandle
-        T mapFrom(R r) {
-            return fromMapper.apply(r);
-        }
-
-        private static MethodHandle findVirtual(String name) {
-            try {
-                var mt = MethodType.methodType(Object.class, Object.class);
-                return LOCAL_LOOKUP.findVirtual(Mapped.class, name, mt);
-            } catch (ReflectiveOperationException e) {
-                // Should not happen
-                throw new InternalError(e);
-            }
-        }
-
-    }
-
     public static <T extends Record> SegmentRecordMapper2<T> create(MethodHandles.Lookup lookup,
                                                              Class<T> type,
                                                              GroupLayout layout) {
         return new SegmentRecordMapper2<>(lookup, type, layout, false);
+    }
+
+    public static <T extends Record> SegmentRecordMapper2<T> create(MethodHandles.Lookup lookup,
+                                                                    Class<T> type,
+                                                                    MemoryLayout layout,
+                                                                    MethodHandle getter,
+                                                                    MethodHandle setter) {
+        return new SegmentRecordMapper2<>(lookup, type, layout, getter, setter);
     }
 
 }

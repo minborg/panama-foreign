@@ -31,6 +31,7 @@ import jdk.internal.foreign.mapper.accessor.ValueType;
 import jdk.internal.vm.annotation.Stable;
 
 import java.lang.foreign.GroupLayout;
+import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -40,14 +41,14 @@ import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.UnaryOperator;
 
-abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
+public abstract class AbstractSegmentMapper<T> {
 
     @Stable
     private final MethodHandles.Lookup lookup;
     @Stable
     private final Class<T> type;
     @Stable
-    private final GroupLayout layout;
+    private final MemoryLayout layout;
     private final boolean leaf;
     private final MapperCache mapperCache;
     protected Accessors accessors;
@@ -76,16 +77,29 @@ abstract class AbstractSegmentMapper<T> implements SegmentMapper<T> {
         MapperUtil.assertMappingsCorrectAndTotal(type, layout, accessors);
     }
 
-    @Override
+    // Custom mapper
+    protected AbstractSegmentMapper(MethodHandles.Lookup lookup,
+                                    Class<T> type,
+                                    MemoryLayout layout) {
+        this.lookup = lookup;
+        this.type = type;
+        this.layout = layout;
+        this.leaf = false;
+        this.mapperCache = null;
+        this.accessors = null;
+    }
+
     public final Class<T> type() {
         return type;
     }
 
-    @Override
-    public final GroupLayout layout() {
+    public final MemoryLayout layout() {
         return layout;
     }
 
+    abstract MethodHandle getter();
+
+    abstract MethodHandle setter();
 
     @Override
     public final String toString() {

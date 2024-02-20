@@ -88,7 +88,7 @@ final class TestJepExamplesComposition {
 
         record Point(int x, int y) { }
         SegmentMapper<Point> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Point.class, POINT);
-        MethodHandle segmentToPoint = MethodHandles.insertArguments(mapper.getHandle(), 1, 0L);
+        MethodHandle segmentToPoint = MethodHandles.insertArguments(mapper.getter(), 1, 0L);
         makePoint = MethodHandles.filterReturnValue(makePoint, segmentToPoint);
 
         Point point = (Point)
@@ -111,7 +111,7 @@ final class TestJepExamplesComposition {
 
         // Method handle for the `get` operation from a SegmentMapper<Point>
         // (MemorySegment segment, long offset)Point
-        MethodHandle pointGetHandle = mapper.getHandle();
+        MethodHandle pointGetHandle = mapper.getter();
 
         // Temp Fix
         pointGetHandle = pointGetHandle.asType(pointGetHandle.type().changeReturnType(Point.class));

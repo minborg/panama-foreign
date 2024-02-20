@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,21 +27,17 @@ package jdk.internal.foreign.mapper;
 
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 import jdk.internal.foreign.mapper.accessor.Accessors;
-import jdk.internal.vm.annotation.ForceInline;
 import sun.security.action.GetPropertyAction;
 
 import java.lang.constant.ClassDesc;
-import java.lang.foreign.CompoundAccessor;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.List;
@@ -51,7 +47,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public final class MapperUtil {
 
@@ -59,6 +54,29 @@ public final class MapperUtil {
     }
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
+
+
+    public static final MethodHandle GETTER;
+    public static final MethodHandle SETTER;
+    private static final MethodHandle MAP_TO;
+    private static final MethodHandle MAP_FROM;
+
+    static {
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+
+        try {
+            GETTER = lookup.findStatic(MapperUtil.class, "getter0",
+                    MethodType.methodType(Object.class, SegmentMapper.Getter.class, MemorySegment.class, long.class));
+            SETTER = lookup.findStatic(MapperUtil.class, "setter0",
+                    MethodType.methodType(void.class, SegmentMapper.Setter.class, MemorySegment.class, long.class, Object.class));
+
+            var mt = MethodType.methodType(Object.class, Function.class, Object.class);
+            MAP_TO = lookup.findStatic(MapperUtil.class, "mapTo", mt);
+            MAP_FROM = lookup.findStatic(MapperUtil.class, "mapFrom", mt);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
 
     private static final String DEBUG =
             GetPropertyAction.privilegedGetProperty("java.lang.foreign.mapper.debug", "");
@@ -89,11 +107,6 @@ public final class MapperUtil {
 
     static IllegalArgumentException newIae(Class<?> type, String trailingInfo) {
         return new IllegalArgumentException(type.getName() + " is " + trailingInfo);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static <T extends Record> Class<T> castToRecordClass(Class<?> clazz) {
-        return (Class<T>) clazz;
     }
 
     public static ClassDesc desc(Class<?> clazz) {
@@ -145,243 +158,54 @@ public final class MapperUtil {
 
     }
 
- //   /**
- //    * {@return a new instance of type T projected at the provided
- //    *          external {@code segment} at offset zero}
- //    * <p>
- //    * Calling this method is equivalent to the following code:
- //    * {@snippet lang = java:
- //    *    get(segment, 0L);
- //    * }
- //    *
- //    * @param segment the external segment to be projected to the new instance
- //    * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
- //    *         associated with the provided segment is not
- //    *         {@linkplain MemorySegment.Scope#isAlive() alive}
- //    * @throws WrongThreadException if this method is called from a thread {@code T},
- //    *         such that {@code isAccessibleBy(T) == false}
- //    * @throws IllegalArgumentException if the access operation is
- //    *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
- //    *         of the {@link CompoundAccessor#layout()}
- //    * @throws IndexOutOfBoundsException if
- //    *         {@code layout().byteSize() > segment.byteSize()}
- //    */
- //   @ForceInline
- //   public static <T> T get(MemorySegment segment, CompoundAccessor<T> accessor) {
- //       return get(segment, accessor, 0L);
- //   }
+    // Function to MethodHandle methods
 
-    /**
-     * {@return a new instance of type T projected at the provided external
-     *          {@code segment} at the given {@code index} scaled by the
-     *          {@code layout().byteSize()}}
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang = java:
-     *    get(segment, layout().byteSize() * index);
-     * }
-     *
-     * @param segment the external segment to be projected to the new instance
-     * @param index a logical index, the offset in bytes (relative to the provided
-     *              segment address) at which the access operation will occur can
-     *              be expressed as {@code (index * layout().byteSize())}
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with the provided segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link CompoundAccessor#layout()}
-     * @throws IndexOutOfBoundsException if {@code index * layout().byteSize()} overflows
-     * @throws IndexOutOfBoundsException if
-     *         {@code index * layout().byteSize() > segment.byteSize() - layout.byteSize()}
-     */
-    @ForceInline
-    public static <T> T getAtIndex(MemorySegment segment, CompoundAccessor<T> accessor, long index) {
-        return get(segment, accessor, accessor.layout().byteSize() * index);
-    }
-
-    /**
-     * {@return a new instance of type T projected from at provided
-     *          external {@code segment} at the provided {@code offset}}
-     *
-     * @param segment the external segment to be projected at the new instance
-     * @param offset  from where in the segment to project the new instance
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with the provided segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link CompoundAccessor#layout()}
-     * @throws IndexOutOfBoundsException if
-     *         {@code offset > segment.byteSize() - layout().byteSize()}
-     */
-    @SuppressWarnings("unchecked")
-    @ForceInline
-    public static <T> T get(MemorySegment segment, CompoundAccessor<T> accessor, long offset) {
-        try {
-            return (T) accessor.getter()
-                    .invokeExact(segment, offset);
-        } catch (NullPointerException |
-                 IndexOutOfBoundsException |
-                 WrongThreadException |
-                 IllegalStateException |
-                 IllegalArgumentException rethrow) {
-            throw rethrow;
-        } catch (Throwable e) {
-            throw new RuntimeException("Unable to invoke getHandle() with " +
-                    "segment="  + segment +
-                    ", offset=" + offset, e);
-        }
-    }
-
-//    /**
-//     * Writes the provided instance {@code t} of type T into the provided {@code segment}
-//     * at offset zero.
-//     * <p>
-//     * Calling this method is equivalent to the following code:
-//     * {@snippet lang = java:
-//     *    set(segment, 0L, t);
-//     * }
-//     *
-//     * @param segment in which to write the provided {@code t}
-//     * @param t instance to write into the provided segment
-//     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-//     *         associated with this segment is not
-//     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-//     * @throws WrongThreadException if this method is called from a thread {@code T},
-//     *         such that {@code isAccessibleBy(T) == false}
-//     * @throws IllegalArgumentException if the access operation is
-//     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-//     *         of the {@link CompoundAccessor#layout()}
-//     * @throws IndexOutOfBoundsException if {@code layout().byteSize() > segment.byteSize()}
-//     * @throws UnsupportedOperationException if this segment is
-//     *         {@linkplain MemorySegment#isReadOnly() read-only}
-//     * @throws UnsupportedOperationException if {@code value} is not a
-//     *         {@linkplain MemorySegment#isNative() native} segment
-//     * @throws IllegalArgumentException if an array length does not correspond to the
-//     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
-//     * @throws NullPointerException if a required parameter is {@code null}
-//     */
-//    @ForceInline
-//    public static <T> void set(MemorySegment segment, CompoundAccessor<T> accessor, T t) {
-//        set(segment, accessor, 0L, t);
-//    }
-
-    /**
-     * Writes the provided {@code t} instance of type T into the provided {@code segment}
-     * at the provided {@code index} scaled by the {@code layout().byteSize()}}.
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang = java:
-     *    set(segment, layout().byteSize() * index, t);
-     * }
-     * @param segment in which to write the provided {@code t}
-     * @param index a logical index, the offset in bytes (relative to the provided
-     *              segment address) at which the access operation will occur can be
-     *              expressed as {@code (index * layout().byteSize())}
-     * @param t instance to write into the provided segment
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with this segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link CompoundAccessor#layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > segment.byteSize() - layout.byteSize()}
-     * @throws UnsupportedOperationException if this segment is
-     *         {@linkplain MemorySegment#isReadOnly() read-only}
-     * @throws UnsupportedOperationException if {@code value} is not a
-     *         {@linkplain MemorySegment#isNative() native} segment
-     * @throws IllegalArgumentException if an array length does not correspond to the
-     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
-     * @throws NullPointerException if a required parameter is {@code null}
-     */
-    @ForceInline
-    public static <T> void setAtIndex(MemorySegment segment, CompoundAccessor<T> accessor, long index, T t) {
-        set(segment, accessor, accessor.layout().byteSize() * index, t);
-    }
-
-    /**
-     * Writes the provided instance {@code t} of type T into the provided {@code segment}
-     * at the provided {@code offset}.
-     *
-     * @param segment in which to write the provided {@code t}
-     * @param offset offset in bytes (relative to the provided segment address) at which
-     *               this access operation will occur
-     * @param t instance to write into the provided segment
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with this segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link CompoundAccessor#layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > segment.byteSize() - layout.byteSize()}
-     * @throws UnsupportedOperationException if
-     *         this segment is {@linkplain MemorySegment#isReadOnly() read-only}
-     * @throws UnsupportedOperationException if
-     *         {@code value} is not a {@linkplain MemorySegment#isNative() native} segment // Todo: only for pointers
-     * @throws IllegalArgumentException if an array length does not correspond to the
-     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
-     * @throws NullPointerException if a required parameter is {@code null}
-     */
-    @ForceInline
-    public static <T> void set(MemorySegment segment, CompoundAccessor<T> accessor, long offset, T t) {
-        try {
-            accessor.setter()
-                    .invokeExact(segment, offset, (Object) t);
-        } catch (IndexOutOfBoundsException |
-                 WrongThreadException |
-                 IllegalStateException |
-                 IllegalArgumentException |
-                 UnsupportedOperationException |
-                 NullPointerException rethrow) {
-            throw rethrow;
-        } catch (Throwable e) {
-            throw new RuntimeException("Unable to invoke setHandle() with " +
-                    "segment=" + segment +
-                    ", offset=" + offset +
-                    ", t=" + t, e);
-        }
-    }
-
-    public static <T, R> CompoundAccessor<R> map(CompoundAccessor<T> original,
-                                                 Class<R> newType,
-                                                 Function<? super T, ? extends R> toMapper,
-                                                 Function<? super R, ? extends T> fromMapper) {
-        MethodHandle mapToHandle = findVirtual("mapTo");
-        mapToHandle = MethodHandles.insertArguments(mapToHandle, 0, toMapper);
-        MethodHandle getter = MethodHandles.filterReturnValue(original.getter(), mapToHandle);
-        MethodHandle mapFromHandle = findVirtual("mapFrom");
-        mapFromHandle = MethodHandles.insertArguments(mapFromHandle, 0, fromMapper);
-        MethodHandle setter = MethodHandles.filterArguments(original.setter(), 2, mapFromHandle);
-        return new CompoundAccessor<>(original.layout(), newType, getter, setter);
+    // Used reflective when obtaining a MethodHandle
+    static <T> T getter0(SegmentMapper.Getter<T> getter,
+                         MemorySegment segment, long offset) {
+        return getter.get(segment, offset);
     }
 
     // Used reflective when obtaining a MethodHandle
-    static <T, R> R mapTo(Function<? super T, ? extends R> toMapper, T t) {
+    static <T> void setter0(SegmentMapper.Setter<T> setter,
+                            MemorySegment segment, long offset, T t) {
+        setter.set(segment, offset, t);
+    }
+
+    // SegmentMapper mapping methods
+
+    // Used reflective when obtaining a MethodHandle
+    static <T, R> R mapTo(Function<? super T, ? extends R> toMapper,
+                          T t) {
         return toMapper.apply(t);
     }
 
     // Used reflective when obtaining a MethodHandle
-    static <T, R> T mapFrom(Function<? super R, ? extends T> fromMapper, R r) {
+    static <T, R> T mapFrom(Function<? super R, ? extends T> fromMapper,
+                            R r) {
         return fromMapper.apply(r);
     }
 
-    private static MethodHandle findVirtual(String name) {
-        try {
-            var mt = MethodType.methodType(Object.class, Function.class, Object.class);
-            return LOCAL_LOOKUP.findStatic(MapperUtil.class, name, mt);
-        } catch (ReflectiveOperationException e) {
-            // Should not happen
-            throw new InternalError(e);
-        }
+    // Mapping factories
+
+    public static <T, R> SegmentMapper<R> map(SegmentMapper<T> originalMapper,
+                                              Class<R> newType,
+                                              Function<? super T, ? extends R> toMapper,
+                                              Function<? super R, ? extends T> fromMapper) {
+        MethodHandle toMh = MAP_TO.bindTo(toMapper);
+        MethodHandle getter = MethodHandles.filterReturnValue(originalMapper.getter(), toMh);
+        MethodHandle fromMh = MAP_FROM.bindTo(fromMapper);
+        MethodHandle setter = MethodHandles.filterArguments(originalMapper.setter(), 2, fromMh);
+        return new SegmentMapperImpl<>(newType, originalMapper.layout(), getter, setter);
+    }
+
+    public static <T, R> SegmentMapper<R> map(SegmentMapper<T> originalMapper,
+                                              Class<R> newType,
+                                              Function<? super T, ? extends R> toMapper) {
+        return map(originalMapper, newType, toMapper, _ -> {
+            throw new UnsupportedOperationException(
+                    "This one-way mapper cannot map from " + newType + " to " + originalMapper.type());
+        });
     }
 
 }

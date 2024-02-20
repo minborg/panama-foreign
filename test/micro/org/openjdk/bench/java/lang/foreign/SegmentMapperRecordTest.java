@@ -76,17 +76,19 @@ public class SegmentMapperRecordTest {
 
     // Todo: declare MH directly
 
+    // Check scalar replacement (test with "-prof gc")
+
     @Benchmark
-    public MemorySegment set() {
-        POINT_MAPPER.set(SEGMENT, new Point(3, 4));
-        return SEGMENT;
+    public int copyAndSet() {
+        MemorySegment segment = MemorySegment.ofArray(new int[2]);
+        POINT_MAPPER.set(segment, new Point(3, 4));
+        return segment.get(JAVA_INT, 0) + segment.get(JAVA_INT, 4);
     }
 
     @Benchmark
-    public MemorySegment copyAndSet() {
-        MemorySegment segment = MemorySegment.ofArray(new int[2]);
-        POINT_MAPPER.set(segment, new Point(3, 4));
-        return segment;
+    public int set() {
+        POINT_MAPPER.set(SEGMENT, new Point(3, 4));
+        return SEGMENT.get(JAVA_INT, 0) + SEGMENT.get(JAVA_INT, 4);
     }
 
     @Benchmark

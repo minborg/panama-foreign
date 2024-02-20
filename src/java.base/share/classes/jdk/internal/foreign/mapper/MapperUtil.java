@@ -158,6 +158,22 @@ public final class MapperUtil {
 
     }
 
+    static void assertReturnType(MethodHandle handle, Class<?> type) {
+        Class<?> returnType = handle.type().returnType();
+        if (!returnType.equals(type)) {
+            throw new IllegalArgumentException(
+                    "The return type of " + handle + " is " + returnType + " and not " + type);
+        }
+    }
+
+    static void assertParameterType(MethodHandle handle, int num, Class<?> type) {
+        Class<?> parameterType = handle.type().parameterType(num);
+        if (!parameterType.equals(type)) {
+            throw new IllegalArgumentException(
+                    "The parameter with index " + num + " of " + handle + " is " + parameterType + " and not " + type);
+        }
+    }
+
     // Function to MethodHandle methods
 
     // Used reflective when obtaining a MethodHandle

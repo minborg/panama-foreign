@@ -1,11 +1,9 @@
 package jdk.internal.foreign.mapper;
 
 import java.lang.foreign.MemoryLayout;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.util.function.Function;
 
 /**
  * This class models a general segment mappers.
@@ -23,9 +21,19 @@ public record SegmentMapperImpl<T>(
         @Override MethodHandle setter
 ) implements SegmentMapper<T> {
 
-
     public SegmentMapperImpl {
-        // Todo: Check MH invariants
+        // (MemorySegment, long)T
+        MapperUtil.assertParameterType(getter, 0, MemorySegment.class);
+        MapperUtil.assertParameterType(getter, 1, long.class);
+        //Todo: MapperUtil.assertReturnType(getter, type);
+        MapperUtil.assertReturnType(getter, Object.class);
+
+        // (MemorySegment, long, T)void
+        MapperUtil.assertParameterType(setter, 0, MemorySegment.class);
+        MapperUtil.assertParameterType(setter, 1, long.class);
+        // Todo: MapperUtil.assertParameterType(setter, 2, type);
+        MapperUtil.assertParameterType(setter, 2, Object.class);
+        MapperUtil.assertReturnType(setter, void.class);
     }
 
 }

@@ -421,7 +421,7 @@ public interface SegmentAllocator {
      * @implSpec The default implementation is equivalent to:
      * {@snippet lang=java :
      *  MemorySegment seg = allocate(Objects.requireNonNull(mapper).layout());
-     *  seg.set(mapper, 0, value);
+     *  mapper.set(seg, 0, value);
      *  return seg;
      * }
      *
@@ -432,7 +432,7 @@ public interface SegmentAllocator {
     default <T> MemorySegment allocateFrom(SegmentMapper<T> mapper, T value) {
         Objects.requireNonNull(mapper);
         MemorySegment seg = allocateNoInit(mapper.layout());
-        seg.set(mapper, 0, value);
+        mapper.set(seg, 0, value);
         return seg;
     }
 
@@ -638,12 +638,10 @@ public interface SegmentAllocator {
      * @implSpec The default implementation for this method is equivalent to the
      *           following code:
      * {@snippet lang = java:
-     * Objects.requireNonNull(mapper);
-     * Objects.requireNonNull(elements);
-     * MemorySegment seg = allocateNoInit(mapper.layout(), elements.size());
+     * MemorySegment seg = allocate(mapper.layout(), elements.size());
      * int i = 0;
      * for (T element : elements) {
-     *     seg.setAtIndex(mapper, i++, element);
+     *     mapper.setAtIndex(seg, i++, element);
      * }
      * return seg;
      *}
@@ -661,7 +659,7 @@ public interface SegmentAllocator {
         MemorySegment seg = allocateNoInit(mapper.layout(), elements.size());
         int i = 0;
         for (T element : elements) {
-            seg.setAtIndex(mapper, i++, element);
+            mapper.setAtIndex(seg, i++, element);
         }
         return seg;
     }

@@ -193,12 +193,6 @@ public abstract sealed class AbstractMemorySegmentImpl
     }
 
     @Override
-    public <T> Stream<T> elements(SegmentMapper<T> mapper) {
-        return elements(mapper.layout())
-                .map(s -> s.get(mapper, 0L));
-    }
-
-    @Override
     public final MemorySegment fill(byte value){
         checkAccess(0, length, false);
         SCOPED_MEMORY_ACCESS.setMemory(sessionImpl(), unsafeGetBase(), unsafeGetOffset(), length, value);
@@ -842,18 +836,6 @@ public abstract sealed class AbstractMemorySegmentImpl
 
     @ForceInline
     @Override
-    public <T> T get(SegmentMapper<T> mapper, long offset) {
-        return mapper.get(this, offset);
-    }
-
-    @ForceInline
-    @Override
-    public <T> void set(SegmentMapper<T> mapper, long offset, T value) {
-        mapper.set(this, offset, value);
-    }
-
-    @ForceInline
-    @Override
     public byte getAtIndex(ValueLayout.OfByte layout, long index) {
         Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
         return (byte) layout.varHandle().get((MemorySegment)this, index * layout.byteSize());
@@ -976,20 +958,6 @@ public abstract sealed class AbstractMemorySegmentImpl
     public void setAtIndex(AddressLayout layout, long index, MemorySegment value) {
         Utils.checkElementAlignment(layout, "Layout alignment greater than its size");
         layout.varHandle().set((MemorySegment)this, index * layout.byteSize(), value);
-    }
-
-    @ForceInline
-    @Override
-    public <T> T getAtIndex(SegmentMapper<T> mapper, long index) {
-        Utils.checkElementAlignment(mapper.layout(), "Layout alignment greater than its size");
-        return mapper.getAtIndex(this, index);
-    }
-
-    @ForceInline
-    @Override
-    public <T> void setAtIndex(SegmentMapper<T> mapper, long index, T value) {
-        Utils.checkElementAlignment(mapper.layout(), "Layout alignment greater than its size");
-        mapper.setAtIndex(this, index, value);
     }
 
     @Override

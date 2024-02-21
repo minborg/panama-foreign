@@ -27,7 +27,6 @@ package java.lang.foreign;
 
 import java.io.UncheckedIOException;
 import java.lang.foreign.ValueLayout.OfInt;
-import java.lang.foreign.mapper.SegmentMapper;
 import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -585,27 +584,6 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
      *         in the provided layout
      */
     Stream<MemorySegment> elements(MemoryLayout elementLayout);
-
-    /**
-     * Returns a sequential {@code Stream} of a mapped type {@code T} (whose type matches that
-     * of the provided mapper) in this segment. Calling this method is equivalent to
-     * the following code:
-     * {@snippet lang=java :
-     * elements(mapper.layout())
-     *     .map(s -> s.get(mapper, 0L));
-     * }
-     *
-     * @param mapper the mapper to be used for splitting
-     * @param <T>    the type of the mapped elements in the stream
-     * @return a sequential {@code Stream} of type {@code T}
-     * @throws IllegalArgumentException if {@code mapper.layout().byteSize() == 0}
-     * @throws IllegalArgumentException if {@code byteSize() % mapper.layout().byteSize() != 0}
-     * @throws IllegalArgumentException if {@code mapper.layout().byteSize() % mapper.layout().byteAlignment() != 0}
-     * @throws IllegalArgumentException if this segment is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided mapper's {@linkplain SegmentMapper#layout()}
-     */
-    <T> Stream<T> elements(SegmentMapper<T> mapper);
 
     /**
      * {@return the scope associated with this memory segment}
@@ -1949,48 +1927,6 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
     void set(AddressLayout layout, long offset, MemorySegment value);
 
     /**
-     * Reads a mapped value from this segment at the given offset, using the
-     * provided mapper.
-     *
-     * @param mapper the mapper to use when reading mapped values
-     * @param offset the offset in bytes (relative to this segment address) at which
-     *               this access operation will occur.
-     * @param <T>    the type of the mapped value
-     * @return a mapped value read from this segment
-     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
-     *         this segment is not {@linkplain Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided mapper's {@linkplain SegmentMapper#layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - mapper.layout().byteSize()}
-     */
-    <T> T get(SegmentMapper<T> mapper, long offset);
-
-    /**
-     * Writes a mapped value into this segment at the given offset, using the
-     * provided mapper.
-     *
-     * @param mapper the mapper to use when writing mapped values
-     * @param offset the offset in bytes (relative to this segment address) at which this
-     *               access operation will occur
-     * @param value  the mapped value to be written
-     * @param <T>    the type of the mapped value
-     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
-     *         this segment is not {@linkplain Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided mapper's {@linkplain SegmentMapper#layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > byteSize() - mapper.layout().byteSize()}
-     * @throws UnsupportedOperationException if this segment is
-     *         {@linkplain #isReadOnly() read-only}
-     */
-    <T> void set(SegmentMapper<T> mapper, long offset, T value);
-
-    /**
      * Reads a byte from this segment at the given index, scaled by the given
      * layout size.
      *
@@ -2403,53 +2339,6 @@ public sealed interface MemorySegment permits AbstractMemorySegmentImpl {
      * @throws UnsupportedOperationException if {@code value} is not a {@linkplain #isNative() native} segment
      */
     void setAtIndex(AddressLayout layout, long index, MemorySegment value);
-
-    /**
-     * Reads a mapped value from this segment at the given index, scaled by the given
-     * mapper's {@linkplain SegmentMapper#layout()} size.
-     *
-     * @param mapper the mapper of the region of memory to be read.
-     * @param index a logical index. The offset in bytes (relative to this
-     *              segment address) at which the access operation will occur can be
-     *              expressed as {@code (index * mapper.layout().byteSize())}.
-     * @param <T>   the type of the mapped value
-     * @return an int value read from this segment
-     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
-     *         this segment is not {@linkplain Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided mapper
-     * @throws IllegalArgumentException if {@code mapper.layout().byteAlignment() > mapper.layout().byteSize()}
-     * @throws IndexOutOfBoundsException if {@code index * mapper.layout().byteSize()} overflows
-     * @throws IndexOutOfBoundsException if {@code index * mapper.layout().byteSize() > byteSize() - mapper.layout().byteSize()}
-     */
-    <T> T getAtIndex(SegmentMapper<T> mapper, long index);
-
-    /**
-     * Writes a mapped value into this segment at the given index, scaled by the given
-     * mapper's {@linkplain SegmentMapper#layout()} size.
-     *
-     * @param mapper the mapper of the region of memory to be written
-     * @param index a logical index. The offset in bytes (relative to this
-     *              segment address) at which the access operation
-     *              will occur can be expressed as {@code (index * mapper.layout().byteSize())}.
-     * @param value the mapped value to be written
-     * @param <T>   the type of the mapped value
-     * @throws IllegalStateException if the {@linkplain #scope() scope} associated with
-     *         this segment is not {@linkplain Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         in the provided mapper's {@linkplain SegmentMapper#layout()}
-     * @throws IllegalArgumentException if {@code mapper.layout().byteAlignment() > mapper.layout().byteSize()}
-     * @throws IndexOutOfBoundsException if {@code index * mapper.layout().byteSize()} overflows
-     * @throws IndexOutOfBoundsException if {@code index * mapper.layout().byteSize() > byteSize() - mapper.layout().byteSize()}
-     * @throws UnsupportedOperationException if this segment is {@linkplain #isReadOnly() read-only}
-     */
-    <T> void setAtIndex(SegmentMapper<T> mapper, long index, T value);
 
     /**
      * Compares the specified object with this memory segment for equality. Returns

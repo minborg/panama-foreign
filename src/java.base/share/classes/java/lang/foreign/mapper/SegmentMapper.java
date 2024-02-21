@@ -596,10 +596,10 @@ public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
      * @throws IllegalArgumentException if the provided {@code setter} does not
      *         accept objects of type T for its argument at index 2.
      */
-    static <T extends Record> SegmentMapper<T> of(Class<T> type,
-                                                  MemoryLayout layout,
-                                                  MethodHandle getter,
-                                                  MethodHandle setter) {
+    static <T> SegmentMapper<T> of(Class<T> type,
+                                   MemoryLayout layout,
+                                   MethodHandle getter,
+                                   MethodHandle setter) {
         Objects.requireNonNull(type);
         Objects.requireNonNull(layout);
         Objects.requireNonNull(getter);
@@ -629,10 +629,10 @@ public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
      *
      * @see #of(Class, MemoryLayout, MethodHandle, MethodHandle)
      */
-    static <T extends Record> SegmentMapper<T> of(Class<T> type,
-                                                  MemoryLayout layout,
-                                                  Getter<T> getter,
-                                                  Setter<T> setter) {
+    static <T> SegmentMapper<T> of(Class<T> type,
+                                   MemoryLayout layout,
+                                   Getter<T> getter,
+                                   Setter<T> setter) {
         Objects.requireNonNull(type);
         Objects.requireNonNull(layout);
         Objects.requireNonNull(getter);

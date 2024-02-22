@@ -28,13 +28,18 @@
 
 import org.junit.jupiter.api.Test;
 
+import java.lang.foreign.AddressLayout;
 import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.StructLayout;
+import java.lang.foreign.ValueLayout;
 import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.invoke.VarHandle;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
@@ -43,7 +48,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.IntStream;
 
-import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 // Todo: Check alignment against the layout
@@ -728,7 +733,317 @@ final class TestRecordMapper {
         assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(smallSegment, 0));
     }
 
+    @Test
+    void stringMapper()  {
+        try (Arena arena = Arena.ofConfined()){
+            SegmentMapper<String> stringMapper = TestRecordMapper.ofString(arena);
+            MemorySegment segment = arena.allocateFrom(stringMapper, "Hello String mapper!");
+            String fromSegment = stringMapper.get(segment);
+            assertEquals("Hello String mapper!", fromSegment);
+        }
+    }
+
+    @SuppressWarnings("restricted")
+    static final AddressLayout CHAR_POINTER = ADDRESS.withTargetLayout(MemoryLayout.sequenceLayout(Integer.MAX_VALUE, JAVA_BYTE));
+
+    @Test
+    void indirectStringMapper()  {
+        try (Arena arena = Arena.ofConfined()) {
+            SegmentMapper<String> stringMapper = TestRecordMapper.ofString(arena);
+            // We are working with an indirect address
+            assertEquals(ADDRESS.byteSize(), stringMapper.layout().byteSize());
+
+            // Allocates a new MemorySegment in which the string is recorded and then
+            MemorySegment segment = arena.allocateFrom(stringMapper, "Hello String mapper!");
+            assertEquals(ADDRESS.byteSize(), segment.byteSize());
+            String fromSegment = stringMapper.get(segment);
+            assertEquals("Hello String mapper!", fromSegment);
+        }
+    }
+
+    static SegmentMapper<String> ofString(Arena arena) {
+        try {
+            MethodHandle getter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "toStringIndirect",
+                    MethodType.methodType(String.class, MemorySegment.class, long.class))
+                    // Todo: remove
+                    .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
+            MethodHandle setter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "fromStringIndirect",
+                            MethodType.methodType(void.class, Arena.class, MemorySegment.class, long.class, Object.class))
+                    .bindTo(arena);
+
+            return SegmentMapper.of(String.class, CHAR_POINTER, getter, setter);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static String toStringIndirect(MemorySegment segment, long offset) {
+        MemorySegment stringSegment = segment.get(CHAR_POINTER, offset);
+        return stringSegment.getString(offset);
+    }
+
+    static void fromStringIndirect(Arena arena, MemorySegment segment, long offset, Object value) {
+        MemorySegment stringSegment = arena.allocateFrom((String) value);
+        // Make sure we have the same scope
+        if (!segment.scope().equals(stringSegment.scope())) {
+            throw new IllegalArgumentException("the provided segment does not have the correct scope:" + segment);
+        }
+        segment.set(CHAR_POINTER, offset, stringSegment);
+    }
+
+    @Test
+    void intMapper() {
+        SegmentMapper<Integer> intMapper = SegmentMapper.ofPrimitive(JAVA_INT);
+        MemorySegment segment = MemorySegment.ofArray(new int[]{13, 42});
+        int value = intMapper.getAtIndex(segment, 1);
+        assertEquals(42, value);
+        intMapper.setAtIndex(segment, 0, 147);
+        assertEquals(147, segment.getAtIndex(JAVA_INT, 0));
+    }
+
+    @Test
+    void intOrLongToLongMapper()  {
+        for (ValueLayout platformLayout: List.of(JAVA_INT, JAVA_LONG)) {
+            MemorySegment segment = (platformLayout == JAVA_INT)
+                    ? MemorySegment.ofArray(new int[]{42})
+                    : MemorySegment.ofArray(new long[]{42L});
+
+            // Materialize a Number but use any backing layout L ∈ (OfByte, OfShort, OfInt, OfFloat, OfLong, OfDouble)
+            SegmentMapper<Number> mapper = SegmentMapper.ofNumber(platformLayout);
+
+            Number number = mapper.get(segment, 0);
+            assertEquals(42, number.longValue());
+            assertEquals(platformLayout, mapper.layout());
+
+            mapper.set(segment, 0, (byte) 63);
+            assertEquals(63, mapper.get(segment).intValue());
+        }
+    }
+
+
+    @Test
+    void ofPrimitiveInt() {
+        var segment = MemorySegment.ofArray(new int[]{1, 2});
+        SegmentMapper<Integer> mapper = SegmentMapper.ofPrimitive(JAVA_INT);
+        int value = mapper.getAtIndex(segment, 1);
+        assertEquals(2, value);
+        mapper.setAtIndex(segment, 1, 3);
+        assertEquals(3, segment.getAtIndex(JAVA_INT, 1));
+    }
+
+    @Test
+    void ofPrimitiveLong() {
+        var segment = MemorySegment.ofArray(new long[]{1, 2});
+        SegmentMapper<Long> mapper = SegmentMapper.ofPrimitive(JAVA_LONG);
+        long value = mapper.getAtIndex(segment, 1);
+        assertEquals(2L, value);
+        mapper.setAtIndex(segment, 1, 3L);
+        assertEquals(3, segment.getAtIndex(JAVA_LONG, 1));
+    }
+
+    @Test
+    void ofString() {
+        try (Arena arena = Arena.ofConfined()) {
+            SegmentMapper<String> mapper = SegmentMapper.ofString(32);
+            var segment = arena.allocate(mapper.layout());
+            mapper.set(segment, "Hello mapper!");
+            assertEquals("Hello mapper!", mapper.get(segment));
+        }
+    }
+
+    interface SegmentBacked {
+        MemorySegment segment();
+        long offset();
+    }
+
+    public interface LazyPoint extends SegmentBacked {
+        int x();
+        void x(int x);
+        int y();
+        void y(int y);
+    }
+
+    public record LazyPointImpl(@Override MemorySegment segment,
+                                @Override long offset) implements LazyPoint {
+
+        private static final VarHandle X = POINT_LAYOUT.varHandle(PathElement.groupElement("x"));
+        private static final VarHandle Y = POINT_LAYOUT.varHandle(PathElement.groupElement("y"));
+
+        public int x() {
+            return (int) X.get(segment, offset);
+        }
+
+        public void x(int x) {
+            X.set(segment, offset, x);
+        }
+
+        public int y() {
+            return (int) Y.get(segment, offset);
+        }
+
+        public void y(int y) {
+            Y.set(segment, offset, y);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof LazyPoint other &&
+                    MemorySegment.mismatch(segment, offset, offset + POINT_LAYOUT.byteSize(),
+                            other.segment(), offset(), other.offset() + POINT_LAYOUT.byteSize()) != -1;
+        }
+
+        @Override
+        public int hashCode() {
+            // return MemorySegment.hashCode(segment, offset, offset+POINT_LAYOUT.byteSize());
+            return Arrays.hashCode(segment
+                    .asSlice(offset, POINT_LAYOUT.byteSize())
+                    .toArray(JAVA_BYTE));
+        }
+
+        @Override
+        public String toString() {
+            return "LazyPoint[x()=" + x() + ", y()=" + y() + "]";
+        }
+
+        // Setter
+        public static void set(MemorySegment dstSegment, long dstOffset, LazyPoint lazyPoint) {
+            MemorySegment.copy(lazyPoint.segment(), lazyPoint.offset(), dstSegment, dstOffset, POINT_LAYOUT.byteSize());
+        }
+
+    }
+
+    @Test
+    void ofLazy() {
+        var segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
+        SegmentMapper<LazyPoint> mapper = SegmentMapper.of(LazyPoint.class, POINT_LAYOUT, LazyPointImpl::new, LazyPointImpl::set);
+
+        LazyPoint point = mapper.getAtIndex(segment, 1);
+        assertEquals(6, point.x());
+        assertEquals(8, point.y());
+        point.x(-6);
+        point.y(-8);
+
+        mapper.set(segment, point);
+        assertEquals(-6, segment.getAtIndex(JAVA_INT, 0));
+        assertEquals(-8, segment.getAtIndex(JAVA_INT, 1));
+    }
+
+    @Test
+    void elementSpecificMapping() {
+
+    }
+
+    @Test
+    void array() {
+        SequenceLayout sequenceLayout = MemoryLayout.sequenceLayout(16, JAVA_INT);
+        var segment = MemorySegment.ofArray(IntStream.range(0, (int) sequenceLayout.elementCount() * 2).toArray());
+        SegmentMapper<int[]> mapper = ofIntArray(sequenceLayout);
+
+        int[] value = mapper.get(segment);
+        assertArrayEquals(IntStream.range(0, (int) sequenceLayout.elementCount()).toArray(), value);
+    }
+
+    static SegmentMapper<int[]> ofIntArray(SequenceLayout layout) {
+        if (!(layout.elementLayout() instanceof OfInt elementLayout)) {
+            throw new IllegalArgumentException();
+        }
+        try {
+            MethodHandle getter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "getIntArray",
+                    MethodType.methodType(int[].class, MemorySegment.class, long.class, long.class, OfInt.class));
+            getter = MethodHandles.insertArguments(getter, 2, layout.byteSize(), elementLayout);
+            getter = getter.asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
+            MethodHandle setter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "setIntArray",
+                    MethodType.methodType(void.class, MemorySegment.class, long.class, int[].class, int.class, OfInt.class));
+            setter = MethodHandles.insertArguments(setter, 3, (int) layout.elementCount(), elementLayout);
+            setter = setter.asType(setter.type().changeParameterType(2, Object.class));
+            return SegmentMapper.of(int[].class, layout, getter, setter);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static int[] getIntArray(MemorySegment segment, long offset, long byteSize, OfInt elementLayout) {
+        return segment.asSlice(offset, byteSize).toArray(elementLayout);
+    }
+
+    static void setIntArray(MemorySegment dstSegment, long dstOffset, int[] value, int elementCount, OfInt dstLayout) {
+        MemorySegment.copy(value, 0, dstSegment, dstLayout, dstOffset, elementCount);
+    }
+
+    @Test
+    void intOrLongToLongHandle() throws Throwable {
+        for (ValueLayout platformLayout: List.of(JAVA_INT, JAVA_LONG)) {
+            MemorySegment segment = (platformLayout == JAVA_INT)
+                    ? MemorySegment.ofArray(new int[]{42})
+                    : MemorySegment.ofArray(new long[]{42L});
+
+            // Materialize a Number but use any backing layout L ∈ (OfByte, OfShort, OfInt, OfFloat, OfLong, OfDouble)
+            MethodHandle getter = toLongGetter(platformLayout);
+            long number = (long) getter.invokeExact(segment, 0L);
+
+            assertEquals(42L, number);
+
+            MethodHandle setter = fromLongSetter(platformLayout);
+            setter.invokeExact(segment, 0L, 63L);
+            assertEquals(63L, (long) getter.invokeExact(segment, 0L));
+        }
+    }
+
+    static final MethodHandle INT_TO_LONG;
+    static final MethodHandle LONG_TO_INT;
+    static {
+        try {
+            INT_TO_LONG = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "intToLong", MethodType.methodType(long.class, int.class));
+            LONG_TO_INT = LOCAL_LOOKUP.findStatic(Math.class, "toIntExact", MethodType.methodType(int.class, long.class));
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    MethodHandle toLongGetter(ValueLayout layout) {
+        try {
+            Class<?> interfaceType = layout.getClass().getInterfaces()[0];
+            MethodHandle handle = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "get", MethodType.methodType(layout.carrier(), interfaceType, long.class));
+            handle = MethodHandles.insertArguments(handle, 1, layout);
+
+            return switch (layout) {
+                case OfLong lo -> handle;
+                case OfInt  in -> MethodHandles.filterReturnValue(handle, INT_TO_LONG);
+                default -> throw new UnsupportedOperationException();
+
+            };
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    MethodHandle fromLongSetter(ValueLayout layout) {
+        try {
+            Class<?> interfaceType = layout.getClass().getInterfaces()[0];
+            MethodHandle handle = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "set", MethodType.methodType(void.class, interfaceType, long.class, layout.carrier()));
+            handle = MethodHandles.insertArguments(handle, 1, layout);
+
+            return switch (layout) {
+                case OfLong lo -> handle;
+                case OfInt  in -> MethodHandles.filterArguments(handle, 2, LONG_TO_INT);
+                default -> throw new UnsupportedOperationException();
+
+            };
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static long intToLong(int value) {
+        return value;
+    }
+
+
     // Support methods
+
+    private static void printIntSegment(MemorySegment segment) {
+        System.out.println(Arrays.toString(segment.toArray(JAVA_INT)));
+    }
 
     private static MemorySegment newCopyOf(MemorySegment source) {
         return Arena.ofAuto()

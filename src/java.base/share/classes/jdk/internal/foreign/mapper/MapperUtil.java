@@ -33,6 +33,7 @@ import java.lang.constant.ClassDesc;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -48,13 +49,14 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+
 public final class MapperUtil {
 
     private MapperUtil() {
     }
 
     private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
-
 
     public static final MethodHandle GETTER;
     public static final MethodHandle SETTER;
@@ -158,19 +160,19 @@ public final class MapperUtil {
 
     }
 
-    static void assertReturnType(MethodHandle handle, Class<?> type) {
+    static void assertReturnType(MethodHandle handle, Class<?> type, String variant) {
         Class<?> returnType = handle.type().returnType();
         if (!returnType.equals(type)) {
             throw new IllegalArgumentException(
-                    "The return type of " + handle + " is " + returnType + " and not " + type);
+                    "The return type of the " + variant + " " + handle + " is " + returnType + " and not " + type);
         }
     }
 
-    static void assertParameterType(MethodHandle handle, int num, Class<?> type) {
+    static void assertParameterType(MethodHandle handle, int num, Class<?> type, String variant) {
         Class<?> parameterType = handle.type().parameterType(num);
         if (!parameterType.equals(type)) {
             throw new IllegalArgumentException(
-                    "The parameter with index " + num + " of " + handle + " is " + parameterType + " and not " + type);
+                    "The parameter with index " + num + " of " + variant + " " + handle + " is " + parameterType + " and not " + type);
         }
     }
 
@@ -223,5 +225,46 @@ public final class MapperUtil {
                     "This one-way mapper cannot map from " + newType + " to " + originalMapper.type());
         });
     }
+
+    // SegmentMapper static factories
+
+    public static SegmentMapper<String> ofString(int length) {
+            SegmentMapper.Getter<String> getter = MapperUtil::toStringDirect;
+            SegmentMapper.Setter<String> setter = MapperUtil::fromStringDirect;
+            return SegmentMapper.of(String.class, MemoryLayout.sequenceLayout(length, JAVA_BYTE), getter, setter);
+    }
+
+    static String toStringDirect(MemorySegment segment, long offset) {
+        return segment.asSlice(offset).getString(offset);
+    }
+
+    static void fromStringDirect(MemorySegment segment, long offset, String value) {
+        segment.setString(offset, value);
+    }
+
+    public static <T> SegmentMapper<T> ofPrimitive(Class<T> wrapperType, ValueLayout layout) {
+        Class<?> primitiveType = layout.carrier();
+        Class<?> layoutInterfaceType = layout.getClass().getInterfaces()[0];
+        String fromObjName = primitiveType.toString()+"Value";
+
+        try {
+            MethodHandle toObj = LOCAL_LOOKUP.findStatic(wrapperType, "valueOf", MethodType.methodType(wrapperType, primitiveType));
+            MethodHandle getter = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "get", MethodType.methodType(primitiveType, layoutInterfaceType, long.class));
+            getter = MethodHandles.insertArguments(getter, 1, layout);
+            getter = MethodHandles.filterReturnValue(getter, toObj)
+                    // Todo: remove
+                    .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
+            MethodHandle fromObj = LOCAL_LOOKUP.findVirtual(wrapperType, fromObjName, MethodType.methodType(primitiveType));
+            // Todo: remove
+            fromObj = fromObj.asType(fromObj.type().changeParameterType(0, Object.class));
+            MethodHandle setter = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "set", MethodType.methodType(void.class, layoutInterfaceType, long.class, primitiveType));
+            setter = MethodHandles.insertArguments(setter, 1, layout);
+            setter = MethodHandles.filterArguments(setter, 2, fromObj);
+            return SegmentMapper.of(wrapperType, layout, getter, setter);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
 
 }

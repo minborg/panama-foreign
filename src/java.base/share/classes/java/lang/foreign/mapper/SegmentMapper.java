@@ -4,9 +4,11 @@ import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentMapperImpl;
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SegmentAllocator;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
@@ -295,7 +297,7 @@ public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
                  IllegalArgumentException rethrow) {
             throw rethrow;
         } catch (Throwable e) {
-            throw new RuntimeException("Unable to invoke getHandle() with " +
+            throw new RuntimeException("Unable to invoke getter() with " +
                     "segment="  + segment +
                     ", offset=" + offset, e);
         }
@@ -404,7 +406,7 @@ public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
                  NullPointerException rethrow) {
             throw rethrow;
         } catch (Throwable e) {
-            throw new RuntimeException("Unable to invoke setHandle() with " +
+            throw new RuntimeException("Unable to invoke setter() with " +
                     "segment=" + segment +
                     ", offset=" + offset +
                     ", t=" + t, e);
@@ -684,6 +686,96 @@ public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
          * @param value   the value to write
          */
         void set(MemorySegment segment, long offset, T value);
+    }
+
+    // Presets. Maybe such mappers could reside in a 3rd party library?
+
+    /**
+     * {@return a segment mapper that can map Strings to a memory segment}
+     * @param length representing the amount of memory allocated for a String
+     *               including null termination.
+     */
+    static SegmentMapper<String> ofString(int length) {
+        return MapperUtil.ofString(length);
+    }
+
+    /**
+     * {@return a segment mapper ...}
+     * @param layout that will be used when reading and writing data
+     */
+    static SegmentMapper<Byte> ofPrimitive(ValueLayout.OfByte layout) {
+        return MapperUtil.ofPrimitive(Byte.class, layout);
+    }
+
+    /**
+     * {@return a segment mapper ...}
+     * @param layout that will be used when reading and writing data
+     */
+    static SegmentMapper<Short> ofPrimitive(ValueLayout.OfShort layout) {
+        return MapperUtil.ofPrimitive(Short.class, layout);
+    }
+
+    /**
+     * {@return a segment mapper ...}
+     * @param layout that will be used when reading and writing data
+     */
+    static SegmentMapper<Character> ofPrimitive(ValueLayout.OfChar layout) {
+        return MapperUtil.ofPrimitive(Character.class, layout);
+    }
+
+    /**
+     * {@return a segment mapper ...}
+     * @param layout that will be used when reading and writing data
+     */
+    static SegmentMapper<Integer> ofPrimitive(ValueLayout.OfInt layout) {
+        return MapperUtil.ofPrimitive(Integer.class, layout);
+    }
+
+    /**
+     * {@return a segment mapper ...}
+     * @param layout that will be used when reading and writing data
+     */
+    static SegmentMapper<Float> ofPrimitive(ValueLayout.OfFloat layout) {
+        return MapperUtil.ofPrimitive(Float.class, layout);
+    }
+
+    /**
+     * {@return a segment mapper ...}
+     * @param layout that will be used when reading and writing data
+     */
+    static SegmentMapper<Long> ofPrimitive(ValueLayout.OfLong layout) {
+        return MapperUtil.ofPrimitive(Long.class, layout);
+    }
+
+    /**
+     * {@return a segment mapper ...}
+     * @param layout that will be used when reading and writing data
+     */
+    static SegmentMapper<Double> ofPrimitive(ValueLayout.OfDouble layout) {
+        return MapperUtil.ofPrimitive(Double.class, layout);
+    }
+
+    /**
+     * {@return a segment mapper ...}
+     * @param layout that will be used when reading and writing data
+     */
+    static SegmentMapper<Number> ofNumber(ValueLayout layout) {
+        // Todo: consider using "exact" conversion (e.g. Math::toIntExact)
+        return switch (layout) {
+            case ValueLayout.OfByte by ->
+                    SegmentMapper.ofPrimitive(by).map(Number.class, Function.identity(), Number::byteValue);
+            case ValueLayout.OfShort sh ->
+                    SegmentMapper.ofPrimitive(sh).map(Number.class, Function.identity(), Number::shortValue);
+            case ValueLayout.OfInt in ->
+                    SegmentMapper.ofPrimitive(in).map(Number.class, Function.identity(), Number::intValue);
+            case ValueLayout.OfFloat fl ->
+                    SegmentMapper.ofPrimitive(fl).map(Number.class, Function.identity(), Number::floatValue);
+            case ValueLayout.OfLong lo ->
+                    SegmentMapper.ofPrimitive(lo).map(Number.class, Function.identity(), Number::longValue);
+            case ValueLayout.OfDouble db ->
+                    SegmentMapper.ofPrimitive(db).map(Number.class, Function.identity(), Number::doubleValue);
+            default -> throw new IllegalArgumentException("Layout not supported: " + layout);
+        };
     }
 
 }

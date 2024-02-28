@@ -4,9 +4,11 @@ import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentMapperImpl;
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SegmentAllocator;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
@@ -81,13 +83,13 @@ import java.util.stream.Stream;
  *
  * }
  *
- * RecordMapper<NarrowedPoint> narrowedPointMapper =
- *         RecordMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
+ * SegmentMapper<NarrowedPoint> narrowedPointMapper =
+ *         SegmentMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
  *         .map(NarrowedPoint.class, NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
  *
  * // Extracts a new NarrowedPoint from the provided MemorySegment
  * NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
- *}
+ * }
  *
  * <h2 id="formal-mapping">Formal mapping description</h2>
  *
@@ -140,7 +142,7 @@ import java.util.stream.Stream;
 //       -> Fixed via TestInterfaceMapper::doubleBuffered
 // No:   Map components to MemorySegment (escape hatch). Records should be immutable and not connected. Maybe we could
 //       create a copy of a segment with the same life cycle?
-public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl {
+public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
 
     /**
      * {@return the type that this mapper is mapping to and from}
@@ -151,8 +153,8 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return the original {@link GroupLayout } that this mapper is using to map record
      * components}
      * <p>
-     * Composed segment mappers (obtained via either the {@link RecordMapper#map(Class, Function)}
-     * or the {@link RecordMapper#map(Class, Function, Function)} will still return the memory
+     * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Class, Function)}
+     * or the {@link SegmentMapper#map(Class, Function, Function)} will still return the memory
      * layout from the <em>original</em> SegmentMapper.
      */
     MemoryLayout layout();
@@ -464,9 +466,9 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * @param <R> the type of the new segment mapper
      * @throws UnsupportedOperationException if this is an interface mapper.
      */
-    default <R> RecordMapper<R> map(Class<R> newType,
-                                    Function<? super T, ? extends R> toMapper,
-                                    Function<? super R, ? extends T> fromMapper) {
+    default <R> SegmentMapper<R> map(Class<R> newType,
+                                     Function<? super T, ? extends R> toMapper,
+                                     Function<? super R, ? extends T> fromMapper) {
         return MapperUtil.map(this, newType, toMapper, fromMapper);
     }
 
@@ -483,8 +485,8 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * @param toMapper to apply after get operations on this segment mapper
      * @param <R> the type of the new segment mapper
      */
-    default <R> RecordMapper<R> map(Class<R> newType,
-                                    Function<? super T, ? extends R> toMapper) {
+    default <R> SegmentMapper<R> map(Class<R> newType,
+                                     Function<? super T, ? extends R> toMapper) {
         return MapperUtil.map(this, newType, toMapper);
     }
 
@@ -515,7 +517,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      *         components for which there are no natural layout (e.g. arrays)
      * @see #ofRecord(MethodHandles.Lookup, Class, GroupLayout)
      */
-    static <T extends Record> RecordMapper<T> ofRecord(Class<T> type) {
+    static <T extends Record> SegmentMapper<T> ofRecord(Class<T> type) {
         return ofRecord(MethodHandles.publicLookup(), type, NaturalLayout.ofRecord(type));
     }
 
@@ -542,8 +544,8 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      *         if the method is otherwise unable to create a segment mapper as specified above
      * @see #ofRecord(MethodHandles.Lookup, Class, GroupLayout)
      */
-    static <T extends Record> RecordMapper<T> ofRecord(Class<T> type,
-                                                       GroupLayout layout) {
+    static <T extends Record> SegmentMapper<T> ofRecord(Class<T> type,
+                                                        GroupLayout layout) {
         return ofRecord(MethodHandles.publicLookup(), type, layout);
     }
 
@@ -568,9 +570,9 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      *         the provided {@code layout} or if the provided {@code type} is not public or
      *         if the method is otherwise unable to create a segment mapper as specified above
      */
-    static <T extends Record> RecordMapper<T> ofRecord(MethodHandles.Lookup lookup,
-                                                       Class<T> type,
-                                                       GroupLayout layout) {
+    static <T extends Record> SegmentMapper<T> ofRecord(MethodHandles.Lookup lookup,
+                                                        Class<T> type,
+                                                        GroupLayout layout) {
         Objects.requireNonNull(lookup);
         MapperUtil.requireRecordType(type);
         Objects.requireNonNull(layout);
@@ -596,10 +598,10 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * @throws IllegalArgumentException if the provided {@code setter} does not
      *         accept objects of type T for its argument at index 2.
      */
-    static <T> RecordMapper<T> of(Class<T> type,
-                                  MemoryLayout layout,
-                                  MethodHandle getter,
-                                  MethodHandle setter) {
+    static <T> SegmentMapper<T> of(Class<T> type,
+                                   MemoryLayout layout,
+                                   MethodHandle getter,
+                                   MethodHandle setter) {
         Objects.requireNonNull(type);
         Objects.requireNonNull(layout);
         Objects.requireNonNull(getter);
@@ -629,10 +631,10 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      *
      * @see #of(Class, MemoryLayout, MethodHandle, MethodHandle)
      */
-    static <T> RecordMapper<T> of(Class<T> type,
-                                  MemoryLayout layout,
-                                  Getter<T> getter,
-                                  Setter<T> setter) {
+    static <T> SegmentMapper<T> of(Class<T> type,
+                                   MemoryLayout layout,
+                                   Getter<T> getter,
+                                   Setter<T> setter) {
         Objects.requireNonNull(type);
         Objects.requireNonNull(layout);
         Objects.requireNonNull(getter);
@@ -693,7 +695,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * @param length representing the amount of memory allocated for a String
      *               including null termination.
      */
-    static RecordMapper<String> ofString(int length) {
+    static SegmentMapper<String> ofString(int length) {
         return MapperUtil.ofString(length);
     }
 
@@ -701,7 +703,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return a segment mapper ...}
      * @param layout that will be used when reading and writing data
      */
-    static RecordMapper<Byte> ofPrimitive(ValueLayout.OfByte layout) {
+    static SegmentMapper<Byte> ofPrimitive(ValueLayout.OfByte layout) {
         return MapperUtil.ofPrimitive(Byte.class, layout);
     }
 
@@ -709,7 +711,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return a segment mapper ...}
      * @param layout that will be used when reading and writing data
      */
-    static RecordMapper<Short> ofPrimitive(ValueLayout.OfShort layout) {
+    static SegmentMapper<Short> ofPrimitive(ValueLayout.OfShort layout) {
         return MapperUtil.ofPrimitive(Short.class, layout);
     }
 
@@ -717,7 +719,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return a segment mapper ...}
      * @param layout that will be used when reading and writing data
      */
-    static RecordMapper<Character> ofPrimitive(ValueLayout.OfChar layout) {
+    static SegmentMapper<Character> ofPrimitive(ValueLayout.OfChar layout) {
         return MapperUtil.ofPrimitive(Character.class, layout);
     }
 
@@ -725,7 +727,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return a segment mapper ...}
      * @param layout that will be used when reading and writing data
      */
-    static RecordMapper<Integer> ofPrimitive(ValueLayout.OfInt layout) {
+    static SegmentMapper<Integer> ofPrimitive(ValueLayout.OfInt layout) {
         return MapperUtil.ofPrimitive(Integer.class, layout);
     }
 
@@ -733,7 +735,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return a segment mapper ...}
      * @param layout that will be used when reading and writing data
      */
-    static RecordMapper<Float> ofPrimitive(ValueLayout.OfFloat layout) {
+    static SegmentMapper<Float> ofPrimitive(ValueLayout.OfFloat layout) {
         return MapperUtil.ofPrimitive(Float.class, layout);
     }
 
@@ -741,7 +743,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return a segment mapper ...}
      * @param layout that will be used when reading and writing data
      */
-    static RecordMapper<Long> ofPrimitive(ValueLayout.OfLong layout) {
+    static SegmentMapper<Long> ofPrimitive(ValueLayout.OfLong layout) {
         return MapperUtil.ofPrimitive(Long.class, layout);
     }
 
@@ -749,7 +751,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return a segment mapper ...}
      * @param layout that will be used when reading and writing data
      */
-    static RecordMapper<Double> ofPrimitive(ValueLayout.OfDouble layout) {
+    static SegmentMapper<Double> ofPrimitive(ValueLayout.OfDouble layout) {
         return MapperUtil.ofPrimitive(Double.class, layout);
     }
 
@@ -757,21 +759,21 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * {@return a segment mapper ...}
      * @param layout that will be used when reading and writing data
      */
-    static RecordMapper<Number> ofNumber(ValueLayout layout) {
+    static SegmentMapper<Number> ofNumber(ValueLayout layout) {
         // Todo: consider using "exact" conversion (e.g. Math::toIntExact)
         return switch (layout) {
             case ValueLayout.OfByte by ->
-                    RecordMapper.ofPrimitive(by).map(Number.class, Function.identity(), Number::byteValue);
+                    SegmentMapper.ofPrimitive(by).map(Number.class, Function.identity(), Number::byteValue);
             case ValueLayout.OfShort sh ->
-                    RecordMapper.ofPrimitive(sh).map(Number.class, Function.identity(), Number::shortValue);
+                    SegmentMapper.ofPrimitive(sh).map(Number.class, Function.identity(), Number::shortValue);
             case ValueLayout.OfInt in ->
-                    RecordMapper.ofPrimitive(in).map(Number.class, Function.identity(), Number::intValue);
+                    SegmentMapper.ofPrimitive(in).map(Number.class, Function.identity(), Number::intValue);
             case ValueLayout.OfFloat fl ->
-                    RecordMapper.ofPrimitive(fl).map(Number.class, Function.identity(), Number::floatValue);
+                    SegmentMapper.ofPrimitive(fl).map(Number.class, Function.identity(), Number::floatValue);
             case ValueLayout.OfLong lo ->
-                    RecordMapper.ofPrimitive(lo).map(Number.class, Function.identity(), Number::longValue);
+                    SegmentMapper.ofPrimitive(lo).map(Number.class, Function.identity(), Number::longValue);
             case ValueLayout.OfDouble db ->
-                    RecordMapper.ofPrimitive(db).map(Number.class, Function.identity(), Number::doubleValue);
+                    SegmentMapper.ofPrimitive(db).map(Number.class, Function.identity(), Number::doubleValue);
             default -> throw new IllegalArgumentException("Layout not supported: " + layout);
         };
     }

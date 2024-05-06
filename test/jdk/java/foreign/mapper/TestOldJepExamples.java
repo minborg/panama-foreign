@@ -34,14 +34,11 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.foreign.mapper.SegmentMapper;
-import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.Objects;
 
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -284,8 +281,8 @@ final class TestOldJepExamples {
     @Test
     void pointRecordMapper() {
         // Automatically creates a mapper that can read and write Point records from/to segments.
-        SegmentMapper<Point> mapper =
-                SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper =
+                RecordMapper.ofRecord(Point.class, POINT_LAYOUT);
 
         Point point = mapper.getAtIndex(segment, 1);
         // Point[x=6, y=0]
@@ -302,8 +299,8 @@ final class TestOldJepExamples {
     @Test
     void lineRecordMapper() {
 
-        SegmentMapper<Line> mapper =
-                SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
+        RecordMapper<Line> mapper =
+                RecordMapper.ofRecord(Line.class, LINE_LAYOUT);
 
         Line line = mapper.getAtIndex(segment, 1);
         // Line[begin=Point[x=9, y=4], end=Point[x=0, y=5]]
@@ -338,8 +335,8 @@ final class TestOldJepExamples {
     @Test
     void narrowing() {
         // Original mapper
-        SegmentMapper<Point> mapper =
-                SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper =
+                RecordMapper.ofRecord(Point.class, POINT_LAYOUT);
 
         // Secondary-stage mapper
         SegmentMapper<TinyPoint> tinyMapper =
@@ -355,8 +352,8 @@ final class TestOldJepExamples {
 
     @Test
     void stream() {
-        SegmentMapper<Point> mapper =
-                SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper =
+                RecordMapper.ofRecord(Point.class, POINT_LAYOUT);
 
         // Calculate the average distance from each point
         // to the origin.

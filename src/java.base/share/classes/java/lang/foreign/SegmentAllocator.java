@@ -25,7 +25,7 @@
 
 package java.lang.foreign;
 
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.RecordMapper;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
@@ -414,9 +414,9 @@ public interface SegmentAllocator {
      * {@return a new memory segment initialized with the provided mapped value}
      * <p>
      * The size of the allocated memory segment is the
-     * {@linkplain MemoryLayout#byteSize() size} of the given mapper's {@linkplain SegmentMapper#layout()}.
+     * {@linkplain MemoryLayout#byteSize() size} of the given mapper's {@linkplain RecordMapper#layout()}.
      * The given value is written into the segment according to the byte order and alignment constraint of
-     * the given mapper's {@linkplain SegmentMapper#layout()}.
+     * the given mapper's {@linkplain RecordMapper#layout()}.
      *
      * @implSpec The default implementation is equivalent to:
      * {@snippet lang=java :
@@ -429,7 +429,7 @@ public interface SegmentAllocator {
      * @param value    the mapped value to be set in the newly allocated memory segment
      * @param <T>      the type of the mapped value
      */
-    default <T> MemorySegment allocateFrom(SegmentMapper<T> mapper, T value) {
+    default <T> MemorySegment allocateFrom(RecordMapper<T> mapper, T value) {
         Objects.requireNonNull(mapper);
         MemorySegment seg = allocateNoInit(mapper.layout());
         mapper.set(seg, 0, value);
@@ -633,7 +633,7 @@ public interface SegmentAllocator {
      * {@code mapper.layout().byteSize() * elements.length}. The contents of the
      * source collection is written into the result segment element by element, according
      * to the byte order and alignment constraint of the given mapper's
-     * {@linkplain SegmentMapper#layout()}.
+     * {@linkplain RecordMapper#layout()}.
      *
      * @implSpec The default implementation for this method is equivalent to the
      *           following code:
@@ -653,7 +653,7 @@ public interface SegmentAllocator {
      *         {@code mapper.layout().byteAlignment() > mapper.layout().byteSize()}
      */
     @ForceInline
-    default <T> MemorySegment allocateFrom(SegmentMapper<T> mapper, SequencedCollection<? extends T> elements) {
+    default <T> MemorySegment allocateFrom(RecordMapper<T> mapper, SequencedCollection<? extends T> elements) {
         Objects.requireNonNull(mapper);
         Objects.requireNonNull(elements);
         MemorySegment seg = allocateNoInit(mapper.layout(), elements.size());

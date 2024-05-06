@@ -59,7 +59,7 @@ public final class InternalNaturalLayout {
         Stream<UnifiedHolder> source;
         if (type.isRecord()) {
             source = Arrays.stream(
-                            MapperUtil.requireRecordType(type)
+                            MapperUtil.requireRecord(type)
                                     .getRecordComponents())
                     .map(InternalNaturalLayout::holderFor);
         } else {

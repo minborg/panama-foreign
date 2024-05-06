@@ -37,7 +37,7 @@ public final class NaturalLayout {
      *         or if the provided {@code type} is not public
      */
     public static <T extends Record> GroupLayout ofRecord(Class<T> type) {
-        MapperUtil.requireRecordType(type);
+        MapperUtil.requireRecord(type);
         return InternalNaturalLayout.groupLayoutOf(type);
     }
 

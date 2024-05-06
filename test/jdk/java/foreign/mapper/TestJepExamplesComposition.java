@@ -33,7 +33,7 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.ValueLayout;
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -87,7 +87,7 @@ final class TestJepExamplesComposition {
         MethodHandle makePoint = makePointHandle();
 
         record Point(int x, int y) { }
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Point.class, POINT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(MethodHandles.lookup(), Point.class, POINT);
         MethodHandle segmentToPoint = MethodHandles.insertArguments(mapper.getter(), 1, 0L);
         makePoint = MethodHandles.filterReturnValue(makePoint, segmentToPoint);
 
@@ -107,7 +107,7 @@ final class TestJepExamplesComposition {
     void compositionOld() throws Throwable {
         MemorySegment segment = Arena.ofAuto().allocateFrom(JAVA_INT, 3, 4);
 
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(Point.class, POINT);
 
         // Method handle for the `get` operation from a SegmentMapper<Point>
         // (MemorySegment segment, long offset)Point

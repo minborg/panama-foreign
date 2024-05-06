@@ -24,7 +24,7 @@
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.RecordMapper;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
@@ -105,11 +105,11 @@ public abstract class BaseTest {
                     0, 0})
             .asReadOnly();
 
-    public static final SegmentMapper<Point> POINT_MAPPER = pointMapper();
+    public static final RecordMapper<Point> POINT_MAPPER = pointMapper();
 
-    private static SegmentMapper<Point> pointMapper() {
+    private static RecordMapper<Point> pointMapper() {
         try {
-            return SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+            return RecordMapper.ofRecord(Point.class, POINT_LAYOUT);
         } catch (Throwable th) {
             th.printStackTrace();
             throw th;

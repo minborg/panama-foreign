@@ -1,0 +1,25 @@
+
+
+// Todo: How do we handle "extra" setters for interfaces? They should not append
+
+// Cerializer
+// Todo: Check all exceptions in JavaDocs: See TestScopedOperations
+// Todo: Consider generating a graphics rendering.
+// Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
+// Todo: Provide safe sharing across threads (e.g. implement a special Interface with piggybacking/volatile access)
+// Todo: Prevent several variants in a record from being mapped to a union (otherwise, which will "win" when writing?)
+// Todo: There seams to be a problem with the ByteOrder in the mapper. See TestJepExamplesUnions
+// Todo: Let SegmentMapper::getHandle and ::setHandle return the sharp types (e.g. Point) see MethodHandles::exactInvoker
+
+// Done: The generated interface classes should be @ValueBased
+// Done: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST
+//       -> See TestDataProcessingRecord and TestDataProcessingInterface
+// No: ~map() can be dropped in favour of "manual mapping"~
+// Done: Interfaces with internal segments should be directly available via separate factory methods
+//       -> Fixed via SegmentMapper::create
+// Done: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
+//       This can be fixed using double-buffering. Maybe provide a scratch segment somehow that tracks where writes
+//       has been made (via a separate class BufferedMapper?)
+//       -> Fixed via TestInterfaceMapper::doubleBuffered
+// No:   Map components to MemorySegment (escape hatch). Records should be immutable and not connected. Maybe we could
+//       create a copy of a segment with the same life cycle?

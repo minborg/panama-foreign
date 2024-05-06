@@ -32,7 +32,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.reflect.RecordComponent;
@@ -185,8 +185,8 @@ final class TestDataProcessingRecord {
     public record Measurement(int date, float a, float b, float c) {
     }
 
-    private static final SegmentMapper<Measurement> MAPPER =
-            SegmentMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
+    private static final RecordMapper<Measurement> MAPPER =
+            RecordMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
 
 
     @Test
@@ -423,8 +423,8 @@ final class TestDataProcessingRecord {
     public record SmallMeasurement(int date, float d) {
     }
 
-    private static final SegmentMapper<SmallMeasurement> SMALL_MAPPER =
-            SegmentMapper.ofRecord(MethodHandles.lookup(), SmallMeasurement.class, SMALL_MEASUREMENT_LAYOUT);
+    private static final RecordMapper<SmallMeasurement> SMALL_MAPPER =
+            RecordMapper.ofRecord(MethodHandles.lookup(), SmallMeasurement.class, SMALL_MEASUREMENT_LAYOUT);
 
     private static final MemorySegment SMALL_SEGMENT = initSmallMeasurements();
 
@@ -654,7 +654,7 @@ final class TestDataProcessingRecord {
 
         // Unfortunately only works for segments with byteSize() % 16 == 0
 
-        SegmentMapper<SegmentRow> mapper = SegmentMapper.ofRecord(SegmentRow.class, SegmentRow.LAYOUT);
+        RecordMapper<SegmentRow> mapper = RecordMapper.ofRecord(SegmentRow.class, SegmentRow.LAYOUT);
         // Until we get an index adding Gatherer
         AtomicLong a = new AtomicLong();
         mapper.stream(SEGMENT)
@@ -681,7 +681,7 @@ final class TestDataProcessingRecord {
     // Initialization of segments
 
     static MemorySegment initMeasurements() {
-        var mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
+        var mapper = RecordMapper.ofRecord(MethodHandles.lookup(), Measurement.class, MEASUREMENT_LAYOUT);
         MemorySegment segment = Arena.ofAuto().allocate(MEASUREMENT_LAYOUT, DAYS);
         Random rnd = new Random(42);
         for (int i = 0; i < DAYS; i++) {

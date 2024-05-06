@@ -35,7 +35,6 @@ import jdk.internal.vm.annotation.Stable;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -44,7 +43,6 @@ import java.util.Arrays;
 import java.util.List;
 
 import java.util.SequencedCollection;
-import java.util.function.Function;
 import java.util.stream.IntStream;
 
 /**
@@ -65,7 +63,7 @@ public final class SegmentRecordMapper2<T extends Record>
                          GroupLayout layout,
                          boolean leaf) {
         super(lookup, type, layout, leaf,
-                ValueType.RECORD, MapperUtil::requireRecordType, Accessors::ofRecord);
+                ValueType.RECORD, MapperUtil::requireRecord, Accessors::ofRecord);
         this.getter = computeGetHandle();
         this.setter = computeSetHandle();
         // No need for this now

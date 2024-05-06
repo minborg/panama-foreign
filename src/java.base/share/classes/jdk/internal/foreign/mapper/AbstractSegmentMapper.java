@@ -32,7 +32,6 @@ import jdk.internal.vm.annotation.Stable;
 
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
-import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;

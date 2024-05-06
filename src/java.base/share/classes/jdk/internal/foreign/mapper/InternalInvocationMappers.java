@@ -19,7 +19,10 @@ public final class InternalInvocationMappers {
     }
 
     public static <T> T ofProxy(FunctionDescriptor nativeSignature, Class<T> functionalInterface) {
-        MethodHandle handle = handle(nativeSignature, functionalInterface);
+        Method abstractMethod = abstractMethod(functionalInterface);
+        MethodHandle handle = handle(nativeSignature, abstractMethod);
+        MethodType methodType = methodType(abstractMethod);
+        handle = adapt(handle, methodType);
         return MethodHandleProxies.asInterfaceInstance(functionalInterface, handle);
     }
 
@@ -36,20 +39,33 @@ public final class InternalInvocationMappers {
 
     //
 
-    private static MethodHandle handle(FunctionDescriptor nativeSignature,
-                                       Class<?> functionalInterface) {
-
-        Method abstractMethod = Arrays.stream(functionalInterface.getMethods())
+    private static Method abstractMethod(Class<?> functionalInterface) {
+        return Arrays.stream(functionalInterface.getMethods())
                 .filter(m -> Modifier.isAbstract(m.getModifiers()))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private static MethodHandle handle(FunctionDescriptor nativeSignature,
+                                       Method abstractMethod) {
 
         Linker linker = Linker.nativeLinker();
-        MethodHandle strlen = linker.downcallHandle(
+        MethodHandle handle = linker.downcallHandle(
                 linker.defaultLookup().find(abstractMethod.getName()).orElseThrow(),
                 nativeSignature
         );
+
+        return handle;
     }
+
+    private static MethodType methodType(Method method) {
+        Class<?> returnType = method.getReturnType();
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        return parameterTypes.length == 0
+                ? MethodType.methodType(returnType)
+                : MethodType.methodType(returnType, parameterTypes);
+    }
+
 
     private static FunctionDescriptor signature(Class<?> inter) {
         throw new UnsupportedOperationException();

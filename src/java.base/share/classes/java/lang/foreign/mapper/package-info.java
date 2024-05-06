@@ -93,9 +93,9 @@
  * <p>
  * Explicit handling of custom conversions (if needed) can be made directly in the
  * record or interface types. This includes boxing, unboxing, widening and narrowing.
- * Additionally, a {@linkplain java.lang.foreign.mapper.SegmentMapper} provides means
+ * Additionally, a {@linkplain java.lang.foreign.mapper.RecordMapper} provides means
  * for composing such custom conversions using auxiliary projection types via the
- * {@linkplain java.lang.foreign.mapper.SegmentMapper#map(Class, java.util.function.Function)}
+ * {@linkplain java.lang.foreign.mapper.RecordMapper#map(Class, java.util.function.Function)}
  * functions.
  *
  * @since 23

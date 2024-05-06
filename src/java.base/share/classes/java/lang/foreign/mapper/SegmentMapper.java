@@ -1,16 +1,17 @@
 package java.lang.foreign.mapper;
 
+import jdk.internal.foreign.mapper.InternalInvocationMappers;
 import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentMapperImpl;
-import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
+import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -81,8 +82,8 @@ import java.util.stream.Stream;
  *
  * }
  *
- * RecordMapper<NarrowedPoint> narrowedPointMapper =
- *         RecordMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
+ * SegmentMapper<NarrowedPoint> narrowedPointMapper =
+ *         SegmentMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
  *         .map(NarrowedPoint.class, NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
  *
  * // Extracts a new NarrowedPoint from the provided MemorySegment
@@ -115,44 +116,19 @@ import java.util.stream.Stream;
  *
  * @since 23
  */
-
-
-// Todo: How do we handle "extra" setters for interfaces? They should not append
-
-// Cerializer
-// Todo: Check all exceptions in JavaDocs: See TestScopedOperations
-// Todo: Consider generating a graphics rendering.
-// Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
-// Todo: Provide safe sharing across threads (e.g. implement a special Interface with piggybacking/volatile access)
-// Todo: Prevent several variants in a record from being mapped to a union (otherwise, which will "win" when writing?)
-// Todo: There seams to be a problem with the ByteOrder in the mapper. See TestJepExamplesUnions
-// Todo: Let SegmentMapper::getHandle and ::setHandle return the sharp types (e.g. Point) see MethodHandles::exactInvoker
-
-// Done: The generated interface classes should be @ValueBased
-// Done: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST
-//       -> See TestDataProcessingRecord and TestDataProcessingInterface
-// No: ~map() can be dropped in favour of "manual mapping"~
-// Done: Interfaces with internal segments should be directly available via separate factory methods
-//       -> Fixed via SegmentMapper::create
-// Done: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
-//       This can be fixed using double-buffering. Maybe provide a scratch segment somehow that tracks where writes
-//       has been made (via a separate class BufferedMapper?)
-//       -> Fixed via TestInterfaceMapper::doubleBuffered
-// No:   Map components to MemorySegment (escape hatch). Records should be immutable and not connected. Maybe we could
-//       create a copy of a segment with the same life cycle?
-public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl {
+public sealed interface SegmentMapper<T> permits RecordMapper, PrimitiveMapper, SegmentMapperImpl {
 
     /**
-     * {@return the type that this mapper is mapping to and from}
+     * {@return the carrier that this mapper is mapping to and from}
      */
-    Class<T> type();
+    Class<T> carrier();
 
     /**
      * {@return the original {@link GroupLayout } that this mapper is using to map record
      * components}
      * <p>
-     * Composed segment mappers (obtained via either the {@link RecordMapper#map(Class, Function)}
-     * or the {@link RecordMapper#map(Class, Function, Function)} will still return the memory
+     * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Class, Function)}
+     * or the {@link SegmentMapper#map(Class, Function, Function)} will still return the memory
      * layout from the <em>original</em> SegmentMapper.
      */
     MemoryLayout layout();
@@ -287,6 +263,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
     default T get(MemorySegment segment, long offset) {
         try {
             return (T) getter()
+                    .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class))
                     .invokeExact(segment, offset);
         } catch (NullPointerException |
                  IndexOutOfBoundsException |
@@ -395,6 +372,7 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
     default void set(MemorySegment segment, long offset, T t) {
         try {
             setter()
+                    .asType(MethodType.methodType(void.class, MemorySegment.class, long.class, Object.class))
                     .invokeExact(segment, offset, (Object) t);
         } catch (IndexOutOfBoundsException |
                  WrongThreadException |
@@ -464,9 +442,9 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * @param <R> the type of the new segment mapper
      * @throws UnsupportedOperationException if this is an interface mapper.
      */
-    default <R> RecordMapper<R> map(Class<R> newType,
-                                    Function<? super T, ? extends R> toMapper,
-                                    Function<? super R, ? extends T> fromMapper) {
+    default <R> SegmentMapper<R> map(Class<R> newType,
+                                     Function<? super T, ? extends R> toMapper,
+                                     Function<? super R, ? extends T> fromMapper) {
         return MapperUtil.map(this, newType, toMapper, fromMapper);
     }
 
@@ -483,162 +461,11 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
      * @param toMapper to apply after get operations on this segment mapper
      * @param <R> the type of the new segment mapper
      */
-    default <R> RecordMapper<R> map(Class<R> newType,
-                                    Function<? super T, ? extends R> toMapper) {
+    default <R> SegmentMapper<R> map(Class<R> newType,
+                                     Function<? super T, ? extends R> toMapper) {
         return MapperUtil.map(this, newType, toMapper);
     }
 
-    /**
-     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided record {@code type} using the natural layout of {@code type}}
-     * <p>
-     * Reflective analysis on the provided {@code type} will be made using the
-     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
-     * <p>
-     * The natural layout will be computed as {@linkplain NaturalLayout#ofRecord(Class)} was
-     * called with the provided {@code type}.
-     *
-     * @param type to map memory segment from and to
-     * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided record {@code type} directly
-     *         declares any generic type parameter
-     * @throws IllegalArgumentException if the provided record {@code type} is
-     *         {@linkplain java.lang.Record}
-     * @throws IllegalArgumentException if the provided record {@code type} cannot
-     *         be reflectively analysed using
-     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
-     * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         components for which there are no exact mapping (of names and types) in
-     *         the provided {@code layout} or if the provided {@code type} is not public or
-     *         if the method is otherwise unable to create a segment mapper as specified above
-     * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         components for which there are no natural layout (e.g. arrays)
-     * @see #ofRecord(MethodHandles.Lookup, Class, GroupLayout)
-     */
-    static <T extends Record> RecordMapper<T> ofRecord(Class<T> type) {
-        return ofRecord(MethodHandles.publicLookup(), type, NaturalLayout.ofRecord(type));
-    }
-
-    /**
-     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided record {@code type} using the provided {@code layout}}
-     * <p>
-     * Reflective analysis on the provided {@code type} will be made using the
-     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
-     *
-     * @param type to map memory segment from and to
-     * @param layout to be used when mapping the provided {@code type}
-     * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided record {@code type} directly
-     *         declares any generic type parameter
-     * @throws IllegalArgumentException if the provided record {@code type} is
-     *         {@linkplain java.lang.Record}
-     * @throws IllegalArgumentException if the provided record {@code type} cannot
-     *         be reflectively analysed using
-     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
-     * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         components for which there are no exact mapping (of names and types) in
-     *         the provided {@code layout} or if the provided {@code type} is not public or
-     *         if the method is otherwise unable to create a segment mapper as specified above
-     * @see #ofRecord(MethodHandles.Lookup, Class, GroupLayout)
-     */
-    static <T extends Record> RecordMapper<T> ofRecord(Class<T> type,
-                                                       GroupLayout layout) {
-        return ofRecord(MethodHandles.publicLookup(), type, layout);
-    }
-
-    /**
-     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided record {@code type} using the provided {@code layout}
-     *          and using the provided {@code lookup}}
-     *
-     * @param lookup to use when performing reflective analysis on the
-     *                provided {@code type}
-     * @param type to map memory segment from and to
-     * @param layout to be used when mapping the provided {@code type}
-     * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided record {@code type} directly
-     *         declares any generic type parameter
-     * @throws IllegalArgumentException if the provided record {@code type} is
-     *         {@linkplain java.lang.Record}
-     * @throws IllegalArgumentException if the provided record {@code type} cannot
-     *         be reflectively analysed using the provided {@code lookup}
-     * @throws IllegalArgumentException if the provided interface {@code type} contains
-     *         components for which there are no exact mapping (of names and types) in
-     *         the provided {@code layout} or if the provided {@code type} is not public or
-     *         if the method is otherwise unable to create a segment mapper as specified above
-     */
-    static <T extends Record> RecordMapper<T> ofRecord(MethodHandles.Lookup lookup,
-                                                       Class<T> type,
-                                                       GroupLayout layout) {
-        Objects.requireNonNull(lookup);
-        MapperUtil.requireRecordType(type);
-        Objects.requireNonNull(layout);
-        SegmentRecordMapper2<T> recordMapper = SegmentRecordMapper2.create(lookup, type, layout);
-        return new SegmentMapperImpl<>(type, layout, recordMapper.getter(), recordMapper.setter());
-    }
-
-    /**
-     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided record {@code type} using the provided {@code layout}
-     *          and using the provided custom {@code getter} and {@code setter}
-     *          method handles}
-     *
-     * @param type to map memory segment from and to
-     * @param layout to be used when mapping the provided {@code type}
-     * @param getter to be applied when reading instances of the provided {@code type} from
-     *               memory segments
-     * @param setter to be applied when writing instances of the provided {@code type} to
-     *               memory segments
-     * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided {@code getter} does not
-     *         return objects of type T
-     * @throws IllegalArgumentException if the provided {@code setter} does not
-     *         accept objects of type T for its argument at index 2.
-     */
-    static <T> RecordMapper<T> of(Class<T> type,
-                                  MemoryLayout layout,
-                                  MethodHandle getter,
-                                  MethodHandle setter) {
-        Objects.requireNonNull(type);
-        Objects.requireNonNull(layout);
-        Objects.requireNonNull(getter);
-        Objects.requireNonNull(setter);
-        return new SegmentMapperImpl<>(type, layout, getter, setter);
-    }
-
-    /**
-     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided record {@code type} using the provided {@code layout}
-     *          and using the provided custom {@code getter} and {@code setter}
-     *          functions}
-     * <p>
-     * This is a convenience method for {@linkplain #of(Class, MemoryLayout, MethodHandle, MethodHandle)}
-     *
-     * @param type to map memory segment from and to
-     * @param layout to be used when mapping the provided {@code type}
-     * @param getter to be applied when reading instances of the provided {@code type} from
-     *               memory segments
-     * @param setter to be applied when writing instances of the provided {@code type} to
-     *               memory segments
-     * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided {@code getter} does not
-     *         return objects of type T
-     * @throws IllegalArgumentException if the provided {@code setter} does not
-     *         accept objects of type T for its argument at index 2.
-     *
-     * @see #of(Class, MemoryLayout, MethodHandle, MethodHandle)
-     */
-    static <T> RecordMapper<T> of(Class<T> type,
-                                  MemoryLayout layout,
-                                  Getter<T> getter,
-                                  Setter<T> setter) {
-        Objects.requireNonNull(type);
-        Objects.requireNonNull(layout);
-        Objects.requireNonNull(getter);
-        Objects.requireNonNull(setter);
-        return of(type, layout, MapperUtil.GETTER.bindTo(getter), MapperUtil.SETTER.bindTo(setter));
-    }
 
     /**
      * Represents a function that accepts two arguments in the form of a MemorySegment and
@@ -686,94 +513,46 @@ public sealed interface RecordMapper<T extends Record> permits SegmentMapperImpl
         void set(MemorySegment segment, long offset, T value);
     }
 
-    // Presets. Maybe such mappers could reside in a 3rd party library?
-
     /**
-     * {@return a segment mapper that can map Strings to a memory segment}
-     * @param length representing the amount of memory allocated for a String
-     *               including null termination.
+     * {@return a method handle that delegates to the provided {@code targetHandle} but
+     *          by adapting it the polymorphic signature of the provided {@code methodType}}
+     * <p>
+     * Adaptation may involve applying zero or more mappers of type {@linkplain RecordMapper},
+     * {@linkplain PrimitiveMapper}, and {@linkplain ArrayMapper} to the arguments and/or
+     * the returned value of the {@code targetHandle}.
+     *
+     * @param targetHandle to adapt
+     * @param methodType   describing the desired polymorphic signature of
+     *                     the returned method handle
+     * @throws IllegalArgumentException if no combination of mappers exists to
+     *         adapt the {@code targetHandle} to the polymorphic signature of
+     *         {@code methodType}
      */
-    static RecordMapper<String> ofString(int length) {
-        return MapperUtil.ofString(length);
+    static MethodHandle adapt(MethodHandle targetHandle,
+                              MethodType methodType) {
+        Objects.requireNonNull(targetHandle);
+        Objects.requireNonNull(methodType);
+        return InternalInvocationMappers.adapt(targetHandle, methodType);
     }
 
     /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
+     * {@return a proxy implementation of the provided {@code functionalInterface}
+     *          backed by a native call with the name of the abstract method of the
+     *          interface and with with the provided {@code native signature}}
+     *
+     * @param nativeSignature     for the underlying native method call
+     * @param functionalInterface for which to create a proxy implementation
+     * @param <T>                 functional interface type
+     * @throws IllegalArgumentException if the provided {@code functionalInterface}
+     *         is not an interface, is a sealed interface, is hidden or
+     *         is not annotated with {@linkplain FunctionalInterface}
      */
-    static RecordMapper<Byte> ofPrimitive(ValueLayout.OfByte layout) {
-        return MapperUtil.ofPrimitive(Byte.class, layout);
+    static <T> T downcall(FunctionDescriptor nativeSignature,
+                          Class<T> functionalInterface) {
+        MapperUtil.requireFunctionalInterface(functionalInterface);
+        Objects.requireNonNull(nativeSignature);
+        return InternalInvocationMappers.ofProxy(nativeSignature, functionalInterface);
     }
 
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static RecordMapper<Short> ofPrimitive(ValueLayout.OfShort layout) {
-        return MapperUtil.ofPrimitive(Short.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static RecordMapper<Character> ofPrimitive(ValueLayout.OfChar layout) {
-        return MapperUtil.ofPrimitive(Character.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static RecordMapper<Integer> ofPrimitive(ValueLayout.OfInt layout) {
-        return MapperUtil.ofPrimitive(Integer.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static RecordMapper<Float> ofPrimitive(ValueLayout.OfFloat layout) {
-        return MapperUtil.ofPrimitive(Float.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static RecordMapper<Long> ofPrimitive(ValueLayout.OfLong layout) {
-        return MapperUtil.ofPrimitive(Long.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static RecordMapper<Double> ofPrimitive(ValueLayout.OfDouble layout) {
-        return MapperUtil.ofPrimitive(Double.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static RecordMapper<Number> ofNumber(ValueLayout layout) {
-        // Todo: consider using "exact" conversion (e.g. Math::toIntExact)
-        return switch (layout) {
-            case ValueLayout.OfByte by ->
-                    RecordMapper.ofPrimitive(by).map(Number.class, Function.identity(), Number::byteValue);
-            case ValueLayout.OfShort sh ->
-                    RecordMapper.ofPrimitive(sh).map(Number.class, Function.identity(), Number::shortValue);
-            case ValueLayout.OfInt in ->
-                    RecordMapper.ofPrimitive(in).map(Number.class, Function.identity(), Number::intValue);
-            case ValueLayout.OfFloat fl ->
-                    RecordMapper.ofPrimitive(fl).map(Number.class, Function.identity(), Number::floatValue);
-            case ValueLayout.OfLong lo ->
-                    RecordMapper.ofPrimitive(lo).map(Number.class, Function.identity(), Number::longValue);
-            case ValueLayout.OfDouble db ->
-                    RecordMapper.ofPrimitive(db).map(Number.class, Function.identity(), Number::doubleValue);
-            default -> throw new IllegalArgumentException("Layout not supported: " + layout);
-        };
-    }
 
 }

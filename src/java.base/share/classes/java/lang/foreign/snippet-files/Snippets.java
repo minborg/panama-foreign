@@ -33,11 +33,12 @@ import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SegmentAllocator;
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
+import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -790,7 +791,7 @@ class Snippets {
             public static void main(String[] args) {
                 MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
 
-                SegmentMapper<Point> recordMapper = SegmentMapper.ofRecord(Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
+                RecordMapper<Point> recordMapper = RecordMapper.ofRecord(Point.class, POINT); // SegmentMapper[type=x.y.Point, layout=...]
 
                 // Extracts a new Point record from the provided MemorySegment
                 Point point = recordMapper.get(segment); // Point[x=3, y=4]
@@ -825,7 +826,7 @@ class Snippets {
                 MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 0, 0});
 
                 SegmentMapper<NarrowedPoint> narrowedPointMapper =
-                        SegmentMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
+                        RecordMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
                         .map(NarrowedPoint.class, NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
 
                 // Extracts a new NarrowedPoint from the provided MemorySegment

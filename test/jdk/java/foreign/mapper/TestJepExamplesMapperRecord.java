@@ -32,7 +32,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.RecordMapper;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static org.junit.jupiter.api.Assertions.*;
@@ -55,7 +55,7 @@ final class TestJepExamplesMapperRecord {
         MemorySegment segment = Arena.ofAuto().allocateFrom(JAVA_INT, 3, 4);
 
         // Automatically creates a mapper that can read and write Point records from/to segments.
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(Point.class, POINT);
 
         Point point = mapper.get(segment);
         // Point[x=3, y=4]
@@ -80,8 +80,8 @@ final class TestJepExamplesMapperRecord {
 
         MemorySegment segment = Arena.ofAuto().allocateFrom(JAVA_INT, 3, 4, 5, 6);
 
-        SegmentMapper<Line> mapper =
-                SegmentMapper.ofRecord(Line.class, LINE);
+        RecordMapper<Line> mapper =
+                RecordMapper.ofRecord(Line.class, LINE);
 
         Line line = mapper.get(segment);
         // Line[begin=Point[x=3, y=4], end=Point[x=5, y=6]]

@@ -4,22 +4,15 @@ import jdk.internal.foreign.mapper.MapperUtil;
 import jdk.internal.foreign.mapper.SegmentMapperImpl;
 import jdk.internal.foreign.mapper.SegmentRecordMapper2;
 
-import java.lang.foreign.Arena;
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SegmentAllocator;
-import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.ValueLayout;
-import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
-import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 /**
- * A segment mapper can project memory segment onto and from class instances.
+ * A record mapper can project memory segment onto and from record class instances.
  * <p>
  * More specifically, a segment mapper can project a backing
  * {@linkplain MemorySegment MemorySegment} into new {@link Record} instances
@@ -83,13 +76,13 @@ import java.util.stream.Stream;
  *
  * }
  *
- * SegmentMapper<NarrowedPoint> narrowedPointMapper =
- *         SegmentMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
+ * RecordMapper<NarrowedPoint> narrowedPointMapper =
+ *         RecordMapper.ofRecord(Point.class, POINT)              // SegmentMapper<Point>
  *         .map(NarrowedPoint.class, NarrowedPoint::fromPoint, NarrowedPoint::toPoint); // SegmentMapper<NarrowedPoint>
  *
  * // Extracts a new NarrowedPoint from the provided MemorySegment
  * NarrowedPoint narrowedPoint = narrowedPointMapper.get(segment); // NarrowedPoint[x=3, y=4]
- * }
+ *}
  *
  * <h2 id="formal-mapping">Formal mapping description</h2>
  *
@@ -118,377 +111,9 @@ import java.util.stream.Stream;
  * @since 23
  */
 
-
-// Todo: How do we handle "extra" setters for interfaces? They should not append
-
-// Cerializer
-// Todo: Check all exceptions in JavaDocs: See TestScopedOperations
-// Todo: Consider generating a graphics rendering.
-// Todo: Add in doc that getting via an AddressValue will return a MS managed by Arena.global()
-// Todo: Provide safe sharing across threads (e.g. implement a special Interface with piggybacking/volatile access)
-// Todo: Prevent several variants in a record from being mapped to a union (otherwise, which will "win" when writing?)
-// Todo: There seams to be a problem with the ByteOrder in the mapper. See TestJepExamplesUnions
-// Todo: Let SegmentMapper::getHandle and ::setHandle return the sharp types (e.g. Point) see MethodHandles::exactInvoker
-
-// Done: The generated interface classes should be @ValueBased
-// Done: Python "Pandas" (tables), Tabular access from array, Joins etc. <- TEST
-//       -> See TestDataProcessingRecord and TestDataProcessingInterface
-// No: ~map() can be dropped in favour of "manual mapping"~
-// Done: Interfaces with internal segments should be directly available via separate factory methods
-//       -> Fixed via SegmentMapper::create
-// Done: Discuss if an exception is thrown in one of the sub-setters... This means partial update of the MS
-//       This can be fixed using double-buffering. Maybe provide a scratch segment somehow that tracks where writes
-//       has been made (via a separate class BufferedMapper?)
-//       -> Fixed via TestInterfaceMapper::doubleBuffered
-// No:   Map components to MemorySegment (escape hatch). Records should be immutable and not connected. Maybe we could
-//       create a copy of a segment with the same life cycle?
-public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
-
-    /**
-     * {@return the type that this mapper is mapping to and from}
-     */
-    Class<T> type();
-
-    /**
-     * {@return the original {@link GroupLayout } that this mapper is using to map record
-     * components}
-     * <p>
-     * Composed segment mappers (obtained via either the {@link SegmentMapper#map(Class, Function)}
-     * or the {@link SegmentMapper#map(Class, Function, Function)} will still return the memory
-     * layout from the <em>original</em> SegmentMapper.
-     */
-    MemoryLayout layout();
-
-    // Convenience methods
-
-    /**
-     * {@return a new instance of type T projected at the provided
-     *          external {@code segment} at offset zero}
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang = java:
-     *    get(segment, 0L);
-     * }
-     *
-     * @param segment the external segment to be projected to the new instance
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with the provided segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if
-     *         {@code layout().byteSize() > segment.byteSize()}
-     */
-    default T get(MemorySegment segment) {
-        return get(segment, 0L);
-    }
-
-    /**
-     * {@return a new instance of type T projected at the provided external
-     *          {@code segment} at the given {@code index} scaled by the
-     *          {@code layout().byteSize()}}
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang = java:
-     *    get(segment, layout().byteSize() * index);
-     * }
-     *
-     * @param segment the external segment to be projected to the new instance
-     * @param index a logical index, the offset in bytes (relative to the provided
-     *              segment address) at which the access operation will occur can
-     *              be expressed as {@code (index * layout().byteSize())}
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with the provided segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if {@code index * layout().byteSize()} overflows
-     * @throws IndexOutOfBoundsException if
-     *         {@code index * layout().byteSize() > segment.byteSize() - layout.byteSize()}
-     */
-    default T getAtIndex(MemorySegment segment, long index) {
-        return get(segment, layout().byteSize() * index);
-    }
-
-    /**
-     * {@return a new sequential {@code Stream} of elements of type T}
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang=java :
-     * segment.elements(layout())
-     *     .map(this::get);
-     * }
-     * @param segment to carve out instances from
-     * @throws IllegalArgumentException if {@code layout().byteSize() == 0}.
-     * @throws IllegalArgumentException if {@code segment.byteSize() % layout().byteSize() != 0}.
-     * @throws IllegalArgumentException if {@code layout().byteSize() % layout().byteAlignment() != 0}.
-     * @throws IllegalArgumentException if this segment is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the
-     *         alignment constraint</a> in the layout of this segment mapper.
-     */
-    default Stream<T> stream(MemorySegment segment) {
-        return segment.elements(layout())
-                .map(this::get);
-    }
-
-    /**
-     * {@return a new sequential {@code Stream} of {@code pageSize} elements of
-     *          type T starting at the element {@code pageNumber * pageSize}}
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang=java :
-     * stream(segment)
-     *     .skip(pageNumber * pageSize)
-     *     .limit(pageSize);
-     * }
-     * but may be much more efficient for large page numbers.
-     *
-     * @param segment    to carve out instances from
-     * @param pageSize   the size of each page
-     * @param pageNumber the page number to which to skip
-     * @throws IllegalArgumentException if {@code layout().byteSize() == 0}.
-     * @throws IllegalArgumentException if {@code segment.byteSize() % layout().byteSize() != 0}.
-     * @throws IllegalArgumentException if {@code layout().byteSize() % layout().byteAlignment() != 0}.
-     * @throws IllegalArgumentException if this segment is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the
-     *         alignment constraint</a> in the layout of this segment mapper.
-     */
-    default Stream<T> page(MemorySegment segment,
-                           long pageSize,
-                           long pageNumber) {
-        long skipBytes = Math.min(segment.byteSize(), layout().scale(0, pageNumber * pageSize));
-        MemorySegment skippedSegment = segment.asSlice(skipBytes);
-        return stream(skippedSegment)
-                .limit(pageSize);
-    }
-
-    /**
-     * {@return a new instance of type T projected from at provided
-     *          external {@code segment} at the provided {@code offset}}
-     *
-     * @param segment the external segment to be projected at the new instance
-     * @param offset  from where in the segment to project the new instance
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with the provided segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if
-     *         {@code offset > segment.byteSize() - layout().byteSize()}
-     */
-    @SuppressWarnings("unchecked")
-    default T get(MemorySegment segment, long offset) {
-        try {
-            return (T) getter()
-                    .invokeExact(segment, offset);
-        } catch (NullPointerException |
-                 IndexOutOfBoundsException |
-                 WrongThreadException |
-                 IllegalStateException |
-                 IllegalArgumentException rethrow) {
-            throw rethrow;
-        } catch (Throwable e) {
-            throw new RuntimeException("Unable to invoke getter() with " +
-                    "segment="  + segment +
-                    ", offset=" + offset, e);
-        }
-    }
-
-    /**
-     * Writes the provided instance {@code t} of type T into the provided {@code segment}
-     * at offset zero.
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang = java:
-     *    set(segment, 0L, t);
-     * }
-     *
-     * @param segment in which to write the provided {@code t}
-     * @param t instance to write into the provided segment
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with this segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if {@code layout().byteSize() > segment.byteSize()}
-     * @throws UnsupportedOperationException if this segment is
-     *         {@linkplain MemorySegment#isReadOnly() read-only}
-     * @throws UnsupportedOperationException if {@code value} is not a
-     *         {@linkplain MemorySegment#isNative() native} segment
-     * @throws IllegalArgumentException if an array length does not correspond to the
-     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
-     * @throws NullPointerException if a required parameter is {@code null}
-     */
-    default void set(MemorySegment segment, T t) {
-        set(segment, 0L, t);
-    }
-
-    /**
-     * Writes the provided {@code t} instance of type T into the provided {@code segment}
-     * at the provided {@code index} scaled by the {@code layout().byteSize()}}.
-     * <p>
-     * Calling this method is equivalent to the following code:
-     * {@snippet lang = java:
-     *    set(segment, layout().byteSize() * index, t);
-     * }
-     * @param segment in which to write the provided {@code t}
-     * @param index a logical index, the offset in bytes (relative to the provided
-     *              segment address) at which the access operation will occur can be
-     *              expressed as {@code (index * layout().byteSize())}
-     * @param t instance to write into the provided segment
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with this segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > segment.byteSize() - layout.byteSize()}
-     * @throws UnsupportedOperationException if this segment is
-     *         {@linkplain MemorySegment#isReadOnly() read-only}
-     * @throws UnsupportedOperationException if {@code value} is not a
-     *         {@linkplain MemorySegment#isNative() native} segment
-     * @throws IllegalArgumentException if an array length does not correspond to the
-     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
-     * @throws NullPointerException if a required parameter is {@code null}
-     */
-    default void setAtIndex(MemorySegment segment, long index, T t) {
-        set(segment, layout().byteSize() * index, t);
-    }
-
-    /**
-     * Writes the provided instance {@code t} of type T into the provided {@code segment}
-     * at the provided {@code offset}.
-     *
-     * @param segment in which to write the provided {@code t}
-     * @param offset offset in bytes (relative to the provided segment address) at which
-     *               this access operation will occur
-     * @param t instance to write into the provided segment
-     * @throws IllegalStateException if the {@linkplain MemorySegment#scope() scope}
-     *         associated with this segment is not
-     *         {@linkplain MemorySegment.Scope#isAlive() alive}
-     * @throws WrongThreadException if this method is called from a thread {@code T},
-     *         such that {@code isAccessibleBy(T) == false}
-     * @throws IllegalArgumentException if the access operation is
-     *         <a href="MemorySegment.html#segment-alignment">incompatible with the alignment constraint</a>
-     *         of the {@link #layout()}
-     * @throws IndexOutOfBoundsException if {@code offset > segment.byteSize() - layout.byteSize()}
-     * @throws UnsupportedOperationException if
-     *         this segment is {@linkplain MemorySegment#isReadOnly() read-only}
-     * @throws UnsupportedOperationException if
-     *         {@code value} is not a {@linkplain MemorySegment#isNative() native} segment // Todo: only for pointers
-     * @throws IllegalArgumentException if an array length does not correspond to the
-     *         {@linkplain SequenceLayout#elementCount() element count} of a sequence layout
-     * @throws NullPointerException if a required parameter is {@code null}
-     */
-    default void set(MemorySegment segment, long offset, T t) {
-        try {
-            setter()
-                    .invokeExact(segment, offset, (Object) t);
-        } catch (IndexOutOfBoundsException |
-                 WrongThreadException |
-                 IllegalStateException |
-                 IllegalArgumentException |
-                 UnsupportedOperationException |
-                 NullPointerException rethrow) {
-            throw rethrow;
-        } catch (Throwable e) {
-            throw new RuntimeException("Unable to invoke setter() with " +
-                    "segment=" + segment +
-                    ", offset=" + offset +
-                    ", t=" + t, e);
-        }
-    }
-
-    // Basic methods
-
-    /**
-     * {@return a "getter" method handle that returns new instances of type T projected at
-     *          a provided external {@code MemorySegment} at a provided {@code long} offset}
-     * <p>
-     * The returned method handle has the following characteristics:
-     * <ul>
-     *     <li>its return type is {@code T};</li>
-     *     <li>it has a leading parameter of type {@code MemorySegment}
-     *         corresponding to the memory segment to be accessed</li>
-     *     <li>it has a trailing {@code long} parameter, corresponding to
-     *         the base offset</li>
-     * </ul>
-     *
-     * @see #get(MemorySegment, long)
-     */
-    MethodHandle getter();
-
-    /**
-     * {@return a "setter" method handle that writes a provided instance of type T into
-     *          a provided {@code MemorySegment} at a provided {@code long} offset}
-     * <p>
-     * The returned method handle has the following characteristics:
-     * <ul>
-     *     <li>its return type is void;</li>
-     *     <li>it has a leading parameter of type {@code MemorySegment}
-     *         corresponding to the memory segment to be accessed</li>
-     *     <li>it has a following {@code long} parameter, corresponding to
-     *         the base offset</li>
-     *     <li>it has a trailing {@code T} parameter, corresponding to
-     *         the value to set</li>
-     * </ul>
-     *
-     * @see #set(MemorySegment, long, Object)
-     */
-    MethodHandle setter();
-
-    /**
-     * {@return a new segment mapper that would apply the provided {@code toMapper} after
-     *          performing get operations on this segment mapper and that would apply the
-     *          provided {@code fromMapper} before performing set operations on this
-     *          segment mapper}
-     * <p>
-     * It should be noted that the type R can represent almost any class and is not
-     * restricted to records.
-     *
-     * @param  newType the new type the returned mapper shall use
-     * @param toMapper to apply after get operations on this segment mapper
-     * @param fromMapper to apply before set operations on this segment mapper
-     * @param <R> the type of the new segment mapper
-     * @throws UnsupportedOperationException if this is an interface mapper.
-     */
-    default <R> SegmentMapper<R> map(Class<R> newType,
-                                     Function<? super T, ? extends R> toMapper,
-                                     Function<? super R, ? extends T> fromMapper) {
-        return MapperUtil.map(this, newType, toMapper, fromMapper);
-    }
-
-    /**
-     * {@return a new segment mapper that would apply the provided {@code toMapper} after
-     *          performing get operations on this segment mapper and that would throw an
-     *          {@linkplain UnsupportedOperationException} for set operations if this
-     *          segment mapper is a record mapper}
-     * <p>
-     * It should be noted that the type R can represent almost any class and is not
-     * restricted to records.
-     *
-     * @param  newType the new type the returned mapper shall use
-     * @param toMapper to apply after get operations on this segment mapper
-     * @param <R> the type of the new segment mapper
-     */
-    default <R> SegmentMapper<R> map(Class<R> newType,
-                                     Function<? super T, ? extends R> toMapper) {
-        return MapperUtil.map(this, newType, toMapper);
-    }
+public sealed interface RecordMapper<T>
+        extends SegmentMapper<T>
+        permits SegmentMapperImpl {
 
     /**
      * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
@@ -517,7 +142,7 @@ public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
      *         components for which there are no natural layout (e.g. arrays)
      * @see #ofRecord(MethodHandles.Lookup, Class, GroupLayout)
      */
-    static <T extends Record> SegmentMapper<T> ofRecord(Class<T> type) {
+    static <T extends Record> RecordMapper<T> ofRecord(Class<T> type) {
         return ofRecord(MethodHandles.publicLookup(), type, NaturalLayout.ofRecord(type));
     }
 
@@ -544,8 +169,8 @@ public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
      *         if the method is otherwise unable to create a segment mapper as specified above
      * @see #ofRecord(MethodHandles.Lookup, Class, GroupLayout)
      */
-    static <T extends Record> SegmentMapper<T> ofRecord(Class<T> type,
-                                                        GroupLayout layout) {
+    static <T extends Record> RecordMapper<T> ofRecord(Class<T> type,
+                                                       GroupLayout layout) {
         return ofRecord(MethodHandles.publicLookup(), type, layout);
     }
 
@@ -570,212 +195,14 @@ public sealed interface SegmentMapper<T> permits SegmentMapperImpl {
      *         the provided {@code layout} or if the provided {@code type} is not public or
      *         if the method is otherwise unable to create a segment mapper as specified above
      */
-    static <T extends Record> SegmentMapper<T> ofRecord(MethodHandles.Lookup lookup,
-                                                        Class<T> type,
-                                                        GroupLayout layout) {
+    static <T extends Record> RecordMapper<T> ofRecord(MethodHandles.Lookup lookup,
+                                                       Class<T> type,
+                                                       GroupLayout layout) {
         Objects.requireNonNull(lookup);
-        MapperUtil.requireRecordType(type);
+        MapperUtil.requireRecord(type);
         Objects.requireNonNull(layout);
         SegmentRecordMapper2<T> recordMapper = SegmentRecordMapper2.create(lookup, type, layout);
         return new SegmentMapperImpl<>(type, layout, recordMapper.getter(), recordMapper.setter());
-    }
-
-    /**
-     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided record {@code type} using the provided {@code layout}
-     *          and using the provided custom {@code getter} and {@code setter}
-     *          method handles}
-     *
-     * @param type to map memory segment from and to
-     * @param layout to be used when mapping the provided {@code type}
-     * @param getter to be applied when reading instances of the provided {@code type} from
-     *               memory segments
-     * @param setter to be applied when writing instances of the provided {@code type} to
-     *               memory segments
-     * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided {@code getter} does not
-     *         return objects of type T
-     * @throws IllegalArgumentException if the provided {@code setter} does not
-     *         accept objects of type T for its argument at index 2.
-     */
-    static <T> SegmentMapper<T> of(Class<T> type,
-                                   MemoryLayout layout,
-                                   MethodHandle getter,
-                                   MethodHandle setter) {
-        Objects.requireNonNull(type);
-        Objects.requireNonNull(layout);
-        Objects.requireNonNull(getter);
-        Objects.requireNonNull(setter);
-        return new SegmentMapperImpl<>(type, layout, getter, setter);
-    }
-
-    /**
-     * {@return a segment mapper that maps {@linkplain MemorySegment memory segments}
-     *          to the provided record {@code type} using the provided {@code layout}
-     *          and using the provided custom {@code getter} and {@code setter}
-     *          functions}
-     * <p>
-     * This is a convenience method for {@linkplain #of(Class, MemoryLayout, MethodHandle, MethodHandle)}
-     *
-     * @param type to map memory segment from and to
-     * @param layout to be used when mapping the provided {@code type}
-     * @param getter to be applied when reading instances of the provided {@code type} from
-     *               memory segments
-     * @param setter to be applied when writing instances of the provided {@code type} to
-     *               memory segments
-     * @param <T> the type the returned mapper converts MemorySegments from and to
-     * @throws IllegalArgumentException if the provided {@code getter} does not
-     *         return objects of type T
-     * @throws IllegalArgumentException if the provided {@code setter} does not
-     *         accept objects of type T for its argument at index 2.
-     *
-     * @see #of(Class, MemoryLayout, MethodHandle, MethodHandle)
-     */
-    static <T> SegmentMapper<T> of(Class<T> type,
-                                   MemoryLayout layout,
-                                   Getter<T> getter,
-                                   Setter<T> setter) {
-        Objects.requireNonNull(type);
-        Objects.requireNonNull(layout);
-        Objects.requireNonNull(getter);
-        Objects.requireNonNull(setter);
-        return of(type, layout, MapperUtil.GETTER.bindTo(getter), MapperUtil.SETTER.bindTo(setter));
-    }
-
-    /**
-     * Represents a function that accepts two arguments in the form of a MemorySegment and
-     * a long offset and produces a result of type T. This is a two-arity specialization of
-     * {@link Function}.
-     *
-     * @param <T> the type of the result of the function
-     *
-     * @see Function
-     * @since 23
-     */
-    @FunctionalInterface
-    interface Getter<T> {
-
-        /**
-         * {@return a value of type T given the provided {@code segment} and {@code offset}}
-         * @param segment from which to read the value
-         * @param offset  at which offset to begin reading the value from
-         */
-        T get(MemorySegment segment, long offset);
-    }
-
-    /**
-     * Represents an operation that accepts three input arguments in the form
-     * of a MemorySegment, a long offset, and a value of type T and that returns
-     * no result. This is a three-arity specialization of {@link Consumer}.
-     * Unlike most other functional interfaces, {@code Setter} is expected
-     * to operate via side-effects.
-     *
-     * @param <T> the type of the third argument to the operation
-     *
-     * @see Consumer
-     * @since 23
-     */
-    @FunctionalInterface
-    interface Setter<T> {
-
-        /**
-         * Performs a write operation with the given arguments.
-         *
-         * @param segment to write a representation of the value into
-         * @param offset  at which offset to begin writing the value to
-         * @param value   the value to write
-         */
-        void set(MemorySegment segment, long offset, T value);
-    }
-
-    // Presets. Maybe such mappers could reside in a 3rd party library?
-
-    /**
-     * {@return a segment mapper that can map Strings to a memory segment}
-     * @param length representing the amount of memory allocated for a String
-     *               including null termination.
-     */
-    static SegmentMapper<String> ofString(int length) {
-        return MapperUtil.ofString(length);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static SegmentMapper<Byte> ofPrimitive(ValueLayout.OfByte layout) {
-        return MapperUtil.ofPrimitive(Byte.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static SegmentMapper<Short> ofPrimitive(ValueLayout.OfShort layout) {
-        return MapperUtil.ofPrimitive(Short.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static SegmentMapper<Character> ofPrimitive(ValueLayout.OfChar layout) {
-        return MapperUtil.ofPrimitive(Character.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static SegmentMapper<Integer> ofPrimitive(ValueLayout.OfInt layout) {
-        return MapperUtil.ofPrimitive(Integer.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static SegmentMapper<Float> ofPrimitive(ValueLayout.OfFloat layout) {
-        return MapperUtil.ofPrimitive(Float.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static SegmentMapper<Long> ofPrimitive(ValueLayout.OfLong layout) {
-        return MapperUtil.ofPrimitive(Long.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static SegmentMapper<Double> ofPrimitive(ValueLayout.OfDouble layout) {
-        return MapperUtil.ofPrimitive(Double.class, layout);
-    }
-
-    /**
-     * {@return a segment mapper ...}
-     * @param layout that will be used when reading and writing data
-     */
-    static SegmentMapper<Number> ofNumber(ValueLayout layout) {
-        // Todo: consider using "exact" conversion (e.g. Math::toIntExact)
-        return switch (layout) {
-            case ValueLayout.OfByte by ->
-                    SegmentMapper.ofPrimitive(by).map(Number.class, Function.identity(), Number::byteValue);
-            case ValueLayout.OfShort sh ->
-                    SegmentMapper.ofPrimitive(sh).map(Number.class, Function.identity(), Number::shortValue);
-            case ValueLayout.OfInt in ->
-                    SegmentMapper.ofPrimitive(in).map(Number.class, Function.identity(), Number::intValue);
-            case ValueLayout.OfFloat fl ->
-                    SegmentMapper.ofPrimitive(fl).map(Number.class, Function.identity(), Number::floatValue);
-            case ValueLayout.OfLong lo ->
-                    SegmentMapper.ofPrimitive(lo).map(Number.class, Function.identity(), Number::longValue);
-            case ValueLayout.OfDouble db ->
-                    SegmentMapper.ofPrimitive(db).map(Number.class, Function.identity(), Number::doubleValue);
-            default -> throw new IllegalArgumentException("Layout not supported: " + layout);
-        };
     }
 
 }

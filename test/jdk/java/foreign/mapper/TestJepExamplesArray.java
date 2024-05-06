@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.RecordMapper;
 import java.util.Arrays;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -60,7 +60,7 @@ final class TestJepExamplesArray {
     void array() {
         MemorySegment segment = MemorySegment.ofArray(new int[]{0, 0,  1, 3,  2, 0});
 
-        SegmentMapper<Triangle> mapper = SegmentMapper.ofRecord(Triangle.class, TRIANGLE);
+        RecordMapper<Triangle> mapper = RecordMapper.ofRecord(Triangle.class, TRIANGLE);
 
         Triangle triangle = mapper.get(segment);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2024, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,1032 +23,141 @@
 
 /*
  * @test
- * @run junit/othervm --enable-native-access=ALL-UNNAMED TestRecordMapper
+ * @run junit/othervm --enable-native-access=ALL-UNNAMED TestPrimitiveMapper
  */
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
-import java.lang.foreign.AddressLayout;
-import java.lang.foreign.Arena;
-import java.lang.foreign.GroupLayout;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.SequenceLayout;
-import java.lang.foreign.StructLayout;
 import java.lang.foreign.ValueLayout;
-import java.lang.foreign.mapper.RecordMapper;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.lang.invoke.VarHandle;
-import java.lang.reflect.Method;
-import java.lang.reflect.Type;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.IntStream;
+import java.lang.foreign.mapper.PrimitiveMapper;
+import java.util.stream.Stream;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-// Todo: Check alignment against the layout
 
-final class TestRecordMapper {
+final class TestPrimitiveMapper {
 
-    private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
+    private static final byte FIRST = 0;
+    private static final byte SECOND = 1;
 
-    // Suppose we want to work with native memory in the form:
-    //
-    // struct point {
-    //    int32_t x;
-    //    int32_t y;
-    // };
-    //
-
-    // struct line {
-    //    struct point begin;
-    //    struct point end;
-    // };
-
-    // Here is some memory containing three points as specified in the C `struct point` above
-    private static final MemorySegment POINT_SEGMENT = MemorySegment.ofArray(new int[]{
-                    3, 4,   // Point[x=3, y=4]  ---+--- Line[begin=Point[x=3, y=4], end=Point[x=6, y=0]]
-                    6, 0,   // Point[x=6, y=0]  ---|
-                    9, 4})  // Point[x=9, y=4]
-            .asReadOnly();
-
-    // Here is how we can model the layout of the C structs using a StructLayout
-    private static final GroupLayout POINT_LAYOUT = MemoryLayout.structLayout(
-            JAVA_INT.withName("x"),  // An `int` named "x", with `ByteOrder.NATIVE_ORDER` aligned at 4 bytes
-            JAVA_INT.withName("y")); // Ditto but named "y"
-
-
-    // We can work with "raw" memory without any abstraction using the FFM API
-    @Test
-    void imperativeManipulation() {
-        MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        int index = 1;
-        // Access the point at index 1 (Point[x=6, y=0])
-        int x = segment.get(JAVA_INT, POINT_LAYOUT.byteSize() * index + JAVA_INT.byteSize() * 0); // 6
-        int y = segment.get(JAVA_INT, POINT_LAYOUT.byteSize() * index + JAVA_INT.byteSize() * 1); // 0
-        assertEquals(6, x);
-        assertEquals(0, y);
-
-        // Update the point at index 1
-        segment.set(JAVA_INT, POINT_LAYOUT.byteSize() * index + JAVA_INT.byteSize() * 0, -1); // x=-1
-        segment.set(JAVA_INT, POINT_LAYOUT.byteSize() * index + JAVA_INT.byteSize() * 1, -2); // y=-2
-        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    @ParameterizedTest
+    @MethodSource("layouts")
+    void testByte(ValueLayout layout, MemorySegment segment) {
+        test(byte.class, layout, segment, (byte) 10);
     }
 
-    // A slight improvement can be done using `VarHandle` access.
-    // VarHandles are "type-less" and can have any coordinates and return any type.
-    // (VarHandles also allows us to work with various memory semantics such as volatile access and CAS operations).
-    private static final VarHandle X_HANDLE =
-            POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
-
-    private static final VarHandle Y_HANDLE =
-            POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
-
-    @Test
-    void varHandles() {
-        MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        int index = 1;
-        // Access the point at index 1 (Point[x=6, y=0])
-        // The VarHandles have a built-in offset for the selected member in a group layout
-        int x = (int) X_HANDLE.get(segment, POINT_LAYOUT.byteSize() * index); // 6
-        int y = (int) Y_HANDLE.get(segment, POINT_LAYOUT.byteSize() * index); // 0
-        assertEquals(6, x);
-        assertEquals(0, y);
-
-        // Update the point at index 1
-        X_HANDLE.set(segment, POINT_LAYOUT.byteSize() * index, -1);
-        Y_HANDLE.set(segment, POINT_LAYOUT.byteSize() * index, -2);
-        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    @ParameterizedTest
+    @MethodSource("layouts")
+    void testShort(ValueLayout layout, MemorySegment segment) {
+        test(short.class, layout, segment, (short) 10);
     }
 
-   // We can improve the situation by manually coding a class that abstracts away access:
-    public static final class MyPoint {
-
-        private static final VarHandle X_HANDLE =
-                POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("x"));
-
-       private static final VarHandle Y_HANDLE =
-               POINT_LAYOUT.varHandle(MemoryLayout.PathElement.groupElement("y"));
-
-       // Holds the memory segment we are projecting members to/from
-       private final MemorySegment segment;
-
-       public MyPoint(MemorySegment segment) {
-           this.segment = Objects.requireNonNull(segment);
-       }
-
-       public int x() {
-           // Note the 0L as coordinates must match exactly in type
-           return (int) X_HANDLE.get(segment, 0L);
-       }
-
-       public int y() {
-           return (int) Y_HANDLE.get(segment, 0L);
-       }
-
-       public void x(int x) {
-           X_HANDLE.set(segment, 0L, x);
-       }
-
-       public void y(int y) {
-           Y_HANDLE.set(segment, 0L, y);
-       }
-
-       @Override
-       public boolean equals(Object obj) {
-           return  (obj instanceof MyPoint that) &&
-                   this.x() == that.x() &&
-                   this.y() == that.y();
-       }
-
-       @Override
-       public int hashCode() {
-           int result = x();
-           result = 31 * result + y();
-           return result;
-       }
-
-       @Override
-       public String toString() {
-           return "MyPoint[" +
-                   "x=" + x() +
-                   ", y=" + y() +
-                   ']';
-       }
-   }
-
-   // Here is what a more abstract access looks like using the custom class.
-   @Test
-   void customClass() {
-       MemorySegment segment = newCopyOf(POINT_SEGMENT);
-       int index = 1;
-       // This carves out a memory slice for the point at index 1
-       MemorySegment slice = segment.asSlice(POINT_LAYOUT.byteSize() * index, POINT_LAYOUT);
-       // Connected to a segment. Not stand-alone! A view...
-       MyPoint point = new MyPoint(slice);
-
-       assertEquals(6, point.x());
-       assertEquals(0, point.y());
-       assertEquals("MyPoint[x=6, y=0]", point.toString());
-
-
-       point.x(-1);
-       point.y(-2);
-       assertEquals(-1, point.x());
-       assertEquals(-2, point.y());
-       // Not only has the value changed but also the backing segment
-       MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
-   }
-
-   // While custom wrappers are nice, they quickly become hard-to-read, prone to errors
-   // and expensive to maintain. VarHandles have no type-safety for example.
-   //
-   // Imagine writing wrappers for this layout... A line that consists of points ...
-    private static final GroupLayout LINE_LAYOUT = MemoryLayout.structLayout(
-            POINT_LAYOUT.withName("begin"),
-            POINT_LAYOUT.withName("end"));
-
-    // So what can be done?
-
-    // Would it not be nice if we can connect this record to native memory using the POINT_LAYOUT?
-    record Point(int x, int y) {
+    @ParameterizedTest
+    @MethodSource("layouts")
+    void testChar(ValueLayout layout, MemorySegment segment) {
+        test(char.class, layout, segment, (char) 10);
     }
 
-    // Even nicer if records can nested like this
-    private record Line(Point begin, Point end) {
+    @ParameterizedTest
+    @MethodSource("layouts")
+    void testInt(ValueLayout layout, MemorySegment segment) {
+        test(int.class, layout, segment, 10);
     }
 
-
-    // Enter the SegmentMapper!
-    //
-    // See doc-files/point.png
-
-    @Test
-    void point() {
-        MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        // Automatically creates a mapper that can extract/write records to native memory.
-        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
-
-        // Gets the point at index 0
-        // The record Point is not backed by a segment. It is not a view!
-        Point point = mapper.get(segment);
-        assertEquals(3, point.x());
-        assertEquals(4, point.y());
-
-        // Gets the point at index 1
-        Point point2 = mapper.getAtIndex(segment, 1);
-        assertEquals(6, point2.x());
-        assertEquals(0, point2.y());
-
-        // Note that the operations on the SegmentMapper corresponds to those of the MemorySegments
-        // SegmentMapper::get (composites) <-> MemorySegment::get (primitives)
-        // The same is true for getAtIndex(), set(), setAtIndex(), elements()/stream(), etc.
-
-        // Stream all the points in the backing segment
-        List<Point> points = mapper.stream(segment)
-                .toList();
-
-        assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
-
-        assertEquals(mapper.carrier(), Point.class);
-        assertEquals(mapper.layout(), POINT_LAYOUT);
-
-        mapper.setAtIndex(segment, 1L, new Point(-1, -2));
-        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
+    @ParameterizedTest
+    @MethodSource("layouts")
+    void testLong(ValueLayout layout, MemorySegment segment) {
+        test(long.class, layout, segment, 10L);
     }
 
-    // The mapper must exactly match the types! Imagine if not ... FFM is a low level library
-    // However, it is very easy to map mappers.
-    // Here is a record that is using "narrowed" components
-    public record TinyPoint(byte x, byte y) {
+    @ParameterizedTest
+    @MethodSource("layouts")
+    void testFloat(ValueLayout layout, MemorySegment segment) {
+        test(float.class, layout, segment, 10f);
     }
 
-    // Pattern matching...
-
-    // Lossless narrowing
-    private static TinyPoint toTiny(Point point) {
-        return new TinyPoint(toByteExact(point.x()), toByteExact(point.y()));
+    @ParameterizedTest
+    @MethodSource("layouts")
+    void testDouble(ValueLayout layout, MemorySegment segment) {
+        test(double.class, layout, segment, 10d);
     }
 
-    private static Point fromTiny(TinyPoint point) {
-        return new Point(point.x(), point.y());
-    }
-
-    private static byte toByteExact(int value) {
-        if ((byte) value != value) {
-            throw new ArithmeticException("byte overflow");
+    @ParameterizedTest
+    @MethodSource("layouts")
+    void testBoolean(ValueLayout layout, MemorySegment segment) {
+        if (layout instanceof OfBoolean) {
+            PrimitiveMapper<Boolean> mapper = PrimitiveMapper.of(layout, boolean.class);
+            boolean first = mapper.getAtIndex(segment, 0);
+            boolean second = mapper.getAtIndex(segment, 1);
+            assertFalse(first);
+            assertTrue(second);
+        } else {
+            assertThrows(IllegalArgumentException.class, () ->
+                    PrimitiveMapper.of(layout, boolean.class)
+            );
         }
-        return (byte) value;
     }
 
-    @Test
-    void mappedTinyPoint() {
-        MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
-        RecordMapper<TinyPoint> tinyMapper =
-                mapper.map(TinyPoint.class, TestRecordMapper::toTiny, TestRecordMapper::fromTiny);
 
-        assertEquals(TinyPoint.class, tinyMapper.carrier());
-        assertEquals(POINT_LAYOUT, tinyMapper.layout());
+    <T> void test(Class<T> type, ValueLayout layout, MemorySegment segment, T ten) {
 
-        TinyPoint tp = tinyMapper.get(segment);
-        assertEquals(new TinyPoint((byte) 3, (byte) 4), tp);
-        tp = tinyMapper.getAtIndex(segment, 1);
-        assertEquals(new TinyPoint((byte) 6, (byte) 0), tp);
-
-        tinyMapper.setAtIndex(segment, 1, new TinyPoint((byte) -1, (byte) -2));
-        MapperTestUtil.assertContentEquals(new int[]{3, 4, -1, -2, 9, 4}, segment);
-    }
-
-    // Records of arbitrary nesting depth are supported
-    // See doc-files/line.png
-
-    @Test
-    void line() {
-        MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        // Also stand-alone
-        RecordMapper<Line> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Line.class, LINE_LAYOUT);
-
-        Line point = mapper.get(segment);
-        assertEquals(new Line(new Point(3, 4), new Point(6, 0)), point);
-
-        mapper.set(segment, POINT_LAYOUT.byteSize(), new Line(
-                new Point(-3, -4),
-                new Point(-6, 0)
-        ));
-        MapperTestUtil.assertContentEquals(new int[]{3, 4, -3, -4, -6, 0}, segment);
-    }
-
-    // Arrays are supported where the length of the arrays is taken from the
-    // corresponding sequence layout. (There is no concept of a type `int[3]` in Java)
-    // The SequenceBox can accommodate several memory layouts with different array lengths
-    record SequenceBox(int before, int[] ints, int after) {
-
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof SequenceBox(var otherBefore, var otherInts, var otherAfter) &&
-                    before == otherBefore && Arrays.equals(ints, otherInts) && after == otherAfter;
+        // No mapping for boolean (except to boolean)
+        if (layout instanceof OfBoolean) {
+            assertThrows(IllegalArgumentException.class, () ->
+                    PrimitiveMapper.of(layout, type)
+            );
+            return;
         }
 
-        @Override
-        public int hashCode() {
-            int result = before;
-            result = 31 * result + Arrays.hashCode(ints);
-            result = 31 * result + after;
-            return result;
-        }
+        PrimitiveMapper<T> mapper = PrimitiveMapper.of(layout, type);
 
-        @Override
-        public String toString() {
-            return SequenceBox.class.getSimpleName() +
-                    "[before=" + before +
-                    ", ints=" + Arrays.toString(ints) +
-                    ", after=" + after+"]";
-        }
+        // Reading
+        Number first = toNumber(mapper.get(segment));
+        assertEquals(FIRST, first.longValue());
+        Number second = toNumber(mapper.getAtIndex(segment, 1));
+        assertEquals(SECOND, second.longValue());
 
-        // Accessor similar to an interface mapper array accessor
-        public int ints(long i) {
-            return ints[Math.toIntExact(i)];
-        }
-
-        // Convenience method
-        public List<Integer> intsAsList() {
-            return Arrays.stream(ints)
-                    .boxed()
-                    .toList();
-        }
-
+        // Writing
+        mapper.set(segment, ten);
+        assertEquals(toNumber(ten).longValue(), get(segment, layout, 0L).longValue());
     }
 
-    @Test
-    public void testSequenceBox() {
-        // int[]{0, 1, 2, 3}
-        var segment = MemorySegment.ofArray(IntStream.rangeClosed(0, 3).toArray());
+    static Number get(MemorySegment segment, ValueLayout layout, long offset) {
+        return switch (layout) {
+            case OfByte l -> segment.get(l, offset);
+            case OfShort l -> segment.get(l, offset);
+            case OfChar l -> (int) segment.get(l, offset);
+            case OfInt l -> segment.get(l, offset);
+            case OfLong l -> segment.get(l, offset);
+            case OfFloat l -> segment.get(l, offset);
+            case OfDouble l -> segment.get(l, offset);
+            default -> throw new IllegalArgumentException();
+        };
+    }
 
-        var layout = MemoryLayout.structLayout(
-                JAVA_INT.withName("before"),
-                MemoryLayout.sequenceLayout(2, JAVA_INT).withName("ints"),
-                JAVA_INT.withName("after")
+    static Number toNumber(Object o) {
+        return switch (o) {
+            case Number n -> n;
+            case Character c -> (int) c;
+            default -> throw new IllegalArgumentException();
+        };
+    }
+
+    static Stream<Arguments> layouts() {
+        return Stream.of(
+                Arguments.of(JAVA_BYTE, MemorySegment.ofArray(new byte[]{FIRST, SECOND})),
+                Arguments.of(JAVA_SHORT, MemorySegment.ofArray(new short[]{FIRST, SECOND})),
+                Arguments.of(JAVA_CHAR, MemorySegment.ofArray(new char[]{FIRST, SECOND})),
+                Arguments.of(JAVA_INT, MemorySegment.ofArray(new int[]{FIRST, SECOND})),
+                Arguments.of(JAVA_FLOAT, MemorySegment.ofArray(new float[]{FIRST, SECOND})),
+                Arguments.of(JAVA_LONG, MemorySegment.ofArray(new long[]{FIRST, SECOND})),
+                Arguments.of(JAVA_DOUBLE, MemorySegment.ofArray(new double[]{FIRST, SECOND})),
+                Arguments.of(JAVA_BOOLEAN, MemorySegment.ofArray(new byte[]{FIRST, SECOND}))
         );
-
-        var mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, SequenceBox.class, layout);
-
-        SequenceBox sequenceBox = mapper.get(segment);
-
-        assertEquals(new SequenceBox(0, new int[]{1, 2}, 3), sequenceBox);
-
-        var dstSegment = newCopyOf(segment);
-        mapper.set(dstSegment, new SequenceBox(10, new int[]{11, 12}, 13));
-
-        MapperTestUtil.assertContentEquals(IntStream.rangeClosed(10, 13).toArray(), dstSegment);
-
-        assertThrows(NullPointerException.class, () -> {
-            // The array is null
-            mapper.set(dstSegment, new SequenceBox(10, null, 13));
-        });
-
-        assertThrows(IllegalArgumentException.class, () -> {
-            // The array is not of correct size
-            mapper.set(dstSegment, new SequenceBox(10, new int[]{11}, 13));
-        });
-        assertThrows(IllegalArgumentException.class, () -> {
-            // The array is not of correct size
-            mapper.set(dstSegment, new SequenceBox(10, new int[]{11, 12, 13}, 13));
-        });
-    }
-
-    // Arrays of arbitrary rank are supported
-
-    record SequenceBox2D(int before, int[][] ints, int after) {
-
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof SequenceBox2D(var otherBefore, var otherInts, var otherAfter) &&
-                    before == otherBefore &&
-                    Arrays.deepEquals(ints, otherInts) &&
-                    after == otherAfter;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = before;
-            result = 31 * result + Arrays.deepHashCode(ints);
-            result = 31 * result + after;
-            return result;
-        }
-
-        @Override
-        public String toString() {
-            return SequenceBox.class.getSimpleName() +
-                    "[before=" + before +
-                    ", ints=" + Arrays.deepToString(ints) +
-                    ", after=" + after+"]";
-        }
-
-        // Accessor similar to an interface mapper array accessor
-        public int ints(long i, long j) {
-            return ints[Math.toIntExact(i)][Math.toIntExact(j)];
-        }
-
-        // Convenience method
-        public List<List<Integer>> intsAsList() {
-            return Arrays.stream(ints)
-                    .map(a -> Arrays.stream(a).boxed().toList())
-                    .toList();
-        }
-
-    }
-
-    @Test
-    public void testSequenceBox2D() {
-        var segment = MemorySegment.ofArray(IntStream.range(0, 1 + 2 * 3 + 1).toArray());
-
-        var layout = MemoryLayout.structLayout(
-                JAVA_INT.withName("before"),
-                MemoryLayout.sequenceLayout(2,
-                        MemoryLayout.sequenceLayout(3, JAVA_INT)
-                ).withName("ints"),
-                JAVA_INT.withName("after")
-        );
-
-        var mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, SequenceBox2D.class, layout);
-
-        SequenceBox2D sequenceBox = mapper.get(segment);
-
-        assertEquals(new SequenceBox2D(0, new int[][]{{1, 2, 3}, {4, 5, 6}}, 7), sequenceBox);
-
-        var dstSegment = newCopyOf(segment);
-        mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15, 16}}, 17));
-
-        MapperTestUtil.assertContentEquals(IntStream.range(0, 1 + 2 * 3 + 1).map(i -> i + 10).toArray(), dstSegment);
-
-        assertThrows(NullPointerException.class, () -> {
-            // The array is null
-            mapper.set(dstSegment, new SequenceBox2D(10, null, 13));
-        });
-
-        assertThrows(IllegalArgumentException.class, () -> {
-            // The array is not of correct size
-            mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}}, 13));
-        });
-        assertThrows(IllegalArgumentException.class, () -> {
-            // The array is not of correct size
-            mapper.set(dstSegment, new SequenceBox2D(10, new int[][]{{11, 12, 13}, {14, 15}}, 13));
-        });
-    }
-
-    // Arrays can have record components
-
-    record Polygon(Point[] points) {
-
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof Polygon(var otherPoints) &&
-                    Arrays.equals(points, otherPoints);
-        }
-
-        @Override
-        public int hashCode() {
-            return Arrays.hashCode(points);
-        }
-
-        @Override
-        public String toString() {
-            return Arrays.toString(points);
-        }
-    }
-
-    @Test
-    void triangle() {
-
-        //        y
-        //
-        //        |
-        //        | /\
-        //        | ‾‾
-        // -------+------- x
-        //        |
-        //        |
-        //        |
-
-        var segment = MemorySegment.ofArray(new int[]{1, 1, 2, 2, 3, 1});
-
-        GroupLayout layout = MemoryLayout.structLayout(
-                MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
-        );
-
-        var mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Polygon.class, layout);
-
-        Polygon triangle = mapper.get(segment);
-
-        assertEquals(new Polygon(new Point[]{new Point(1,1), new Point(2,2), new Point(3, 1)}), triangle);
-
-        var dstSegment = newCopyOf(segment);
-        mapper.set(dstSegment, new Polygon(new Point[]{new Point(11,11), new Point(12,12), new Point(13, 11)}));
-
-        MapperTestUtil.assertContentEquals(new int[]{11, 11, 12, 12, 13, 11}, dstSegment);
-
-        assertThrows(NullPointerException.class, () -> {
-            // The array is null
-            mapper.set(dstSegment, new Polygon(null));
-        });
-
-        assertThrows(IllegalArgumentException.class, () -> {
-            // The array is not of correct size
-            mapper.set(dstSegment, new Polygon(new Point[]{new Point(1, 1), new Point(2, 2)}));
-        });
-        assertThrows(IllegalArgumentException.class, () -> {
-            // The array is not of correct size
-            Point[] points = IntStream.range(0, 4).mapToObj(_ -> new Point(1, 1)).toArray(Point[]::new);
-            mapper.set(dstSegment, new Polygon(points));
-        });
-
-    }
-
-    // Interoperability with POJOs
-
-    private static class PointBean {
-
-        private int x;
-        private int y;
-
-        int x() {
-            return x;
-        }
-        void x(int x) {
-            this.x = x;
-        }
-
-        int y() {
-            return y;
-        }
-        void y(int y) {
-            this.y = y;
-        }
-
-        @Override
-        public String toString() {
-            return "PointBean[" +
-                    "x=" + x() +
-                    ", y=" + y() +
-                    ']';
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-
-            PointBean pointBean = (PointBean) o;
-
-            if (x != pointBean.x) return false;
-            return y == pointBean.y;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = x;
-            result = 31 * result + y;
-            return result;
-        }
-    }
-
-    static Point beanToPoint(PointBean bean) {
-        return new Point(bean.x(), bean.y());
-    }
-
-    static PointBean pointToBean(Point point) {
-        PointBean pointBean = new PointBean();
-        pointBean.x(point.x());
-        pointBean.y(point.y());
-        return pointBean;
-    }
-
-    @Test
-    void bean() {
-        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
-        RecordMapper<PointBean> beanMapper =
-                mapper.map(PointBean.class, TestRecordMapper::pointToBean, TestRecordMapper::beanToPoint);
-        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
-        PointBean pointBean = beanMapper.get(segment);
-        assertEquals("PointBean[x=3, y=4]", pointBean.toString());
-    }
-
-    // SegmentMapper::create is more geared towards interfaces but works for records too
-
-    record GenericPoint<T>(int x, int y) {}
-
-    // Generic interfaces and records need to have their generic type parameters (if any)
-    // know at compile time. This applies to all extended interfaces recursively.
-
-    @Test
-    void genericRecord() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            RecordMapper.ofRecord(LOCAL_LOOKUP, GenericPoint.class, POINT_LAYOUT);
-        });
-    }
-
-
-    @Test
-    void originDistances() {
-        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
-
-        double averageDistance = mapper.stream(POINT_SEGMENT)
-                .mapToDouble(this::originDistance)
-                .average()
-                .orElse(0);
-
-        System.out.println("averageDistance = " + averageDistance);
-    }
-
-    double originDistance(Point point) {
-        return Math.sqrt(point.x() * point.x() + point.y() * point.y());
-    }
-
-
-     // Interfaces and records must not implement (directly and/or via inheritance) more than
-     // one abstract method with the same name and erased parameter types. Hence, covariant
-     // overriding is not supported.
-
-    // Todo: Add test for this
-
-
-
-    // Future considerations and work ...
-
-    // Consider allow mapping Lists to components
-    // Unfortunately, this may be ineffective for primitive arrays
-    record PolygonList(List<Point> points) {}
-
-    // Consider allowing "escape hatches" in the form of MemorySegments
-    // This will map a slice of an underlying MemorySegment.
-    // Unfortunately, this means the record is still "attached" to a segment or portions thereof
-    // and with the same life cycle as the original segment
-    record PartialPoint(int x, MemorySegment y){}
-
-    // Consider some method that can render a description of the mapper and
-    // what it is doing. E.g. like .DOT formatted strings that can be used to
-    // generate images like the point.png and line.png images:
-    // Stream<String> description();
-
-    // The same is true for interfaces
-    interface PolygonAccessor {
-        List<Point> points(); // This should be a lazy list
-    }
-
-    @Test
-    void listOfGeneric() throws NoSuchMethodException {
-        Method m = PolygonAccessor.class.getDeclaredMethod("points");
-        Type gt = m.getGenericReturnType(); // java.util.List<TestRecordMapper$Point>
-    }
-
-    // Misc tests
-
-    record BunchOfPoints(Point p0, Point p1, Point p2, Point p3,
-                         Point p4, Point p5, Point p6, Point p7) {
-    }
-
-    // This test is to make sure the iterative setter works (as opposed to the composed one).
-    @Test
-    void bunch() {
-        StructLayout layout = MemoryLayout.structLayout(IntStream.range(0, 8)
-                .mapToObj(i -> POINT_LAYOUT.withName("p"+i))
-                .toArray(MemoryLayout[]::new));
-
-        int noInts = (int) (layout.byteSize() / JAVA_INT.byteSize());
-
-        MemorySegment segment = MemorySegment.ofArray(IntStream.range(0, noInts).toArray());
-        RecordMapper<BunchOfPoints> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, BunchOfPoints.class, layout);
-        BunchOfPoints bunchOfPoints = mapper.get(segment);
-
-        BunchOfPoints expected = new BunchOfPoints(
-                new Point(0 ,1), new Point(2, 3), new Point(4, 5), new Point(6, 7),
-                new Point(8 ,9), new Point(10, 11), new Point(12, 13), new Point(14, 15)
-        ) ;
-        assertEquals(expected, bunchOfPoints);
-
-        MemorySegment dstSegment = Arena.ofAuto().allocate(layout);
-
-        mapper.set(dstSegment, 0, new BunchOfPoints(
-                new Point(10 ,11), new Point(12, 13), new Point(14, 15), new Point(16, 17),
-                new Point(18 ,19), new Point(20, 21), new Point(22, 23), new Point(24, 25)
-        ));
-
-        MapperTestUtil.assertContentEquals(IntStream.range(0, noInts).map(i -> i + 10).toArray(), dstSegment);
-    }
-
-    @Test
-    void invariantChecking() {
-        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
-        MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        assertThrows(NullPointerException.class, () -> mapper.get(null));
-        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, -1));
-        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, segment.byteSize()));
-        MemorySegment smallSegment = MemorySegment.ofArray(new int[]{3});
-        assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(smallSegment, 0));
-    }
-
-    @Test
-    void stringMapper()  {
-        try (Arena arena = Arena.ofConfined()){
-            RecordMapper<String> stringMapper = TestRecordMapper.ofString(arena);
-            MemorySegment segment = arena.allocateFrom(stringMapper, "Hello String mapper!");
-            String fromSegment = stringMapper.get(segment);
-            assertEquals("Hello String mapper!", fromSegment);
-        }
-    }
-
-    @SuppressWarnings("restricted")
-    static final AddressLayout CHAR_POINTER = ADDRESS.withTargetLayout(MemoryLayout.sequenceLayout(Integer.MAX_VALUE, JAVA_BYTE));
-
-    @Test
-    void indirectStringMapper()  {
-        try (Arena arena = Arena.ofConfined()) {
-            RecordMapper<String> stringMapper = TestRecordMapper.ofString(arena);
-            // We are working with an indirect address
-            assertEquals(ADDRESS.byteSize(), stringMapper.layout().byteSize());
-
-            // Allocates a new MemorySegment in which the string is recorded and then
-            MemorySegment segment = arena.allocateFrom(stringMapper, "Hello String mapper!");
-            assertEquals(ADDRESS.byteSize(), segment.byteSize());
-            String fromSegment = stringMapper.get(segment);
-            assertEquals("Hello String mapper!", fromSegment);
-        }
-    }
-
-    static RecordMapper<String> ofString(Arena arena) {
-        try {
-            MethodHandle getter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "toStringIndirect",
-                    MethodType.methodType(String.class, MemorySegment.class, long.class))
-                    // Todo: remove
-                    .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
-            MethodHandle setter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "fromStringIndirect",
-                            MethodType.methodType(void.class, Arena.class, MemorySegment.class, long.class, Object.class))
-                    .bindTo(arena);
-
-            return RecordMapper.of(String.class, CHAR_POINTER, getter, setter);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    static String toStringIndirect(MemorySegment segment, long offset) {
-        MemorySegment stringSegment = segment.get(CHAR_POINTER, offset);
-        return stringSegment.getString(offset);
-    }
-
-    static void fromStringIndirect(Arena arena, MemorySegment segment, long offset, Object value) {
-        MemorySegment stringSegment = arena.allocateFrom((String) value);
-        // Make sure we have the same scope
-        if (!segment.scope().equals(stringSegment.scope())) {
-            throw new IllegalArgumentException("the provided segment does not have the correct scope:" + segment);
-        }
-        segment.set(CHAR_POINTER, offset, stringSegment);
-    }
-
-    @Test
-    void intMapper() {
-        RecordMapper<Integer> intMapper = RecordMapper.ofPrimitive(JAVA_INT);
-        MemorySegment segment = MemorySegment.ofArray(new int[]{13, 42});
-        int value = intMapper.getAtIndex(segment, 1);
-        assertEquals(42, value);
-        intMapper.setAtIndex(segment, 0, 147);
-        assertEquals(147, segment.getAtIndex(JAVA_INT, 0));
-    }
-
-    @Test
-    void intOrLongToLongMapper()  {
-        for (ValueLayout platformLayout: List.of(JAVA_INT, JAVA_LONG)) {
-            MemorySegment segment = (platformLayout == JAVA_INT)
-                    ? MemorySegment.ofArray(new int[]{42})
-                    : MemorySegment.ofArray(new long[]{42L});
-
-            // Materialize a Number but use any backing layout L ∈ (OfByte, OfShort, OfInt, OfFloat, OfLong, OfDouble)
-            RecordMapper<Number> mapper = RecordMapper.ofNumber(platformLayout);
-
-            Number number = mapper.get(segment, 0);
-            assertEquals(42, number.longValue());
-            assertEquals(platformLayout, mapper.layout());
-
-            mapper.set(segment, 0, (byte) 63);
-            assertEquals(63, mapper.get(segment).intValue());
-        }
-    }
-
-
-    @Test
-    void ofPrimitiveInt() {
-        var segment = MemorySegment.ofArray(new int[]{1, 2});
-        RecordMapper<Integer> mapper = RecordMapper.ofPrimitive(JAVA_INT);
-        int value = mapper.getAtIndex(segment, 1);
-        assertEquals(2, value);
-        mapper.setAtIndex(segment, 1, 3);
-        assertEquals(3, segment.getAtIndex(JAVA_INT, 1));
-    }
-
-    @Test
-    void ofPrimitiveLong() {
-        var segment = MemorySegment.ofArray(new long[]{1, 2});
-        RecordMapper<Long> mapper = RecordMapper.ofPrimitive(JAVA_LONG);
-        long value = mapper.getAtIndex(segment, 1);
-        assertEquals(2L, value);
-        mapper.setAtIndex(segment, 1, 3L);
-        assertEquals(3, segment.getAtIndex(JAVA_LONG, 1));
-    }
-
-    @Test
-    void ofString() {
-        try (Arena arena = Arena.ofConfined()) {
-            RecordMapper<String> mapper = RecordMapper.ofString(32);
-            var segment = arena.allocate(mapper.layout());
-            mapper.set(segment, "Hello mapper!");
-            assertEquals("Hello mapper!", mapper.get(segment));
-        }
-    }
-
-    interface SegmentBacked {
-        MemorySegment segment();
-        long offset();
-    }
-
-    public interface LazyPoint extends SegmentBacked {
-        int x();
-        void x(int x);
-        int y();
-        void y(int y);
-    }
-
-    public record LazyPointImpl(@Override MemorySegment segment,
-                                @Override long offset) implements LazyPoint {
-
-        private static final VarHandle X = POINT_LAYOUT.varHandle(PathElement.groupElement("x"));
-        private static final VarHandle Y = POINT_LAYOUT.varHandle(PathElement.groupElement("y"));
-
-        public int x() {
-            return (int) X.get(segment, offset);
-        }
-
-        public void x(int x) {
-            X.set(segment, offset, x);
-        }
-
-        public int y() {
-            return (int) Y.get(segment, offset);
-        }
-
-        public void y(int y) {
-            Y.set(segment, offset, y);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof LazyPoint other &&
-                    MemorySegment.mismatch(segment, offset, offset + POINT_LAYOUT.byteSize(),
-                            other.segment(), offset(), other.offset() + POINT_LAYOUT.byteSize()) != -1;
-        }
-
-        @Override
-        public int hashCode() {
-            // return MemorySegment.hashCode(segment, offset, offset+POINT_LAYOUT.byteSize());
-            return Arrays.hashCode(segment
-                    .asSlice(offset, POINT_LAYOUT.byteSize())
-                    .toArray(JAVA_BYTE));
-        }
-
-        @Override
-        public String toString() {
-            return "LazyPoint[x()=" + x() + ", y()=" + y() + "]";
-        }
-
-        // Setter
-        public static void set(MemorySegment dstSegment, long dstOffset, LazyPoint lazyPoint) {
-            MemorySegment.copy(lazyPoint.segment(), lazyPoint.offset(), dstSegment, dstOffset, POINT_LAYOUT.byteSize());
-        }
-
-    }
-
-    @Test
-    void ofLazy() {
-        var segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        RecordMapper<LazyPoint> mapper = RecordMapper.of(LazyPoint.class, POINT_LAYOUT, LazyPointImpl::new, LazyPointImpl::set);
-
-        LazyPoint point = mapper.getAtIndex(segment, 1);
-        assertEquals(6, point.x());
-        assertEquals(8, point.y());
-        point.x(-6);
-        point.y(-8);
-
-        mapper.set(segment, point);
-        assertEquals(-6, segment.getAtIndex(JAVA_INT, 0));
-        assertEquals(-8, segment.getAtIndex(JAVA_INT, 1));
-    }
-
-    @Test
-    void elementSpecificMapping() {
-
-    }
-
-    @Test
-    void array() {
-        SequenceLayout sequenceLayout = MemoryLayout.sequenceLayout(16, JAVA_INT);
-        var segment = MemorySegment.ofArray(IntStream.range(0, (int) sequenceLayout.elementCount() * 2).toArray());
-        RecordMapper<int[]> mapper = ofIntArray(sequenceLayout);
-
-        int[] value = mapper.get(segment);
-        assertArrayEquals(IntStream.range(0, (int) sequenceLayout.elementCount()).toArray(), value);
-    }
-
-    static RecordMapper<int[]> ofIntArray(SequenceLayout layout) {
-        if (!(layout.elementLayout() instanceof OfInt elementLayout)) {
-            throw new IllegalArgumentException();
-        }
-        try {
-            MethodHandle getter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "getIntArray",
-                    MethodType.methodType(int[].class, MemorySegment.class, long.class, long.class, OfInt.class));
-            getter = MethodHandles.insertArguments(getter, 2, layout.byteSize(), elementLayout);
-            getter = getter.asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
-            MethodHandle setter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "setIntArray",
-                    MethodType.methodType(void.class, MemorySegment.class, long.class, int[].class, int.class, OfInt.class));
-            setter = MethodHandles.insertArguments(setter, 3, (int) layout.elementCount(), elementLayout);
-            setter = setter.asType(setter.type().changeParameterType(2, Object.class));
-            return RecordMapper.of(int[].class, layout, getter, setter);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    static int[] getIntArray(MemorySegment segment, long offset, long byteSize, OfInt elementLayout) {
-        return segment.asSlice(offset, byteSize).toArray(elementLayout);
-    }
-
-    static void setIntArray(MemorySegment dstSegment, long dstOffset, int[] value, int elementCount, OfInt dstLayout) {
-        MemorySegment.copy(value, 0, dstSegment, dstLayout, dstOffset, elementCount);
-    }
-
-    @Test
-    void intOrLongToLongHandle() throws Throwable {
-        for (ValueLayout platformLayout: List.of(JAVA_INT, JAVA_LONG)) {
-            MemorySegment segment = (platformLayout == JAVA_INT)
-                    ? MemorySegment.ofArray(new int[]{42})
-                    : MemorySegment.ofArray(new long[]{42L});
-
-            // Materialize a Number but use any backing layout L ∈ (OfByte, OfShort, OfInt, OfFloat, OfLong, OfDouble)
-            MethodHandle getter = toLongGetter(platformLayout);
-            long number = (long) getter.invokeExact(segment, 0L);
-
-            assertEquals(42L, number);
-
-            MethodHandle setter = fromLongSetter(platformLayout);
-            setter.invokeExact(segment, 0L, 63L);
-            assertEquals(63L, (long) getter.invokeExact(segment, 0L));
-        }
-    }
-
-    static final MethodHandle INT_TO_LONG;
-    static final MethodHandle LONG_TO_INT;
-    static {
-        try {
-            INT_TO_LONG = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "intToLong", MethodType.methodType(long.class, int.class));
-            LONG_TO_INT = LOCAL_LOOKUP.findStatic(Math.class, "toIntExact", MethodType.methodType(int.class, long.class));
-        } catch (ReflectiveOperationException e) {
-            throw new ExceptionInInitializerError(e);
-        }
-    }
-
-    MethodHandle toLongGetter(ValueLayout layout) {
-        try {
-            Class<?> interfaceType = layout.getClass().getInterfaces()[0];
-            MethodHandle handle = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "get", MethodType.methodType(layout.carrier(), interfaceType, long.class));
-            handle = MethodHandles.insertArguments(handle, 1, layout);
-
-            return switch (layout) {
-                case OfLong lo -> handle;
-                case OfInt  in -> MethodHandles.filterReturnValue(handle, INT_TO_LONG);
-                default -> throw new UnsupportedOperationException();
-
-            };
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    MethodHandle fromLongSetter(ValueLayout layout) {
-        try {
-            Class<?> interfaceType = layout.getClass().getInterfaces()[0];
-            MethodHandle handle = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "set", MethodType.methodType(void.class, interfaceType, long.class, layout.carrier()));
-            handle = MethodHandles.insertArguments(handle, 1, layout);
-
-            return switch (layout) {
-                case OfLong lo -> handle;
-                case OfInt  in -> MethodHandles.filterArguments(handle, 2, LONG_TO_INT);
-                default -> throw new UnsupportedOperationException();
-
-            };
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    static long intToLong(int value) {
-        return value;
-    }
-
-
-    // Support methods
-
-    private static void printIntSegment(MemorySegment segment) {
-        System.out.println(Arrays.toString(segment.toArray(JAVA_INT)));
-    }
-
-    private static MemorySegment newCopyOf(MemorySegment source) {
-        return Arena.ofAuto()
-                .allocate(source.byteSize())
-                .copyFrom(source);
     }
 
 }

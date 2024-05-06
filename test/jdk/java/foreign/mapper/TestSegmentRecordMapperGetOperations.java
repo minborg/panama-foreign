@@ -35,17 +35,15 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.ValueLayout;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.foreign.mapper.SegmentMapper;
-import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.invoke.VarHandle;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.Objects;
 import java.util.stream.IntStream;
 
@@ -56,7 +54,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
     @Test
     void point() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(Point.class, POINT_LAYOUT);
 
         Point point = mapper.get(POINT_SEGMENT);
         assertEquals(new Point(3,4), point);
@@ -68,12 +66,12 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
     @Test
     void mappedTinyPoint() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(Point.class, POINT_LAYOUT);
         SegmentMapper<TinyPoint> tinyMapper =
                 mapper.map(TinyPoint.class,
                            p -> new TinyPoint((byte) p.x(), (byte) p.y()),
                            t -> new Point(t.x(), t.y()));
-        assertEquals(TinyPoint.class, tinyMapper.type());
+        assertEquals(TinyPoint.class, tinyMapper.carrier());
         assertEquals(POINT_LAYOUT, tinyMapper.layout());
 
         TinyPoint tp = tinyMapper.get(POINT_SEGMENT);
@@ -84,7 +82,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
     @Test
     void line() {
-        SegmentMapper<Line> mapper = SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
+        RecordMapper<Line> mapper = RecordMapper.ofRecord(Line.class, LINE_LAYOUT);
 
         Line point = mapper.get(POINT_SEGMENT);
         assertEquals(new Line(new Point(3,4), new Point(6, 0)), point);
@@ -116,16 +114,16 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
     // Manually declared function
 
-    @Test
+/*    @Test
     public void testCustomPoint() {
-        SegmentMapper.Getter<Point> getter = (s, o) -> new Point(s.get(JAVA_INT, o), s.get(JAVA_INT, o + 4));
-        SegmentMapper.Setter<Point> setter = (segment, offset, value) -> {
+        RecordMapper.Getter<Point> getter = (s, o) -> new Point(s.get(JAVA_INT, o), s.get(JAVA_INT, o + 4));
+        RecordMapper.Setter<Point> setter = (segment, offset, value) -> {
             segment.set(JAVA_INT, offset, value.x());
             segment.set(JAVA_INT, offset + 4, value.y());
         };
-        var mapper = SegmentMapper.of(Point.class, POINT_LAYOUT, getter, setter);
+        var mapper = RecordMapper.of(Point.class, POINT_LAYOUT, getter, setter);
         test(POINT_SEGMENT, mapper, new Point(3, 4));
-    }
+    }*/
 
     @Test
     public void testPointMapper() {
@@ -144,13 +142,13 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     public void testLongPointTypeMismatch() {
         // This should fail as the types `int` and `String` cannot be mapped
         assertThrows(IllegalArgumentException.class, () ->
-            SegmentMapper.ofRecord(StringPoint.class, POINT_LAYOUT)
+            RecordMapper.ofRecord(StringPoint.class, POINT_LAYOUT)
         );
     }
 
     @Test
     public void testEmptyRecord() {
-        var mapper = SegmentMapper.ofRecord(Empty.class, POINT_LAYOUT);
+        var mapper = RecordMapper.ofRecord(Empty.class, POINT_LAYOUT);
         Empty empty = mapper.get(POINT_SEGMENT);
         assertEquals(new Empty(), empty);
     }
@@ -160,26 +158,26 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     @Test
     public void noMapping() {
         assertThrows(IllegalArgumentException.class, () ->
-                SegmentMapper.ofRecord(Unmatched.class, POINT_LAYOUT)
+                RecordMapper.ofRecord(Unmatched.class, POINT_LAYOUT)
         );
     }
 
     @Test
     public void testFlippedPointMapper() {
-        test(POINT_SEGMENT, SegmentMapper.ofRecord(FlippedPoint.class, POINT_LAYOUT), new FlippedPoint(4, 3));
+        test(POINT_SEGMENT, RecordMapper.ofRecord(FlippedPoint.class, POINT_LAYOUT), new FlippedPoint(4, 3));
     }
 
     // Line
 
     @Test
     public void testLineMapper() {
-        test(POINT_SEGMENT, SegmentMapper.ofRecord(Line.class, LINE_LAYOUT), new Line(new Point(3, 4), new Point(6, 0)));
+        test(POINT_SEGMENT, RecordMapper.ofRecord(Line.class, LINE_LAYOUT), new Line(new Point(3, 4), new Point(6, 0)));
     }
 
     // Union
     @Test
     public void testUnion() {
-        test(POINT_SEGMENT, SegmentMapper.ofRecord(PointUnion.class, PointUnion.LAYOUT),
+        test(POINT_SEGMENT, RecordMapper.ofRecord(PointUnion.class, PointUnion.LAYOUT),
                 new PointUnion(
                         new Point(3, 4),
                         new FlippedPoint(4, 3))
@@ -189,7 +187,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     // Union of Union
     @Test
     public void testUnionUnion() {
-        test(POINT_SEGMENT, SegmentMapper.ofRecord(PointUnionUnion.class, PointUnionUnion.LAYOUT),
+        test(POINT_SEGMENT, RecordMapper.ofRecord(PointUnionUnion.class, PointUnionUnion.LAYOUT),
                 new PointUnionUnion(
                         new PointUnion(
                                 new Point(3, 4),
@@ -207,7 +205,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 MemoryLayout.paddingLayout(Integer.BYTES * 2).withName("padding"),
                 JAVA_INT.withName("x"),
                 JAVA_INT.withName("y"));
-        test(POINT_SEGMENT, SegmentMapper.ofRecord(Point.class, paddedPointLayout), new Point(6, 0));
+        test(POINT_SEGMENT, RecordMapper.ofRecord(Point.class, paddedPointLayout), new Point(6, 0));
     }
 
     @Test
@@ -250,7 +248,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
             layout.varHandle(PathElement.groupElement("fl")).set(segment, 0L, 1f);
             layout.varHandle(PathElement.groupElement("dl")).set(segment, 0L, 1d);
 
-            var mapper = SegmentMapper.ofRecord(Types.class, layout);
+            var mapper = RecordMapper.ofRecord(Types.class, layout);
             Types types = mapper.get(segment);
             assertEquals(new Types(
                     (byte) 1,
@@ -286,7 +284,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
             layout.varHandle(PathElement.groupElement("exponent")).set(segment, 0L, exponent);
             layout.varHandle(PathElement.groupElement("fraction")).set(segment, 0L, fraction);
 
-            var mapper = SegmentMapper.ofRecord(Float80.class, layout);
+            var mapper = RecordMapper.ofRecord(Float80.class, layout);
             Float80 float80 = mapper.get(segment);
             assertEquals(new Float80(exponent, fraction), float80);
         }
@@ -295,7 +293,8 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     @Test
     public void testToString() {
         var toString = POINT_MAPPER.toString();
-        assertTrue(toString.contains("type=" + Point.class));
+        System.out.println("toString = " + toString);
+        assertTrue(toString.contains("carrier=" + Point.class));
         assertTrue(toString.contains("layout=" + POINT_LAYOUT));
     }
 
@@ -376,7 +375,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceBox.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceBox.class, layout);
 
         SequenceBox sequenceBox = mapper.get(segment);
 
@@ -396,7 +395,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceListBox.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceListBox.class, layout);
 
         SequenceListBox sequenceBox = mapper.get(segment);
 
@@ -426,7 +425,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
         var segment = MemorySegment.ofArray(IntStream.range(0, 8).toArray());
 
-        var mapper = SegmentMapper.ofRecord(PureArray.class, layout);
+        var mapper = RecordMapper.ofRecord(PureArray.class, layout);
 
         PureArray pureArray = mapper.get(segment);
 
@@ -463,7 +462,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceOfPoints.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceOfPoints.class, layout);
 
         SequenceOfPoints sequenceOfPoints = mapper.get(segment);
 
@@ -481,7 +480,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceListPoint.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceListPoint.class, layout);
 
         SequenceListPoint sequenceOfPoints = mapper.get(segment);
 
@@ -497,7 +496,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 MemoryLayout.sequenceLayout(2, POINT_LAYOUT).withName("points")
         );
 
-        var mapper = SegmentMapper.ofRecord(Points.class, layout);
+        var mapper = RecordMapper.ofRecord(Points.class, layout);
 
         Points sequenceOfPoints = mapper.get(segment);
 
@@ -513,7 +512,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 MemoryLayout.sequenceLayout(2, POINT_LAYOUT).withName("points")
         );
 
-        var mapper = SegmentMapper.ofRecord(PointSet.class, layout);
+        var mapper = RecordMapper.ofRecord(PointSet.class, layout);
 
         PointSet sequenceOfPoints = mapper.get(segment);
 
@@ -542,7 +541,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceOfPoints.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceOfPoints.class, layout);
 
         SequenceOfPoints sequenceOfPoints = mapper.get(segment);
 
@@ -553,7 +552,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     @Test
     public void testConstructorAccessibility() {
         assertThrows(IllegalArgumentException.class, () ->
-                SegmentMapper.ofRecord(Foo.class, POINT_LAYOUT)
+                RecordMapper.ofRecord(Foo.class, POINT_LAYOUT)
         );
     }
 
@@ -635,7 +634,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
     @Test
     public void recordClassItself() {
         assertThrows(IllegalArgumentException.class, () ->
-                SegmentMapper.ofRecord(Record.class, POINT_LAYOUT)
+                RecordMapper.ofRecord(Record.class, POINT_LAYOUT)
         );
     }
 
@@ -677,7 +676,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
             value.set(second, 0L, 42);
             next.set(first, 0L, second);
 
-            var mapper = SegmentMapper.ofRecord(LinkedNode.class, layout);
+            var mapper = RecordMapper.ofRecord(LinkedNode.class, layout);
 
             LinkedNode actualFirst = mapper.get(first);
             assertEquals(41, actualFirst.value());
@@ -742,7 +741,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
             child.set(root, 0L, 0, firstChild);
             child.set(root, 0L, 1, secondChild);
 
-            var mapper = SegmentMapper.ofRecord(TreeNode.class, layout);
+            var mapper = RecordMapper.ofRecord(TreeNode.class, layout);
 
             TreeNode actualRoot = mapper.get(root);
             assertEquals(100, actualRoot.value());
@@ -774,7 +773,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         );
 
         assertThrows(IllegalArgumentException.class, () ->
-                SegmentMapper.ofRecord(Point.class, layout)
+                RecordMapper.ofRecord(Point.class, layout)
         );
 
     }
@@ -792,7 +791,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 JAVA_INT.withName("y")  // Used
         );
 
-        var mapper = SegmentMapper.ofRecord(Point.class, layout);
+        var mapper = RecordMapper.ofRecord(Point.class, layout);
 
         Point point = mapper.get(POINT_SEGMENT);
         assertEquals(new Point(6, 0), point);
@@ -808,7 +807,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         );
 
         assertThrows(IllegalArgumentException.class, () ->
-                SegmentMapper.ofRecord(SingleValue.class, layout)
+                RecordMapper.ofRecord(SingleValue.class, layout)
         );
     }
 
@@ -824,7 +823,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
         );
 
         assertThrows(IllegalArgumentException.class, () ->
-                SegmentMapper.ofRecord(Recurse.class, layout)
+                RecordMapper.ofRecord(Recurse.class, layout)
         );
 
     }
@@ -833,7 +832,7 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
 
     @Test
     public void privateClass() {
-        var mapper = SegmentMapper.ofRecord(MethodHandles.lookup(), PrivatePoint.class, POINT_LAYOUT);
+        var mapper = RecordMapper.ofRecord(MethodHandles.lookup(), PrivatePoint.class, POINT_LAYOUT);
         PrivatePoint point = mapper.get(POINT_SEGMENT);
         assertEquals(new PrivatePoint(3, 4), point);
     }
@@ -866,14 +865,14 @@ final class TestSegmentRecordMapperGetOperations extends BaseTest {
                 .toArray(MemoryLayout[]::new));
 
         Class<R> type = (Class<R>) expected.getClass();
-        SegmentMapper<R> mapper = SegmentMapper.ofRecord(type, layout);
+        RecordMapper<R> mapper = RecordMapper.ofRecord(type, layout);
         R actual = mapper.get(segment);
         assertEquals(expected, actual);
     }
 
 
     public <T> void test(MemorySegment segment,
-                         SegmentMapper<T> mapper,
+                         RecordMapper<T> mapper,
                          T expected) {
 
         T actual = mapper.get(segment);

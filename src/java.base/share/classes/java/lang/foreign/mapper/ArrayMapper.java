@@ -1,2 +1,7 @@
-package java.lang.foreign.mapper;public class ArrayMapper {
+package java.lang.foreign.mapper;
+
+/**
+ * A
+ */
+public interface ArrayMapper {
 }

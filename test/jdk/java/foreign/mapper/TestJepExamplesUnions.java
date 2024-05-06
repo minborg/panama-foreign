@@ -31,11 +31,8 @@ import org.junit.jupiter.api.Test;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.StructLayout;
 import java.lang.foreign.UnionLayout;
-import java.lang.foreign.mapper.SegmentMapper;
-import java.lang.invoke.MethodHandles;
-import java.nio.ByteOrder;
+import java.lang.foreign.mapper.RecordMapper;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -66,11 +63,11 @@ final class TestJepExamplesUnions {
     void IpConverterInt() {
         MemorySegment segment = Arena.ofAuto().allocate(IP_CONVERTER);
 
-        SegmentMapper<IpConverterInt> ipConverterIntMapper =
-                SegmentMapper.ofRecord(IpConverterInt.class, IP_CONVERTER);
+        RecordMapper<IpConverterInt> ipConverterIntMapper =
+                RecordMapper.ofRecord(IpConverterInt.class, IP_CONVERTER);
 
-        SegmentMapper<IpConverterIpBytes> ipConverterIpBytesMapper =
-                SegmentMapper.ofRecord(IpConverterIpBytes.class, IP_CONVERTER);
+        RecordMapper<IpConverterIpBytes> ipConverterIpBytesMapper =
+                RecordMapper.ofRecord(IpConverterIpBytes.class, IP_CONVERTER);
 
         // Localhost in network order (big endian)
         ipConverterIpBytesMapper.set(

@@ -29,7 +29,6 @@ import jdk.internal.ValueBased;
 import jdk.internal.foreign.mapper.accessor.AccessorInfo;
 
 import java.lang.foreign.GroupLayout;
-import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.util.HashMap;
@@ -67,7 +66,7 @@ final class MapperCache {
 
     AbstractSegmentMapper<?> cachedRecordMapper(Class<?> type, GroupLayout layout) {
         return subMappers.computeIfAbsent(CacheKey.of(type, layout), k ->
-                new SegmentRecordMapper2<>(lookup, MapperUtil.requireRecordType(k.type()), k.layout(), true)
+                new SegmentRecordMapper2<>(lookup, MapperUtil.requireRecord(k.type()), k.layout(), true)
         );
     }
 

@@ -34,6 +34,7 @@ import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -42,39 +43,90 @@ import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 
 public final class MapperUtil {
 
     private MapperUtil() {
     }
 
-    private static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
+    static final MethodHandles.Lookup LOCAL_LOOKUP = MethodHandles.lookup();
 
     public static final MethodHandle GETTER;
     public static final MethodHandle SETTER;
     private static final MethodHandle MAP_TO;
     private static final MethodHandle MAP_FROM;
 
+    final static class MemorySegmentAccessor {
+
+        private static final Map<ValueLayout, MethodHandle> MEMORY_SEGMENT_GETTERS = new ConcurrentHashMap<>();
+        private static final Map<ValueLayout, MethodHandle> MEMORY_SEGMENT_SETTERS = new ConcurrentHashMap<>();
+
+        private MemorySegmentAccessor() {}
+
+        public static MethodHandle getter(ValueLayout layout) {
+            return clearIfTooLarge(MEMORY_SEGMENT_GETTERS)
+                    .computeIfAbsent(layout, MemorySegmentAccessor::getter0);
+        }
+
+        public static MethodHandle setter(ValueLayout layout) {
+            return clearIfTooLarge(MEMORY_SEGMENT_SETTERS)
+                    .computeIfAbsent(layout, MemorySegmentAccessor::setter0);
+        }
+
+        private static MethodHandle getter0(ValueLayout layout) {
+            try {
+                MethodHandle getter = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "get",
+                        MethodType.methodType(layout.carrier(), interfaceType(layout), long.class));
+                return MethodHandles.insertArguments(getter, 1, layout);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalArgumentException("There is no MemorySegment::get operation for " + layout, e);
+            }
+        }
+
+        private static MethodHandle setter0(ValueLayout layout) {
+            try {
+                MethodHandle getter = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "set",
+                        MethodType.methodType(void.class, interfaceType(layout), long.class, layout.carrier()));
+                return MethodHandles.insertArguments(getter, 1, layout);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalArgumentException("There is no MemorySegment::set operation for " + layout, e);
+            }
+        }
+
+        private static Class<?> interfaceType(ValueLayout layout) {
+            return layout.getClass().getInterfaces()[0];
+        }
+
+        private static Map<ValueLayout, MethodHandle> clearIfTooLarge(Map<ValueLayout, MethodHandle> map) {
+            // For the 7 primitives, hold at most 8 variants each on average
+            // This protects against DOS attacks calling with a large number of alignment variants
+            if (map.size() > 7 * 8) {
+                map.clear();
+            }
+            return map;
+        }
+
+    }
+
     static {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
 
         try {
-            GETTER = lookup.findStatic(MapperUtil.class, "getter0",
-                    MethodType.methodType(Object.class, SegmentMapper.Getter.class, MemorySegment.class, long.class));
-            SETTER = lookup.findStatic(MapperUtil.class, "setter0",
-                    MethodType.methodType(void.class, SegmentMapper.Setter.class, MemorySegment.class, long.class, Object.class));
+            GETTER = LOCAL_LOOKUP.findStatic(MapperUtil.class, "getter0",
+                    MethodType.methodType(Object.class, RecordMapper.Getter.class, MemorySegment.class, long.class));
+            SETTER = LOCAL_LOOKUP.findStatic(MapperUtil.class, "setter0",
+                    MethodType.methodType(void.class, RecordMapper.Setter.class, MemorySegment.class, long.class, Object.class));
 
             var mt = MethodType.methodType(Object.class, Function.class, Object.class);
-            MAP_TO = lookup.findStatic(MapperUtil.class, "mapTo", mt);
-            MAP_FROM = lookup.findStatic(MapperUtil.class, "mapFrom", mt);
+            MAP_TO = LOCAL_LOOKUP.findStatic(MapperUtil.class, "mapTo", mt);
+            MAP_FROM = LOCAL_LOOKUP.findStatic(MapperUtil.class, "mapFrom", mt);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -87,7 +139,7 @@ public final class MapperUtil {
         return !DEBUG.isEmpty();
     }
 
-    public static <T extends Record> Class<T> requireRecordType(Class<?> type) {
+    public static <T extends Record> Class<T> requireRecord(Class<?> type) {
         Objects.requireNonNull(type);
         if (!type.isRecord()) {
             throw newIae(type, "is not a Record");
@@ -99,6 +151,29 @@ public final class MapperUtil {
         @SuppressWarnings("unchecked")
         Class<T> result = (Class<T>) type;
         return result;
+    }
+
+    public static <T> Class<T> requireFunctionalInterface(Class<T> type) {
+        requireInterface(type);
+        if (type.getAnnotation(FunctionalInterface.class) == null) {
+            throw newIae(type, "is not a @FunctionalInterface");
+        }
+        return type;
+    }
+
+    public static <T> Class<T> requireInterface(Class<T> type) {
+        Objects.requireNonNull(type);
+        if (!type.isInterface()) {
+            throw newIae(type, "is not an interface");
+        }
+        if (type.isHidden()) {
+            throw newIae(type, "is hidden");
+        }
+        if (type.isSealed()) {
+            throw newIae(type, "is sealed");
+        }
+        assertNotDeclaringTypeParameters(type);
+        return type;
     }
 
     private static void assertNotDeclaringTypeParameters(Class<?> type) {
@@ -179,13 +254,13 @@ public final class MapperUtil {
     // Function to MethodHandle methods
 
     // Used reflective when obtaining a MethodHandle
-    static <T> T getter0(SegmentMapper.Getter<T> getter,
+    static <T> T getter0(RecordMapper.Getter<T> getter,
                          MemorySegment segment, long offset) {
         return getter.get(segment, offset);
     }
 
     // Used reflective when obtaining a MethodHandle
-    static <T> void setter0(SegmentMapper.Setter<T> setter,
+    static <T> void setter0(RecordMapper.Setter<T> setter,
                             MemorySegment segment, long offset, T t) {
         setter.set(segment, offset, t);
     }
@@ -218,20 +293,20 @@ public final class MapperUtil {
     }
 
     public static <T, R> SegmentMapper<R> map(SegmentMapper<T> originalMapper,
-                                              Class<R> newType,
-                                              Function<? super T, ? extends R> toMapper) {
+                                             Class<R> newType,
+                                             Function<? super T, ? extends R> toMapper) {
         return map(originalMapper, newType, toMapper, _ -> {
             throw new UnsupportedOperationException(
-                    "This one-way mapper cannot map from " + newType + " to " + originalMapper.type());
+                    "This one-way mapper cannot map from " + newType + " to " + originalMapper.carrier());
         });
     }
 
     // SegmentMapper static factories
-
-    public static SegmentMapper<String> ofString(int length) {
-            SegmentMapper.Getter<String> getter = MapperUtil::toStringDirect;
-            SegmentMapper.Setter<String> setter = MapperUtil::fromStringDirect;
-            return SegmentMapper.of(String.class, MemoryLayout.sequenceLayout(length, JAVA_BYTE), getter, setter);
+/*
+    public static RecordMapper<String> ofString(int length) {
+            RecordMapper.Getter<String> getter = MapperUtil::toStringDirect;
+            RecordMapper.Setter<String> setter = MapperUtil::fromStringDirect;
+            return RecordMapper.of(String.class, MemoryLayout.sequenceLayout(length, JAVA_BYTE), getter, setter);
     }
 
     static String toStringDirect(MemorySegment segment, long offset) {
@@ -242,7 +317,7 @@ public final class MapperUtil {
         segment.setString(offset, value);
     }
 
-    public static <T> SegmentMapper<T> ofPrimitive(Class<T> wrapperType, ValueLayout layout) {
+    public static <T> RecordMapper<T> ofPrimitive(Class<T> wrapperType, ValueLayout layout) {
         Class<?> primitiveType = layout.carrier();
         Class<?> layoutInterfaceType = layout.getClass().getInterfaces()[0];
         String fromObjName = primitiveType.toString()+"Value";
@@ -260,11 +335,11 @@ public final class MapperUtil {
             MethodHandle setter = LOCAL_LOOKUP.findVirtual(MemorySegment.class, "set", MethodType.methodType(void.class, layoutInterfaceType, long.class, primitiveType));
             setter = MethodHandles.insertArguments(setter, 1, layout);
             setter = MethodHandles.filterArguments(setter, 2, fromObj);
-            return SegmentMapper.of(wrapperType, layout, getter, setter);
+            return RecordMapper.of(wrapperType, layout, getter, setter);
         } catch (ReflectiveOperationException e) {
             throw new IllegalArgumentException(e);
         }
-    }
+    }*/
 
 
 }

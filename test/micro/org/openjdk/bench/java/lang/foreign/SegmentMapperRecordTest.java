@@ -38,7 +38,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.mapper.SegmentMapper;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.invoke.MethodHandle;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -69,9 +69,9 @@ public class SegmentMapperRecordTest {
 
     private static final MemorySegment SEGMENT = MemorySegment.ofArray(new int[]{3, 4});
 
-    private static final SegmentMapper<Point> POINT_MAPPER = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+    private static final RecordMapper<Point> POINT_MAPPER = RecordMapper.ofRecord(Point.class, POINT_LAYOUT);
     private static final MethodHandle POINT_MH = POINT_MAPPER.getter();
-    private static final SegmentMapper<Line> LINE_MAPPER = SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
+    private static final RecordMapper<Line> LINE_MAPPER = RecordMapper.ofRecord(Line.class, LINE_LAYOUT);
 
     // Todo: declare MH directly
 

@@ -31,14 +31,13 @@ import org.junit.jupiter.api.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.IntStream;
 
 import static java.lang.foreign.ValueLayout.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -63,7 +62,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
 
     @Test
     void empty() {
-        var mapper = SegmentMapper.ofRecord(Empty.class, POINT_LAYOUT);
+        var mapper = RecordMapper.ofRecord(Empty.class, POINT_LAYOUT);
         mapper.set(pointSegment, 0, new Empty());
         assertContentEquals(segmentOf(0, 0), pointSegment);
     }
@@ -80,7 +79,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
 
     @Test
     void mappedTinyPoint() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(Point.class, POINT_LAYOUT);
         SegmentMapper<TinyPoint> tinyMapper =
                 mapper.map(TinyPoint.class,
                         p -> new TinyPoint((byte) p.x(), (byte) p.y()),
@@ -92,7 +91,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
 
     @Test
     void line() {
-        SegmentMapper<Line> mapper = SegmentMapper.ofRecord(Line.class, LINE_LAYOUT);
+        RecordMapper<Line> mapper = RecordMapper.ofRecord(Line.class, LINE_LAYOUT);
         var segment = arena.allocate(LINE_LAYOUT);
         mapper.set(segment, new Line(new Point(3, 4), new Point(6, 0)));
         assertContentEquals(segmentOf(3, 4, 6, 0), segment);
@@ -125,7 +124,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceBox.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceBox.class, layout);
         var segment = arena.allocate(layout);
         mapper.set(segment, new SequenceBox(0, new int[]{1, 2}, 3));
 
@@ -143,7 +142,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceListBox.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceListBox.class, layout);
         var segment = arena.allocate(layout);
         mapper.set(segment, new SequenceListBox(0, List.of(1,2), 3));
 
@@ -159,7 +158,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceListPoint.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceListPoint.class, layout);
         var segment = arena.allocate(layout);
         mapper.set(segment, new SequenceListPoint(0, List.of(new Point(1, 2), new Point(3, 4)), 5));
 
@@ -177,7 +176,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(SequenceArrayPoint.class, layout);
+        var mapper = RecordMapper.ofRecord(SequenceArrayPoint.class, layout);
         var segment = arena.allocate(layout);
         mapper.set(segment, new SequenceArrayPoint(0, new Point[]{new Point(1, 2), new Point(3, 4)}, 5));
 
@@ -193,7 +192,7 @@ final class TestSegmentRecordMapperSetOperations extends BaseTest {
 
         var segment = arena.allocate(layout);
 
-        var mapper = SegmentMapper.ofRecord(PointSet.class, layout);
+        var mapper = RecordMapper.ofRecord(PointSet.class, layout);
 
         mapper.set(segment, new PointSet(Set.of(new Point(0, 1), new Point(2,3))));
 

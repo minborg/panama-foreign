@@ -36,6 +36,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SequenceLayout;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.ValueLayout;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.foreign.mapper.SegmentMapper;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -232,7 +233,7 @@ final class TestRecordMapper {
     void point() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
         // Automatically creates a mapper that can extract/write records to native memory.
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
 
         // Gets the point at index 0
         // The record Point is not backed by a segment. It is not a view!
@@ -255,7 +256,7 @@ final class TestRecordMapper {
 
         assertEquals(List.of(new Point(3, 4), new Point(6, 0), new Point(9, 4)), points);
 
-        assertEquals(mapper.type(), Point.class);
+        assertEquals(mapper.carrier(), Point.class);
         assertEquals(mapper.layout(), POINT_LAYOUT);
 
         mapper.setAtIndex(segment, 1L, new Point(-1, -2));
@@ -289,11 +290,11 @@ final class TestRecordMapper {
     @Test
     void mappedTinyPoint() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
         SegmentMapper<TinyPoint> tinyMapper =
                 mapper.map(TinyPoint.class, TestRecordMapper::toTiny, TestRecordMapper::fromTiny);
 
-        assertEquals(TinyPoint.class, tinyMapper.type());
+        assertEquals(TinyPoint.class, tinyMapper.carrier());
         assertEquals(POINT_LAYOUT, tinyMapper.layout());
 
         TinyPoint tp = tinyMapper.get(segment);
@@ -312,7 +313,7 @@ final class TestRecordMapper {
     void line() {
         MemorySegment segment = newCopyOf(POINT_SEGMENT);
         // Also stand-alone
-        SegmentMapper<Line> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Line.class, LINE_LAYOUT);
+        RecordMapper<Line> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Line.class, LINE_LAYOUT);
 
         Line point = mapper.get(segment);
         assertEquals(new Line(new Point(3, 4), new Point(6, 0)), point);
@@ -376,7 +377,7 @@ final class TestRecordMapper {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, SequenceBox.class, layout);
+        var mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, SequenceBox.class, layout);
 
         SequenceBox sequenceBox = mapper.get(segment);
 
@@ -456,7 +457,7 @@ final class TestRecordMapper {
                 JAVA_INT.withName("after")
         );
 
-        var mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, SequenceBox2D.class, layout);
+        var mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, SequenceBox2D.class, layout);
 
         SequenceBox2D sequenceBox = mapper.get(segment);
 
@@ -522,7 +523,7 @@ final class TestRecordMapper {
                 MemoryLayout.sequenceLayout(3, POINT_LAYOUT).withName("points")
         );
 
-        var mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Polygon.class, layout);
+        var mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Polygon.class, layout);
 
         Polygon triangle = mapper.get(segment);
 
@@ -611,7 +612,7 @@ final class TestRecordMapper {
 
     @Test
     void bean() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
         SegmentMapper<PointBean> beanMapper =
                 mapper.map(PointBean.class, TestRecordMapper::pointToBean, TestRecordMapper::beanToPoint);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4});
@@ -629,14 +630,14 @@ final class TestRecordMapper {
     @Test
     void genericRecord() {
         assertThrows(IllegalArgumentException.class, () -> {
-            SegmentMapper.ofRecord(LOCAL_LOOKUP, GenericPoint.class, POINT_LAYOUT);
+            RecordMapper.ofRecord(LOCAL_LOOKUP, GenericPoint.class, POINT_LAYOUT);
         });
     }
 
 
     @Test
     void originDistances() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
 
         double averageDistance = mapper.stream(POINT_SEGMENT)
                 .mapToDouble(this::originDistance)
@@ -703,7 +704,7 @@ final class TestRecordMapper {
         int noInts = (int) (layout.byteSize() / JAVA_INT.byteSize());
 
         MemorySegment segment = MemorySegment.ofArray(IntStream.range(0, noInts).toArray());
-        SegmentMapper<BunchOfPoints> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, BunchOfPoints.class, layout);
+        RecordMapper<BunchOfPoints> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, BunchOfPoints.class, layout);
         BunchOfPoints bunchOfPoints = mapper.get(segment);
 
         BunchOfPoints expected = new BunchOfPoints(
@@ -724,131 +725,13 @@ final class TestRecordMapper {
 
     @Test
     void invariantChecking() {
-        SegmentMapper<Point> mapper = SegmentMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
+        RecordMapper<Point> mapper = RecordMapper.ofRecord(LOCAL_LOOKUP, Point.class, POINT_LAYOUT);
         MemorySegment segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
         assertThrows(NullPointerException.class, () -> mapper.get(null));
         assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, -1));
         assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(segment, segment.byteSize()));
         MemorySegment smallSegment = MemorySegment.ofArray(new int[]{3});
         assertThrows(IndexOutOfBoundsException.class, () -> mapper.get(smallSegment, 0));
-    }
-
-    @Test
-    void stringMapper()  {
-        try (Arena arena = Arena.ofConfined()){
-            SegmentMapper<String> stringMapper = TestRecordMapper.ofString(arena);
-            MemorySegment segment = arena.allocateFrom(stringMapper, "Hello String mapper!");
-            String fromSegment = stringMapper.get(segment);
-            assertEquals("Hello String mapper!", fromSegment);
-        }
-    }
-
-    @SuppressWarnings("restricted")
-    static final AddressLayout CHAR_POINTER = ADDRESS.withTargetLayout(MemoryLayout.sequenceLayout(Integer.MAX_VALUE, JAVA_BYTE));
-
-    @Test
-    void indirectStringMapper()  {
-        try (Arena arena = Arena.ofConfined()) {
-            SegmentMapper<String> stringMapper = TestRecordMapper.ofString(arena);
-            // We are working with an indirect address
-            assertEquals(ADDRESS.byteSize(), stringMapper.layout().byteSize());
-
-            // Allocates a new MemorySegment in which the string is recorded and then
-            MemorySegment segment = arena.allocateFrom(stringMapper, "Hello String mapper!");
-            assertEquals(ADDRESS.byteSize(), segment.byteSize());
-            String fromSegment = stringMapper.get(segment);
-            assertEquals("Hello String mapper!", fromSegment);
-        }
-    }
-
-    static SegmentMapper<String> ofString(Arena arena) {
-        try {
-            MethodHandle getter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "toStringIndirect",
-                    MethodType.methodType(String.class, MemorySegment.class, long.class))
-                    // Todo: remove
-                    .asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
-            MethodHandle setter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "fromStringIndirect",
-                            MethodType.methodType(void.class, Arena.class, MemorySegment.class, long.class, Object.class))
-                    .bindTo(arena);
-
-            return SegmentMapper.of(String.class, CHAR_POINTER, getter, setter);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    static String toStringIndirect(MemorySegment segment, long offset) {
-        MemorySegment stringSegment = segment.get(CHAR_POINTER, offset);
-        return stringSegment.getString(offset);
-    }
-
-    static void fromStringIndirect(Arena arena, MemorySegment segment, long offset, Object value) {
-        MemorySegment stringSegment = arena.allocateFrom((String) value);
-        // Make sure we have the same scope
-        if (!segment.scope().equals(stringSegment.scope())) {
-            throw new IllegalArgumentException("the provided segment does not have the correct scope:" + segment);
-        }
-        segment.set(CHAR_POINTER, offset, stringSegment);
-    }
-
-    @Test
-    void intMapper() {
-        SegmentMapper<Integer> intMapper = SegmentMapper.ofPrimitive(JAVA_INT);
-        MemorySegment segment = MemorySegment.ofArray(new int[]{13, 42});
-        int value = intMapper.getAtIndex(segment, 1);
-        assertEquals(42, value);
-        intMapper.setAtIndex(segment, 0, 147);
-        assertEquals(147, segment.getAtIndex(JAVA_INT, 0));
-    }
-
-    @Test
-    void intOrLongToLongMapper()  {
-        for (ValueLayout platformLayout: List.of(JAVA_INT, JAVA_LONG)) {
-            MemorySegment segment = (platformLayout == JAVA_INT)
-                    ? MemorySegment.ofArray(new int[]{42})
-                    : MemorySegment.ofArray(new long[]{42L});
-
-            // Materialize a Number but use any backing layout L ∈ (OfByte, OfShort, OfInt, OfFloat, OfLong, OfDouble)
-            SegmentMapper<Number> mapper = SegmentMapper.ofNumber(platformLayout);
-
-            Number number = mapper.get(segment, 0);
-            assertEquals(42, number.longValue());
-            assertEquals(platformLayout, mapper.layout());
-
-            mapper.set(segment, 0, (byte) 63);
-            assertEquals(63, mapper.get(segment).intValue());
-        }
-    }
-
-
-    @Test
-    void ofPrimitiveInt() {
-        var segment = MemorySegment.ofArray(new int[]{1, 2});
-        SegmentMapper<Integer> mapper = SegmentMapper.ofPrimitive(JAVA_INT);
-        int value = mapper.getAtIndex(segment, 1);
-        assertEquals(2, value);
-        mapper.setAtIndex(segment, 1, 3);
-        assertEquals(3, segment.getAtIndex(JAVA_INT, 1));
-    }
-
-    @Test
-    void ofPrimitiveLong() {
-        var segment = MemorySegment.ofArray(new long[]{1, 2});
-        SegmentMapper<Long> mapper = SegmentMapper.ofPrimitive(JAVA_LONG);
-        long value = mapper.getAtIndex(segment, 1);
-        assertEquals(2L, value);
-        mapper.setAtIndex(segment, 1, 3L);
-        assertEquals(3, segment.getAtIndex(JAVA_LONG, 1));
-    }
-
-    @Test
-    void ofString() {
-        try (Arena arena = Arena.ofConfined()) {
-            SegmentMapper<String> mapper = SegmentMapper.ofString(32);
-            var segment = arena.allocate(mapper.layout());
-            mapper.set(segment, "Hello mapper!");
-            assertEquals("Hello mapper!", mapper.get(segment));
-        }
     }
 
     interface SegmentBacked {
@@ -910,64 +793,6 @@ final class TestRecordMapper {
             MemorySegment.copy(lazyPoint.segment(), lazyPoint.offset(), dstSegment, dstOffset, POINT_LAYOUT.byteSize());
         }
 
-    }
-
-    @Test
-    void ofLazy() {
-        var segment = MemorySegment.ofArray(new int[]{3, 4, 6, 8});
-        SegmentMapper<LazyPoint> mapper = SegmentMapper.of(LazyPoint.class, POINT_LAYOUT, LazyPointImpl::new, LazyPointImpl::set);
-
-        LazyPoint point = mapper.getAtIndex(segment, 1);
-        assertEquals(6, point.x());
-        assertEquals(8, point.y());
-        point.x(-6);
-        point.y(-8);
-
-        mapper.set(segment, point);
-        assertEquals(-6, segment.getAtIndex(JAVA_INT, 0));
-        assertEquals(-8, segment.getAtIndex(JAVA_INT, 1));
-    }
-
-    @Test
-    void elementSpecificMapping() {
-
-    }
-
-    @Test
-    void array() {
-        SequenceLayout sequenceLayout = MemoryLayout.sequenceLayout(16, JAVA_INT);
-        var segment = MemorySegment.ofArray(IntStream.range(0, (int) sequenceLayout.elementCount() * 2).toArray());
-        SegmentMapper<int[]> mapper = ofIntArray(sequenceLayout);
-
-        int[] value = mapper.get(segment);
-        assertArrayEquals(IntStream.range(0, (int) sequenceLayout.elementCount()).toArray(), value);
-    }
-
-    static SegmentMapper<int[]> ofIntArray(SequenceLayout layout) {
-        if (!(layout.elementLayout() instanceof OfInt elementLayout)) {
-            throw new IllegalArgumentException();
-        }
-        try {
-            MethodHandle getter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "getIntArray",
-                    MethodType.methodType(int[].class, MemorySegment.class, long.class, long.class, OfInt.class));
-            getter = MethodHandles.insertArguments(getter, 2, layout.byteSize(), elementLayout);
-            getter = getter.asType(MethodType.methodType(Object.class, MemorySegment.class, long.class));
-            MethodHandle setter = LOCAL_LOOKUP.findStatic(TestRecordMapper.class, "setIntArray",
-                    MethodType.methodType(void.class, MemorySegment.class, long.class, int[].class, int.class, OfInt.class));
-            setter = MethodHandles.insertArguments(setter, 3, (int) layout.elementCount(), elementLayout);
-            setter = setter.asType(setter.type().changeParameterType(2, Object.class));
-            return SegmentMapper.of(int[].class, layout, getter, setter);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    static int[] getIntArray(MemorySegment segment, long offset, long byteSize, OfInt elementLayout) {
-        return segment.asSlice(offset, byteSize).toArray(elementLayout);
-    }
-
-    static void setIntArray(MemorySegment dstSegment, long dstOffset, int[] value, int elementCount, OfInt dstLayout) {
-        MemorySegment.copy(value, 0, dstSegment, dstLayout, dstOffset, elementCount);
     }
 
     @Test

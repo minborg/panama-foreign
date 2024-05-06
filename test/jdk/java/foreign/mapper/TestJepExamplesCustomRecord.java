@@ -32,6 +32,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
+import java.lang.foreign.mapper.RecordMapper;
 import java.lang.foreign.mapper.SegmentMapper;
 
 import static java.lang.foreign.ValueLayout.*;
@@ -73,8 +74,8 @@ final class TestJepExamplesCustomRecord {
     void tiny() {
         MemorySegment segment = Arena.ofAuto().allocateFrom(JAVA_INT, 3, 4);
         // Original mapper
-        SegmentMapper<Point> mapper =
-                SegmentMapper.ofRecord(Point.class, POINT);
+        RecordMapper<Point> mapper =
+                RecordMapper.ofRecord(Point.class, POINT);
 
         // Secondary-stage mapper
         SegmentMapper<TinyPoint> tinyMapper =
@@ -119,7 +120,7 @@ final class TestJepExamplesCustomRecord {
         segment.set(ADDRESS, 0, textSegment);
         segment.set(JAVA_INT, ADDRESS.byteSize(), 0);
 
-        SegmentMapper<DlSerPath> mapper = SegmentMapper.ofRecord(DlSerPath.class, DL_SERPATH);
+        RecordMapper<DlSerPath> mapper = RecordMapper.ofRecord(DlSerPath.class, DL_SERPATH);
 
         DlSerPath dlSerPath = mapper.get(segment);
 

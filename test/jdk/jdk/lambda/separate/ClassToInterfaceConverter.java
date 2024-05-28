@@ -23,10 +23,10 @@
 
 package separate;
 
-import jdk.internal.classfile.*;
-import jdk.internal.classfile.instruction.InvokeInstruction;
+import java.lang.classfile.*;
+import java.lang.classfile.instruction.InvokeInstruction;
 import static java.lang.constant.ConstantDescs.INIT_NAME;
-import static jdk.internal.classfile.Classfile.*;
+import static java.lang.classfile.ClassFile.*;
 
 public class ClassToInterfaceConverter implements ClassFilePreprocessor {
 
@@ -43,14 +43,14 @@ public class ClassToInterfaceConverter implements ClassFilePreprocessor {
         CodeTransform ct = (b, e) -> {
             if (e instanceof InvokeInstruction i && i.owner() == classModel.thisClass()) {
                 Opcode opcode = i.opcode() == Opcode.INVOKEVIRTUAL ? Opcode.INVOKEINTERFACE : i.opcode();
-                b.invokeInstruction(opcode, i.owner().asSymbol(),
+                b.invoke(opcode, i.owner().asSymbol(),
                         i.name().stringValue(), i.typeSymbol(), true);
             } else {
                 b.with(e);
             }
         };
 
-        return Classfile.of().transform(classModel,
+        return ClassFile.of().transform(classModel,
             ClassTransform.dropping(ce -> ce instanceof MethodModel mm && mm.methodName().equalsString(INIT_NAME))
                           .andThen(ClassTransform.transformingMethodBodies(ct))
                           .andThen(ClassTransform.endHandler(b -> b.withFlags(ACC_INTERFACE | ACC_ABSTRACT | ACC_PUBLIC)))
@@ -58,7 +58,7 @@ public class ClassToInterfaceConverter implements ClassFilePreprocessor {
     }
 
     public byte[] preprocess(String classname, byte[] bytes) {
-        ClassModel classModel = Classfile.of().parse(bytes);
+        ClassModel classModel = ClassFile.of().parse(bytes);
         if (classModel.thisClass().asInternalName().equals(whichClass)) {
             return convertToInterface(classModel);
         } else {

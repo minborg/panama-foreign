@@ -28,12 +28,12 @@ package jdk.internal.classfile.impl;
 import java.lang.constant.ClassDesc;
 import static java.lang.constant.ConstantDescs.*;
 import java.lang.constant.MethodTypeDesc;
-import jdk.internal.classfile.Classfile;
-import jdk.internal.classfile.constantpool.ClassEntry;
-import jdk.internal.classfile.constantpool.ConstantDynamicEntry;
-import jdk.internal.classfile.constantpool.DynamicConstantPoolEntry;
-import jdk.internal.classfile.constantpool.MemberRefEntry;
-import jdk.internal.classfile.constantpool.ConstantPoolBuilder;
+import java.lang.classfile.ClassFile;
+import java.lang.classfile.constantpool.ClassEntry;
+import java.lang.classfile.constantpool.ConstantDynamicEntry;
+import java.lang.classfile.constantpool.DynamicConstantPoolEntry;
+import java.lang.classfile.constantpool.MemberRefEntry;
+import java.lang.classfile.constantpool.ConstantPoolBuilder;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,15 +41,13 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
-import jdk.internal.classfile.Attribute;
+import java.lang.classfile.Attribute;
 
-import static jdk.internal.classfile.Classfile.*;
-import jdk.internal.classfile.BufWriter;
-import jdk.internal.classfile.Label;
-import jdk.internal.classfile.attribute.StackMapTableAttribute;
-import jdk.internal.classfile.Attributes;
-import jdk.internal.classfile.components.ClassPrinter;
-import jdk.internal.classfile.attribute.CodeAttribute;
+import static java.lang.classfile.ClassFile.*;
+import java.lang.classfile.BufWriter;
+import java.lang.classfile.Label;
+import java.lang.classfile.attribute.StackMapTableAttribute;
+import java.lang.classfile.Attributes;
 
 /**
  * StackMapGenerator is responsible for stack map frames generation.
@@ -153,7 +151,7 @@ public final class StackMapGenerator {
                 dcb.methodInfo.methodName().stringValue(),
                 dcb.methodInfo.methodTypeSymbol(),
                 (dcb.methodInfo.methodFlags() & ACC_STATIC) != 0,
-                dcb.bytecodesBufWriter.asByteBuffer().slice(0, dcb.bytecodesBufWriter.size()),
+                ((BufWriterImpl) dcb.bytecodesBufWriter).asByteBuffer(),
                 dcb.constantPool,
                 dcb.context,
                 dcb.handlers);
@@ -225,7 +223,7 @@ public final class StackMapGenerator {
                      boolean isStatic,
                      ByteBuffer bytecode,
                      SplitConstantPool cp,
-                     ClassfileImpl context,
+                     ClassFileImpl context,
                      List<AbstractPseudoInstruction.ExceptionCatchImpl> handlers) {
         this.thisType = Type.referenceType(thisClass);
         this.methodName = methodName;
@@ -237,8 +235,8 @@ public final class StackMapGenerator {
         this.handlers = handlers;
         this.rawHandlers = new ArrayList<>(handlers.size());
         this.classHierarchy = new ClassHierarchyImpl(context.classHierarchyResolverOption().classHierarchyResolver());
-        this.patchDeadCode = context.deadCodeOption() == Classfile.DeadCodeOption.PATCH_DEAD_CODE;
-        this.filterDeadLabels = context.deadLabelsOption() == Classfile.DeadLabelsOption.DROP_DEAD_LABELS;
+        this.patchDeadCode = context.deadCodeOption() == ClassFile.DeadCodeOption.PATCH_DEAD_CODE;
+        this.filterDeadLabels = context.deadLabelsOption() == ClassFile.DeadLabelsOption.DROP_DEAD_LABELS;
         this.currentFrame = new Frame(classHierarchy);
         generate();
     }
@@ -836,36 +834,7 @@ public final class StackMapGenerator {
                 offset,
                 methodName,
                 methodDesc.parameterList().stream().map(ClassDesc::displayName).collect(Collectors.joining(","))));
-        //try to attach debug info about corrupted bytecode to the message
-        try {
-            var cc = Classfile.of();
-            var clm = cc.parse(cc.build(cp.classEntry(thisType.sym()), cp, clb ->
-                    clb.withMethod(methodName, methodDesc, isStatic ? ACC_STATIC : 0, mb ->
-                            ((DirectMethodBuilder)mb).writeAttribute(new UnboundAttribute.AdHocAttribute<CodeAttribute>(Attributes.CODE) {
-                                @Override
-                                public void writeBody(BufWriter b) {
-                                    b.writeU2(-1);//max stack
-                                    b.writeU2(-1);//max locals
-                                    b.writeInt(bytecode.limit());
-                                    b.writeBytes(bytecode.array(), 0, bytecode.limit());
-                                    b.writeU2(0);//exception handlers
-                                    b.writeU2(0);//attributes
-                                }
-                    }))));
-            ClassPrinter.toYaml(clm.methods().get(0).code().get(), ClassPrinter.Verbosity.TRACE_ALL, sb::append);
-        } catch (Error | Exception suppresed) {
-            //fallback to bytecode hex dump
-            bytecode.rewind();
-            while (bytecode.position() < bytecode.limit()) {
-                sb.append("%n%04x:".formatted(bytecode.position()));
-                for (int i = 0; i < 16 && bytecode.position() < bytecode.limit(); i++) {
-                    sb.append(" %02x".formatted(bytecode.get()));
-                }
-            }
-            var err = new IllegalArgumentException(sb.toString());
-            err.addSuppressed(suppresed);
-            return err;
-        }
+        Util.dumpMethod(cp, thisType.sym(), methodName, methodDesc, isStatic ? ACC_STATIC : 0, bytecode, sb::append);
         return new IllegalArgumentException(sb.toString());
     }
 

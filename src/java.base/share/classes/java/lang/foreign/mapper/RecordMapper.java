@@ -120,7 +120,7 @@ public sealed interface RecordMapper<T>
      *          to the provided record {@code type} using the natural layout of {@code type}}
      * <p>
      * Reflective analysis on the provided {@code type} will be made using the
-     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
+     * MethodHandles.Lookup.publicLookup().
      * <p>
      * The natural layout will be computed as {@linkplain NaturalLayout#ofRecord(Class)} was
      * called with the provided {@code type}.
@@ -133,7 +133,7 @@ public sealed interface RecordMapper<T>
      *         {@linkplain java.lang.Record}
      * @throws IllegalArgumentException if the provided record {@code type} cannot
      *         be reflectively analysed using
-     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
+     *         the MethodHandles.Lookup.publicLookup()
      * @throws IllegalArgumentException if the provided interface {@code type} contains
      *         components for which there are no exact mapping (of names and types) in
      *         the provided {@code layout} or if the provided {@code type} is not public or
@@ -151,7 +151,7 @@ public sealed interface RecordMapper<T>
      *          to the provided record {@code type} using the provided {@code layout}}
      * <p>
      * Reflective analysis on the provided {@code type} will be made using the
-     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
+     * MethodHandles.Lookup.publicLookup().
      *
      * @param type to map memory segment from and to
      * @param layout to be used when mapping the provided {@code type}
@@ -162,7 +162,7 @@ public sealed interface RecordMapper<T>
      *         {@linkplain java.lang.Record}
      * @throws IllegalArgumentException if the provided record {@code type} cannot
      *         be reflectively analysed using
-     *         the {@linkplain MethodHandles.Lookup#publicLookup() public lookup}
+     *         the MethodHandles.Lookup.publicLookup()
      * @throws IllegalArgumentException if the provided interface {@code type} contains
      *         components for which there are no exact mapping (of names and types) in
      *         the provided {@code layout} or if the provided {@code type} is not public or

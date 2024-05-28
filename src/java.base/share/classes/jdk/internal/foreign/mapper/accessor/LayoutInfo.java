@@ -25,8 +25,7 @@
 
 package jdk.internal.foreign.mapper.accessor;
 
-import jdk.internal.classfile.CodeBuilder;
-
+import java.lang.classfile.CodeBuilder;
 import java.lang.foreign.AddressLayout;
 import java.lang.foreign.GroupLayout;
 import java.lang.foreign.MemoryLayout;

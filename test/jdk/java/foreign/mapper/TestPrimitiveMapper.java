@@ -128,12 +128,12 @@ final class TestPrimitiveMapper {
 
     static Number get(MemorySegment segment, ValueLayout layout, long offset) {
         return switch (layout) {
-            case OfByte l -> segment.get(l, offset);
-            case OfShort l -> segment.get(l, offset);
-            case OfChar l -> (int) segment.get(l, offset);
-            case OfInt l -> segment.get(l, offset);
-            case OfLong l -> segment.get(l, offset);
-            case OfFloat l -> segment.get(l, offset);
+            case OfByte   l -> segment.get(l, offset);
+            case OfShort  l -> segment.get(l, offset);
+            case OfChar   l -> (int) segment.get(l, offset);
+            case OfInt    l -> segment.get(l, offset);
+            case OfLong   l -> segment.get(l, offset);
+            case OfFloat  l -> segment.get(l, offset);
             case OfDouble l -> segment.get(l, offset);
             default -> throw new IllegalArgumentException();
         };
@@ -141,9 +141,9 @@ final class TestPrimitiveMapper {
 
     static Number toNumber(Object o) {
         return switch (o) {
-            case Number n -> n;
+            case Number n    -> n;
             case Character c -> (int) c;
-            default -> throw new IllegalArgumentException();
+            default          -> throw new IllegalArgumentException();
         };
     }
 

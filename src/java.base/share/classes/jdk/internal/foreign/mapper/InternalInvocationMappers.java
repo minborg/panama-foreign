@@ -50,8 +50,9 @@ public final class InternalInvocationMappers {
                                        Method abstractMethod) {
 
         Linker linker = Linker.nativeLinker();
+        @SuppressWarnings("restricted")
         MethodHandle handle = linker.downcallHandle(
-                linker.defaultLookup().find(abstractMethod.getName()).orElseThrow(),
+                linker.defaultLookup().findOrThrow(abstractMethod.getName()),
                 nativeSignature
         );
 

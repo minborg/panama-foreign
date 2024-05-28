@@ -23,7 +23,7 @@ public final class NaturalLayout {
      *          the components in the provided record {@code type}}
      * <p>
      * Reflective analysis on the provided {@code type} will be made using the
-     * {@linkplain MethodHandles.Lookup#publicLookup() public lookup}.
+     * MethodHandles.Lookup.publicLookup().
      *
      * @param type to derive a group layout from
      * @param <T> the type to analyse
